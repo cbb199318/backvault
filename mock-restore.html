@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新建还原 · 方案B mock 预览</title>
+<style>
+  :root { --primary: #3370ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f2f3f7; color: #1f2937; font-size: 14px;
+    padding: 28px 16px;
+  }
+  .page-head { max-width: 720px; margin: 0 auto 16px; }
+  .page-head h1 { font-size: 17px; font-weight: 600; }
+  .page-head p { font-size: 12.5px; color: #8b9098; margin-top: 4px; }
+
+  /* 卡片容器（sec-card 风格） */
+  .card { background: #fff; border: 1px solid #eef0f4; border-radius: 12px; overflow: hidden; }
+
+  /* 弹窗 */
+  .modal {
+    background: #fff; border-radius: 14px; width: 600px; max-width: 100%;
+    margin: 0 auto; display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(16,24,40,.18);
+  }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 10px; }
+  .modal-head h3 { font-size: 16px; font-weight: 600; }
+  .x { border: none; background: none; font-size: 18px; color: #9ca3af; cursor: pointer; padding: 2px 4px; }
+  .x:hover { color: #374151; }
+  .modal-body { padding: 8px 20px; overflow-y: auto; }
+  .modal-foot { display: flex; gap: 10px; padding: 14px 20px; border-top: 1px solid #f3f4f6; }
+
+  .btn { border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; cursor: pointer; transition: opacity .15s; }
+  .btn:hover { opacity: .85; }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.ghost { background: #f3f4f6; color: #374151; }
+  .btn.block { flex: 1; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* 步骤卡片 */
+  .step { padding: 14px 16px; border-bottom: 1px solid #f3f4f6; }
+  .step:last-child { border-bottom: none; }
+  .step-head { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+  .step-num { font-size: 12px; font-weight: 700; color: var(--primary); background: #eef4ff; border-radius: 7px; padding: 3px 8px; flex: none; }
+  .step-label { font-size: 13.5px; font-weight: 600; color: #111827; flex: 1; }
+  .step-val { font-size: 12.5px; color: #8b9098; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+  .chev-r { color: #c2c7d0; font-size: 18px; font-style: normal; flex: none; transition: transform .15s; }
+  .step.open .chev-r { transform: rotate(90deg); }
+  .step-body { display: none; margin-top: 12px; }
+  .step.open .step-body { display: block; }
+
+  /* 快照时间线 */
+  .snap-timeline { max-height: 200px; overflow-y: auto; border: 1px solid #f3f4f6; border-radius: 8px; }
+  .snap-row { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-bottom: 1px solid #f3f4f6; font-size: 13.5px; cursor: pointer; }
+  .snap-row:last-child { border-bottom: none; }
+  .snap-row:hover { background: #f7f9ff; }
+  .snap-row.on { background: #eef4ff; }
+  .snap-dot { width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; flex: none; }
+  .snap-row.on .snap-dot { background: var(--primary); }
+  .snap-t { font-weight: 600; color: #1f2937; flex: none; }
+  .snap-id { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6b7280; flex: none; }
+  .snap-files { font-size: 11.5px; color: #9ca3af; flex: 1; text-align: right; }
+  .snap-badge { font-size: 10.5px; padding: 2px 8px; border-radius: 6px; font-weight: 600; flex: none; }
+  .snap-badge.chg { background: #e7f8ee; color: #16a34a; }
+  .snap-badge.idle { background: #f3f4f6; color: #9ca3af; }
+
+  /* 文件选择：目录可进入 */
+  .crumbC { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: #f7f8fa; border-radius: 8px; margin-bottom: 8px; font-size: 13px; overflow-x: auto; white-space: nowrap; }
+  .crumbC .root { color: var(--primary); font-weight: 600; cursor: pointer; flex-shrink: 0; }
+  .crumbC a { color: #4b5563; text-decoration: none; cursor: pointer; flex-shrink: 0; }
+  .crumbC a.cur { color: #1f2937; font-weight: 700; cursor: default; }
+  .crumbC .sl { color: #c3c9d4; flex-shrink: 0; }
+  .selpill { margin-left: auto; font-size: 11.5px; color: var(--primary); background: #eef4ff; padding: 2px 9px; border-radius: 20px; flex-shrink: 0; }
+  .file-tree { border: 1px solid #f3f4f6; border-radius: 8px; overflow: hidden; }
+  .ft-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f7f8fa; }
+  .ft-row:last-child { border-bottom: none; }
+  .ft-row:hover { background: #f7f9ff; }
+  .ft-row.on { background: #eef4ff; }
+  .ft-row.back { background: #fafbfc; color: #6b7280; }
+  .ft-ico { font-size: 15px; }
+  .ft-name { flex: 1; color: #1f2937; }
+  .ft-sub { font-size: 11.5px; color: #9ca3af; }
+  .ck { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #cbd5e1; flex: none; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; }
+  .ft-row.on .ck { background: var(--primary); border-color: var(--primary); }
+  .ft-row .chev-r { color: #c2c7d0; font-size: 16px; }
+
+  /* 分段切换 seg */
+  .seg { display: flex; background: #eef0f4; border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button { flex: 1; border: none; background: transparent; padding: 8px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; color: #6b7280; font-family: inherit; }
+  .seg button.on { background: #fff; color: var(--primary); font-weight: 600; box-shadow: 0 1px 3px rgba(16,24,40,.08); }
+  .seg.wrap { flex-wrap: wrap; }
+  .seg.wrap button { flex: 1 1 44%; }
+  .target-row { display: flex; gap: 8px; margin-top: 10px; }
+  .target-row input { flex: 1; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: ui-monospace, Menlo, monospace; min-width: 0; }
+  .note { margin-top: 10px; padding: 8px 11px; background: #f7f8fa; border-radius: 8px; font-size: 12px; color: #6b7280; line-height: 1.7; word-break: break-all; }
+
+  /* flow-line */
+  .flow-line { display: flex; align-items: center; gap: 7px; padding: 11px 16px; border-top: 1px solid #f3f4f6; flex-wrap: wrap; }
+  .flow-line .node { background: #f4f6fa; border-radius: 8px; padding: 5px 10px; font-size: 12px; color: #374151; }
+  .flow-line .node.hi { background: #eef4ff; color: var(--primary); font-weight: 600; }
+  .flow-line .lk { color: #c2c7d0; font-size: 11px; font-style: normal; }
+
+  /* 结果面板 */
+  .result-panel { text-align: center; padding: 34px 20px 28px; }
+  .result-ico { width: 54px; height: 54px; border-radius: 50%; margin: 0 auto 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; color: #fff; }
+  .result-ico.ok { background: #22c55e; }
+  .result-ico.bad { background: #ef4444; }
+  .result-title { font-size: 16px; font-weight: 600; }
+  .result-desc { font-size: 13px; color: #6b7280; margin-top: 6px; line-height: 1.7; }
+  .result-rows { margin-top: 18px; text-align: left; }
+  .rrow { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f7f8fa; font-size: 13px; }
+  .rrow:last-child { border-bottom: none; }
+  .rrow .k { color: #9ca3af; width: 62px; flex: none; }
+  .rrow .v { flex: 1; color: #1f2937; word-break: break-all; }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 640px) {
+    .modal { border-radius: 16px; width: 100%; }
+    .step-val { max-width: 150px; }
+  }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>新建还原 · 方案 B mock 预览</h1>
+  <p>「备份目的地」风格：卡片容器 + 编号步骤 + 右侧 chevron + 底部 flow-line。② 文件支持进入子目录逐层浏览（点目录行进、面包屑返回、目录可整选）。</p>
+</div>
+
+<!-- ============ 第一步：选择备份任务 ============ -->
+<div class="modal hidden" id="pick-task">
+  <div class="modal-head">
+    <h3>新建还原 · 选择备份任务</h3>
+    <button class="x" onclick="resetAll()">✕</button>
+  </div>
+  <div class="modal-body" style="padding: 6px 14px 14px;">
+    <div class="card" style="border:none;">
+      <div class="rpick-item task" onclick="openRestore('相册备份')">
+        <span class="ft-ico">↺</span>
+        <span style="flex:1">
+          <b style="font-size:14px">相册备份</b><br>
+          <small style="color:#8b9098;font-size:12px">上次备份 10-26 08:30 · 284 GB</small>
+        </span>
+        <span class="chev-r" style="color:#c2c7d0">›</span>
+      </div>
+      <div class="rpick-item task" onclick="openRestore('资料备份')">
+        <span class="ft-ico">↺</span>
+        <span style="flex:1">
+          <b style="font-size:14px">资料备份</b><br>
+          <small style="color:#8b9098;font-size:12px">上次备份 10-25 03:00 · 90 GB</small>
+        </span>
+        <span class="chev-r" style="color:#c2c7d0">›</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 第二步：还原抽屉（方案B） ============ -->
+<div class="modal hidden" id="restore-drawer">
+  <div class="modal-head">
+    <h3>还原 — <span id="task-name">相册备份</span></h3>
+    <button class="x" onclick="resetAll()">✕</button>
+  </div>
+  <div class="modal-body" style="padding: 6px 16px 10px;">
+    <div class="card">
+
+      <!-- ① 快照 -->
+      <div class="step open" id="step-snap">
+        <div class="step-head" onclick="toggleStep('step-snap')">
+          <span class="step-num">①</span>
+          <span class="step-label">选择快照</span>
+          <span class="step-val" id="snap-val">请选择</span>
+          <i class="chev-r">›</i>
+        </div>
+        <div class="step-body">
+          <div class="snap-timeline" id="snap-list"></div>
+        </div>
+      </div>
+
+      <!-- ② 文件 -->
+      <div class="step" id="step-files">
+        <div class="step-head" onclick="toggleStep('step-files')">
+          <span class="step-num">②</span>
+          <span class="step-label">选择要还原的文件</span>
+          <span class="step-val" id="files-val">–</span>
+          <i class="chev-r">›</i>
+        </div>
+        <div class="step-body">
+          <div class="crumbC" id="file-crumb"></div>
+          <div class="file-tree" id="file-tree"></div>
+          <div class="note" style="margin-top:8px;font-size:11.5px;">点目录行进入下一级 · 点右侧 ✓ 勾选（目录可整选）</div>
+        </div>
+      </div>
+
+      <!-- ③ 目的地 -->
+      <div class="step" id="step-dest">
+        <div class="step-head" onclick="toggleStep('step-dest')">
+          <span class="step-num">③</span>
+          <span class="step-label">还原到哪里</span>
+          <span class="step-val" id="dest-val">原位置</span>
+          <i class="chev-r">›</i>
+        </div>
+        <div class="step-body">
+          <div class="seg" id="dest-seg">
+            <button class="on" onclick="setDest('original', this)">原位置</button>
+            <button onclick="setDest('custom', this)">新路径</button>
+          </div>
+          <div class="note" id="dest-note">将写回原路径：/vol1/1000/相册</div>
+          <div class="target-row hidden" id="target-row">
+            <input id="target-input" placeholder="/vol1/1000/还原目录（将自动创建）">
+            <button class="btn ghost" onclick="alert('打开本地目录浏览器（mock）')">浏览</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ④ 冲突 -->
+      <div class="step" id="step-conflict">
+        <div class="step-head" onclick="toggleStep('step-conflict')">
+          <span class="step-num">④</span>
+          <span class="step-label">遇到同名文件</span>
+          <span class="step-val" id="conflict-val">仅覆盖有变化</span>
+          <i class="chev-r">›</i>
+        </div>
+        <div class="step-body">
+          <div class="seg wrap" id="conflict-seg">
+            <button onclick="setConflict('always', this, '全部覆盖')">全部覆盖</button>
+            <button class="on" onclick="setConflict('if-changed', this, '仅覆盖有变化')">仅覆盖有变化</button>
+            <button onclick="setConflict('never', this, '跳过已存在')">跳过已存在</button>
+            <button id="rename-btn" onclick="setConflict('rename', this, '保留两者')">保留两者</button>
+          </div>
+          <div class="note" id="conflict-note">内容没变的文件不重写</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- flow-line -->
+  <div class="flow-line" id="flow-line">
+    <span class="node" id="flow-src">📁 快照 —</span>
+    <i class="lk">──▶</i>
+    <span class="node hi" id="flow-dst">⌖ 原位置</span>
+  </div>
+
+  <div class="modal-foot">
+    <button class="btn ghost block" onclick="resetAll()">取消</button>
+    <button class="btn primary block" id="restore-btn" disabled onclick="doRestore()">开始还原</button>
+  </div>
+</div>
+
+<!-- ============ 结果面板 ============ -->
+<div class="modal hidden" id="result-panel">
+  <div class="result-panel">
+    <div class="result-ico ok" id="result-ico">✓</div>
+    <div class="result-title" id="result-title">还原完成</div>
+    <div class="result-desc" id="result-desc"></div>
+    <div class="result-rows">
+      <div class="rrow"><span class="k">快照</span><span class="v" id="r-snap"></span></div>
+      <div class="rrow"><span class="k">目标</span><span class="v" id="r-dest"></span></div>
+      <div class="rrow"><span class="k">结果</span><span class="v" id="r-result"></span></div>
+    </div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn primary block" onclick="resetAll()">完成</button>
+  </div>
+</div>
+
+<script>
+  // ===== mock 数据 =====
+  const SNAPS = [
+    { id: "3f8a2c1e", time: "10-26 08:30", files: "284 GB", badge: { text: "+128/~36/-2", cls: "chg" } },
+    { id: "9b7d5f02", time: "10-25 21:59", files: "282 GB", badge: { text: "+45/~12/-0", cls: "chg" } },
+    { id: "c41e8a7b", time: "10-24 08:30", files: "280 GB", badge: { text: "无变化", cls: "idle" } },
+    { id: "a08f3d66", time: "10-23 08:30", files: "280 GB", badge: { text: "首份", cls: "idle" } },
+  ];
+  // 目录树：支持逐级下钻
+  const TREE = {
+    "": [
+      { name: "相册", is_dir: true, children: [
+        { name: "2026 年照片", is_dir: true, children: [
+          { name: "1 月", is_dir: true, children: [
+            { name: "IMG_0101.jpg", is_dir: false, sub: "3.2 MB" },
+            { name: "IMG_0102.jpg", is_dir: false, sub: "3.1 MB" },
+          ]},
+          { name: "2 月", is_dir: true, children: [] },
+          { name: "全家福.jpg", is_dir: false, sub: "8.5 MB" },
+        ]},
+        { name: "家庭视频", is_dir: true, children: [
+          { name: "生日聚会.mp4", is_dir: false, sub: "1.2 GB" },
+        ]},
+      ]},
+      { name: "资料", is_dir: true, children: [
+        { name: "文档", is_dir: true, children: [
+          { name: "合同.pdf", is_dir: false, sub: "2.1 MB" },
+        ]},
+        { name: "备份方案.md", is_dir: false, sub: "18 KB" },
+      ]},
+      { name: "readme.txt", is_dir: false, sub: "12 KB" },
+    ],
+  };
+  // 已选路径集合（用完整 path 字符串）
+  const state = { task: "", snap: null, files: [], dest: "original", conflict: "if-changed", fdir: "", fbreadcrumb: [] };
+
+  function resetAll() {
+    state.task = ""; state.snap = null; state.files = []; state.dest = "original"; state.conflict = "if-changed";
+    state.fdir = ""; state.fbreadcrumb = [];
+    document.getElementById("restore-drawer").classList.add("hidden");
+    document.getElementById("result-panel").classList.add("hidden");
+    document.getElementById("pick-task").classList.remove("hidden");
+  }
+
+  function openRestore(name) {
+    state.task = name;
+    document.getElementById("task-name").textContent = name;
+    document.getElementById("pick-task").classList.add("hidden");
+    document.getElementById("restore-drawer").classList.remove("hidden");
+    renderSnaps(); renderFiles(); syncFlow();
+  }
+
+  function toggleStep(id) {
+    const el = document.getElementById(id);
+    el.classList.toggle("open");
+  }
+
+  // 快照
+  function renderSnaps() {
+    const wrap = document.getElementById("snap-list");
+    wrap.innerHTML = SNAPS.map((s, i) => {
+      const on = state.snap && state.snap.id === s.id;
+      return `<div class="snap-row ${on ? "on" : ""}" onclick="pickSnap(${i})">
+        <i class="snap-dot"></i>
+        <span class="snap-t">${s.time}</span>
+        <span class="snap-id">${s.id}</span>
+        <span class="snap-files">${s.files}</span>
+        <span class="snap-badge ${s.badge.cls}">${s.badge.text}</span>
+      </div>`;
+    }).join("");
+  }
+  function pickSnap(i) {
+    state.snap = SNAPS[i];
+    document.getElementById("snap-val").textContent = `${state.snap.id.slice(0,8)} · ${state.snap.time}`;
+    renderSnaps(); syncFlow();
+    if (!state.files.length) { document.getElementById("step-files").classList.add("open"); }
+  }
+
+  // 文件：进入子目录 + 逐项/整目录勾选
+  function pathJoin(dir, name) { return dir ? dir + "/" + name : name; }
+  function childrenOf(dir) {
+    let node = TREE[""];
+    if (dir) { for (const seg of dir.split("/")) { node = (node.find(x => x.name === seg) || {}).children || []; } }
+    return node;
+  }
+  function renderFiles() {
+    const crumb = document.getElementById("file-crumb");
+    const segs = state.fdir ? state.fdir.split("/") : [];
+    crumb.innerHTML = `<span class="root" onclick="gotoDir('')">📦 快照根</span>` +
+      segs.map((s, i) => `<span class="sl">/</span><a class="${i === segs.length - 1 ? 'cur' : ''}" onclick="gotoDir('${segs.slice(0, i + 1).join('/')}')">${s}</a>`).join("") +
+      (state.files.length ? `<span class="selpill">已选 ${state.files.length} 项</span>` : "");
+
+    const items = childrenOf(state.fdir);
+    let html = "";
+    if (state.fdir) {
+      html += `<div class="ft-row back" onclick="gotoDir('${state.fdir.split('/').slice(0, -1).join('/')}')">
+        <span class="ft-ico">↩</span><span class="ft-name">返回上一级</span></div>`;
+    }
+    html += items.map((f) => {
+      const full = pathJoin(state.fdir, f.name);
+      const on = state.files.includes(full);
+      return `<div class="ft-row ${on ? 'on' : ''}" ${f.is_dir ? `onclick="enterDir('${full}')"` : `onclick="toggleFileItem('${full}')"`}>
+        <span class="ck" onclick="event.stopPropagation(); toggleFileItem('${full}')">${on ? '✓' : ''}</span>
+        <span class="ft-ico">${f.is_dir ? '📁' : '📄'}</span>
+        <span class="ft-name">${f.name}</span>
+        <span class="ft-sub">${f.is_dir ? '目录' : f.sub}</span>
+        ${f.is_dir ? '<i class="chev-r">›</i>' : ''}
+      </div>`;
+    }).join("");
+    if (!items.length) html += `<div class="ft-row" style="cursor:default"><span class="ft-sub">此目录为空</span></div>`;
+    document.getElementById("file-tree").innerHTML = html;
+    document.getElementById("files-val").textContent = state.files.length ? `已选 ${state.files.length} 项` : "–";
+  }
+  function gotoDir(dir) {
+    state.fdir = dir;
+    renderFiles();
+  }
+  function enterDir(dir) {
+    state.fdir = dir;
+    renderFiles();
+  }
+  function toggleFileItem(path) {
+    const at = state.files.indexOf(path);
+    if (at >= 0) state.files.splice(at, 1); else state.files.push(path);
+    renderFiles(); syncFlow();
+  }
+
+  // 目的地
+  function setDest(v, btn) {
+    state.dest = v;
+    document.querySelectorAll("#dest-seg button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    document.getElementById("target-row").classList.toggle("hidden", v !== "custom");
+    document.getElementById("dest-note").classList.toggle("hidden", v === "custom");
+    document.getElementById("rename-btn").style.display = v === "custom" ? "" : "none";
+    document.getElementById("dest-val").textContent = v === "original" ? "原位置" : "新路径";
+    syncFlow();
+  }
+
+  // 冲突
+  function setConflict(v, btn, label) {
+    state.conflict = v;
+    document.querySelectorAll("#conflict-seg button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    document.getElementById("conflict-val").textContent = label;
+    const notes = { always: "直接覆盖本地同名文件", "if-changed": "内容没变的文件不重写", never: "已存在的文件保持不动", rename: "已存在的文件保留，还原版本加后缀另存" };
+    document.getElementById("conflict-note").textContent = notes[v];
+  }
+
+  // flow-line 同步
+  function syncFlow() {
+    const src = document.getElementById("flow-src");
+    const dst = document.getElementById("flow-dst");
+    src.textContent = state.snap ? `📁 快照 ${state.snap.id.slice(0,8)}` : "📁 快照 —";
+    dst.textContent = state.dest === "original" ? "⌖ 原位置" : "➝ " + (document.getElementById("target-input").value || "新路径");
+    updateReady();
+  }
+  document.getElementById("target-input").addEventListener("input", syncFlow);
+
+  function updateReady() {
+    const ready = state.snap && state.files.length > 0;
+    document.getElementById("restore-btn").disabled = !ready;
+  }
+
+  // 执行还原
+  function doRestore() {
+    const snapId = state.snap.id.slice(0,8);
+    const dest = state.dest === "original" ? "⌖ 原位置" : "➝ " + (document.getElementById("target-input").value || "新路径");
+    const total = state.files.length * 132;
+
+    document.getElementById("restore-drawer").classList.add("hidden");
+    document.getElementById("result-panel").classList.remove("hidden");
+    document.getElementById("result-ico").className = "result-ico ok";
+    document.getElementById("result-ico").textContent = "✓";
+    document.getElementById("result-title").textContent = "还原完成";
+    document.getElementById("result-desc").textContent = "文件已从快照恢复";
+    document.getElementById("r-snap").textContent = snapId;
+    document.getElementById("r-dest").textContent = dest;
+    document.getElementById("r-result").textContent = `已还原 ${total} 项（新增 ${total - 8} · 覆盖 8）`;
+  }
+
+  // 初始
+  resetAll();
+</script>
+</body>
+</html>

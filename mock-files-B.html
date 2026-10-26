@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案B · 文件选择独立弹窗</title>
+<style>
+  :root { --primary: #3370ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif; background: #f2f3f7; color: #1f2937; font-size: 14px; padding: 28px 16px; }
+  .page-head { max-width: 680px; margin: 0 auto 16px; }
+  .page-head h1 { font-size: 17px; font-weight: 600; }
+  .page-head p { font-size: 12.5px; color: #8b9098; margin-top: 4px; }
+  .card { background: #fff; border: 1px solid #eef0f4; border-radius: 12px; overflow: hidden; }
+  .modal { background: #fff; border-radius: 14px; width: 600px; max-width: 100%; margin: 0 auto; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(16,24,40,.18); }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 10px; }
+  .modal-head h3 { font-size: 16px; font-weight: 600; }
+  .x { border: none; background: none; font-size: 18px; color: #9ca3af; cursor: pointer; padding: 2px 4px; }
+  .modal-body { padding: 8px 16px 10px; overflow-y: auto; }
+  .modal-foot { display: flex; gap: 10px; padding: 14px 20px; border-top: 1px solid #f3f4f6; }
+  .btn { border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; cursor: pointer; transition: opacity .15s; }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.ghost { background: #f3f4f6; color: #374151; }
+  .btn.block { flex: 1; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .step { padding: 14px 16px; border-bottom: 1px solid #f3f4f6; }
+  .step:last-child { border-bottom: none; }
+  .step-head { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+  .step-num { font-size: 12px; font-weight: 700; color: var(--primary); background: #eef4ff; border-radius: 7px; padding: 3px 8px; flex: none; }
+  .step-label { font-size: 13.5px; font-weight: 600; color: #111827; flex: 1; }
+  .step-val { font-size: 12.5px; color: #8b9098; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+  .chev-r { color: #c2c7d0; font-size: 18px; font-style: normal; flex: none; }
+  /* 已选文件小标签 */
+  .inc-tray { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .inc-tray .t { display: inline-flex; align-items: center; gap: 5px; background: #fff; border: 1px solid #e2e6ee; border-radius: 7px; padding: 3px 9px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #4b5563; }
+  .flow-line { display: flex; align-items: center; gap: 7px; padding: 11px 16px; border-top: 1px solid #f3f4f6; flex-wrap: wrap; }
+  .flow-line .node { background: #f4f6fa; border-radius: 8px; padding: 5px 10px; font-size: 12px; color: #374151; }
+  .flow-line .node.hi { background: #eef4ff; color: var(--primary); font-weight: 600; }
+  .flow-line .lk { color: #c2c7d0; font-size: 11px; font-style: normal; }
+
+  /* 独立选择器弹窗 */
+  .picker { background: #fff; border-radius: 14px; width: 640px; max-width: 100%; margin: 0 auto; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(16,24,40,.18); }
+  .picker-body { padding: 10px 16px; }
+  .crumbC { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: #f7f8fa; border-radius: 8px; margin-bottom: 8px; font-size: 13px; overflow-x: auto; white-space: nowrap; }
+  .crumbC .root { color: var(--primary); font-weight: 600; cursor: pointer; flex-shrink: 0; }
+  .crumbC a { color: #4b5563; text-decoration: none; cursor: pointer; flex-shrink: 0; }
+  .crumbC a.cur { color: #1f2937; font-weight: 700; cursor: default; }
+  .crumbC .sl { color: #c3c9d4; flex-shrink: 0; }
+  .selpill { margin-left: auto; font-size: 11.5px; color: var(--primary); background: #eef4ff; padding: 2px 9px; border-radius: 20px; flex-shrink: 0; }
+  .searchbar { display: flex; align-items: center; gap: 8px; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+  .searchbar input { border: none; outline: none; flex: 1; font-size: 13px; font-family: inherit; }
+  .dir-list { border: 1px solid #f3f4f6; border-radius: 8px; overflow: hidden; max-height: 340px; overflow-y: auto; }
+  .frow { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: 13.5px; cursor: pointer; border-bottom: 1px solid #f7f8fa; }
+  .frow:last-child { border-bottom: none; }
+  .frow:hover { background: #f7f9ff; }
+  .frow.sel { background: #eef4ff; }
+  .frow.back { background: #fafbfc; color: #6b7280; }
+  .fold-ic { flex: none; }
+  .nm { flex: 1; min-width: 0; }
+  .nm b { display: block; color: #1f2937; font-weight: 500; }
+  .nm .sub { display: block; font-size: 11.5px; color: #9ca3af; margin-top: 1px; }
+  .fsize { font-size: 11.5px; color: #9ca3af; flex: none; }
+  .cbx { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid #cbd5e1; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; }
+  .frow.sel .cbx { background: var(--primary); border-color: var(--primary); }
+  .picker-foot { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #f3f4f6; }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>方案 B · 文件选择「独立弹窗」</h1>
+  <p>卡片只显示一行摘要「已选 N 项 ›」，点卡片弹出大选择器（含面包屑 + 搜索 + 逐项勾选）。空间充裕，层级深也不挤。</p>
+</div>
+
+<!-- 还原抽屉：卡片只显示摘要 -->
+<div class="modal">
+  <div class="modal-head"><h3>还原 — 相册备份</h3><button class="x">✕</button></div>
+  <div class="modal-body">
+    <div class="card">
+      <div class="step">
+        <div class="step-head"><span class="step-num">①</span><span class="step-label">选择快照</span><span class="step-val">3f8a2c1e · 10-26 08:30</span><i class="chev-r">›</i></div>
+      </div>
+      <div class="step open">
+        <div class="step-head"><span class="step-num">②</span><span class="step-label">选择要还原的文件</span><span class="step-val">已选 2 项 · 点击修改</span><i class="chev-r">›</i></div>
+        <div class="step-body">
+          <div class="inc-tray">
+            <span class="t">📄 全家福.jpg</span>
+            <span class="t">📄 生日聚会.mp4</span>
+            <span class="t" style="color:#3370ff;border-style:dashed;">＋ 添加文件</span>
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-head"><span class="step-num">③</span><span class="step-label">还原到哪里</span><span class="step-val">原位置</span><i class="chev-r">›</i></div>
+      </div>
+      <div class="step">
+        <div class="step-head"><span class="step-num">④</span><span class="step-label">遇到同名文件</span><span class="step-val">仅覆盖有变化</span><i class="chev-r">›</i></div>
+      </div>
+    </div>
+  </div>
+  <div class="flow-line">
+    <span class="node">📁 快照 3f8a2c1e</span><i class="lk">──▶</i><span class="node hi">⌖ 原位置</span>
+  </div>
+  <div class="modal-foot">
+    <button class="btn ghost block">取消</button>
+    <button class="btn primary block">开始还原</button>
+  </div>
+</div>
+
+<div class="page-head" style="margin-top:28px;">
+  <h2 style="font-size:14px;">点击「② 文件」后弹出的大选择器（空间充裕）</h2>
+</div>
+
+<!-- 独立选择器 -->
+<div class="picker">
+  <div class="modal-head">
+    <h3>选择要还原的文件 <span style="font-size:12px;color:#9ca3af;font-weight:400;margin-left:6px;">快照 3f8a2c1e</span></h3>
+    <button class="x">✕</button>
+  </div>
+  <div class="picker-body">
+    <div class="crumbC">
+      <span class="root">📦 快照根</span><span class="sl">/</span><a>相册</a><span class="sl">/</span><a class="cur">2026 年照片</a>
+      <span class="selpill">已选 2 项</span>
+    </div>
+    <div class="searchbar">🔍<input placeholder="搜索文件名（全快照范围）…"></div>
+    <div class="dir-list">
+      <div class="frow back"><span class="fold-ic">↩</span><span class="nm"><b>返回上一级</b></span></div>
+      <div class="frow"><span class="fold-ic">📁</span><span class="nm"><b>1 月</b><span class="sub">点行进入 · 点框选中</span></span><span class="cbx"></span></div>
+      <div class="frow"><span class="fold-ic">📁</span><span class="nm"><b>2 月</b><span class="sub">点行进入 · 点框选中</span></span><span class="cbx"></span></div>
+      <div class="frow sel"><span class="fold-ic">📄</span><span class="nm"><b>全家福.jpg</b></span><span class="fsize">8.5 MB</span><span class="cbx">✓</span></div>
+      <div class="frow sel"><span class="fold-ic">📄</span><span class="nm"><b>生日聚会.mp4</b></span><span class="fsize">1.2 GB</span><span class="cbx">✓</span></div>
+    </div>
+  </div>
+  <div class="picker-foot">
+    <button class="btn ghost" style="flex:0 0 auto;">清空选择</button>
+    <button class="btn primary block">确定（已选 2 项）</button>
+  </div>
+</div>
+</body>
+</html>

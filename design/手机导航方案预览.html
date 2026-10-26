@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手机端导航方案预览 · 加密备份</title>
+<style>
+  :root { --blue: #3370ff; --ink: #1f2937; --sub: #6b7280; --bg: #f2f4f7; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #e9edf3; padding: 32px 20px 60px; color: var(--ink); }
+  h1 { text-align: center; font-size: 22px; margin-bottom: 6px; }
+  .sub { text-align: center; color: var(--sub); font-size: 14px; margin-bottom: 28px; }
+  .row { display: flex; gap: 28px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+
+  /* ===== 方案卡片 ===== */
+  .opt { width: 300px; }
+  .opt-head { text-align: center; margin-bottom: 10px; }
+  .opt-head b { font-size: 16px; }
+  .opt-head .tag { display: inline-block; margin-left: 6px; font-size: 11px; padding: 2px 8px; border-radius: 10px; vertical-align: 2px; }
+  .tag.rec { background: #e8f1ff; color: var(--blue); }
+  .tag.cur { background: #f0f1f3; color: var(--sub); }
+  .opt-head p { font-size: 12.5px; color: var(--sub); margin-top: 4px; line-height: 1.5; }
+
+  /* ===== 手机框 ===== */
+  .phone { width: 300px; height: 560px; background: var(--bg); border-radius: 30px; border: 8px solid #111; overflow: hidden; position: relative; display: flex; flex-direction: column; box-shadow: 0 12px 32px rgba(0,0,0,.18); }
+  .status { height: 30px; background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; font-size: 11px; font-weight: 600; flex: 0 0 auto; }
+  .status .right { display: flex; gap: 4px; align-items: center; }
+
+  /* 系统标题栏（三方应用固定样式） */
+  .sysbar { height: 44px; background: #fff; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #f0f0f0; flex: 0 0 auto; }
+  .sysbar .back { font-size: 20px; width: 32px; }
+  .sysbar .name { flex: 1; text-align: center; font-size: 16px; font-weight: 600; }
+  .sysbar .pill { display: flex; align-items: center; background: #f5f5f5; border-radius: 15px; padding: 3px 10px; gap: 8px; font-size: 14px; color: #333; }
+  .sysbar .pill .dot { letter-spacing: 1px; font-weight: 700; }
+  .sysbar .pill .sep { width: 1px; height: 14px; background: #ddd; }
+  .sysbar .pill .x { font-size: 13px; }
+
+  /* 页面 Tab 行 */
+  .tabs { height: 46px; background: #fff; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--bg); flex: 0 0 auto; position: relative; }
+  .tabs button { flex: 1; border: none; background: none; font-size: 14px; color: var(--sub); padding: 12px 0 10px; position: relative; cursor: default; }
+  .tabs button.on { color: var(--blue); font-weight: 600; }
+  .tabs button.on::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; width: 26px; height: 3px; border-radius: 3px; background: var(--blue); }
+  .tabs .add { flex: 0 0 36px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--ink); }
+  .tabs .add svg { display: block; }
+
+  /* 内容区 */
+  .body { flex: 1; padding: 12px 12px 0; position: relative; }
+  .empty { text-align: center; padding-top: 64px; color: var(--sub); }
+  .empty .box { font-size: 40px; }
+  .empty .t { font-size: 15px; color: #374151; margin-top: 10px; }
+  .empty .d { font-size: 12px; margin-top: 8px; }
+
+  /* 任务卡片（演示数据） */
+  .card { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .fico { width: 38px; height: 38px; border-radius: 9px; background: #e8f1ff; display: flex; align-items: center; justify-content: center; flex: 0 0 38px; position: relative; }
+  .fico .badge { position: absolute; right: -4px; bottom: -4px; width: 15px; height: 15px; border-radius: 50%; color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; }
+  .badge.ok { background: #10b981; }
+  .badge.warn { background: #f59e0b; }
+  .cinfo { flex: 1; min-width: 0; }
+  .cinfo .n { font-size: 14px; font-weight: 600; }
+  .cinfo .kv { font-size: 11.5px; color: var(--sub); margin-top: 5px; display: flex; justify-content: space-between; }
+  .cinfo .kv b { color: #374151; font-weight: 500; }
+
+  /* 方案 B 悬浮按钮 */
+  .fab { position: absolute; right: 16px; bottom: 20px; width: 52px; height: 52px; border-radius: 50%; background: var(--blue); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(51,112,255,.4); }
+
+  /* 标注气泡 */
+  .note { position: absolute; left: 50%; transform: translateX(-50%); background: #111; color: #fff; font-size: 11px; padding: 5px 10px; border-radius: 8px; white-space: nowrap; z-index: 5; box-shadow: 0 4px 10px rgba(0,0,0,.25); }
+  .note::before { content: ""; position: absolute; left: 50%; transform: translateX(-50%); border: 5px solid transparent; }
+  .note.up::before { top: 100%; border-top-color: #111; }
+  .note.down::before { bottom: 100%; border-bottom-color: #111; }
+
+  .foot { text-align: center; color: var(--sub); font-size: 13px; margin-top: 34px; line-height: 1.7; }
+  .foot b { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<h1>手机端导航方案预览</h1>
+<div class="sub">顶部第一行「← 应用名 ⋯✕」是飞牛 App 容器的系统栏，第三方应用无法修改或隐藏 · 以下为三种页面内布局的取舍</div>
+
+<div class="row">
+
+  <!-- ============ 方案 A ============ -->
+  <div class="opt">
+    <div class="opt-head"><b>方案 A</b><span class="tag rec">推荐</span>
+      <p>应用改名为「备份」，系统栏即变成 <b>← 备份 ⋯✕</b>，与原生几乎一样；页面只留 Tab 行，⊕ 放右侧</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span>10:28</span><span class="right">📶 4G ▼ 🔋</span></div>
+      <div class="sysbar">
+        <span class="back">←</span><span class="name">备份</span>
+        <span class="pill"><span class="dot">•••</span><span class="sep"></span><span class="x">✕</span></span>
+      </div>
+      <div class="tabs">
+        <button class="on">备份任务</button><button>还原</button>
+        <span class="add"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8.2v7.6M8.2 12h7.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg></span>
+      </div>
+      <div class="body">
+        <div class="note up" style="top:-4px;">↑ 与原生「← 备份 ⊕」仅差 ⋯✕（系统固定）</div>
+        <div class="card">
+          <div class="fico">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="#3370ff" d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></svg>
+            <span class="badge ok">✓</span>
+          </div>
+          <div class="cinfo">
+            <div class="n">L1·相册资料 → 天翼</div>
+            <div class="kv"><span>上次备份 <b>10-25 03:00</b></span><span>下次 <b>10-28 03:00</b></span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="fico">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="#3370ff" d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></svg>
+            <span class="badge warn">!</span>
+          </div>
+          <div class="cinfo">
+            <div class="n">L2·全量 → 115</div>
+            <div class="kv"><span>上次备份 <b>–</b></span><span>下次 <b>手动</b></span></div>
+          </div>
+        </div>
+        <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:12px;font-size:11px;color:#94a3b8;">⊕ 在 Tab 行右侧 · 结构与原生一致</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 B ============ -->
+  <div class="opt">
+    <div class="opt-head"><b>方案 B</b><span class="tag">悬浮按钮</span>
+      <p>页面顶部只留 Tab 行，⊕ 做成右下角悬浮圆钮——更像现代手机 App，但与原生备份风格不同</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span>10:28</span><span class="right">📶 4G ▼ 🔋</span></div>
+      <div class="sysbar">
+        <span class="back">←</span><span class="name">加密备份</span>
+        <span class="pill"><span class="dot">•••</span><span class="sep"></span><span class="x">✕</span></span>
+      </div>
+      <div class="tabs">
+        <button class="on">备份任务</button><button>还原</button>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="fico">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="#3370ff" d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></svg>
+            <span class="badge ok">✓</span>
+          </div>
+          <div class="cinfo">
+            <div class="n">L1·相册资料 → 天翼</div>
+            <div class="kv"><span>上次备份 <b>10-25 03:00</b></span><span>下次 <b>10-28 03:00</b></span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="fico">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="#3370ff" d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></svg>
+            <span class="badge warn">!</span>
+          </div>
+          <div class="cinfo">
+            <div class="n">L2·全量 → 115</div>
+            <div class="kv"><span>上次备份 <b>–</b></span><span>下次 <b>手动</b></span></div>
+          </div>
+        </div>
+        <div class="fab">
+          <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 C ============ -->
+  <div class="opt">
+    <div class="opt-head"><b>方案 C</b><span class="tag cur">当前线上</span>
+      <p>不改应用名：系统栏仍是「← 加密备份 ⋯✕」，页面 Tab 行右侧 ⊕（上次部署的版本）</p>
+    </div>
+    <div class="phone">
+      <div class="status"><span>10:28</span><span class="right">📶 4G ▼ 🔋</span></div>
+      <div class="sysbar">
+        <span class="back">←</span><span class="name">加密备份</span>
+        <span class="pill"><span class="dot">•••</span><span class="sep"></span><span class="x">✕</span></span>
+      </div>
+      <div class="tabs">
+        <button class="on">备份任务</button><button>还原</button>
+        <span class="add"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8.2v7.6M8.2 12h7.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg></span>
+      </div>
+      <div class="body">
+        <div class="empty">
+          <div class="box">📦</div>
+          <div class="t">暂无备份任务</div>
+          <div class="d">点击 ⊕ 创建：选择源目录 → 目标云盘仓库 → 备份计划</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="foot">
+  说明：三方案的系统栏（第一行）完全相同，差别只在页面内容区。<br>
+  <b>方案 A</b> 只改一个字（应用名「加密备份」→「备份」），观感即最接近原生；需卸载重装应用（配置会先备份再导回）。
+</div>
+
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "encbackup.main": {
+      "title": "加密备份",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "",
+      "gatewayPrefix": "/app/encbackup",
+      "gatewaySocket": "app.sock",
+      "url": "/app/encbackup",
+      "allUsers": true
+    }
+  }
+}

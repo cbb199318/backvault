@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>遇到同名文件 · 冲突策略样式方案</title>
+<style>
+  :root { --primary:#3370ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f4f5f8; padding: 24px 12px 60px; color: #1f2937; }
+
+  .scheme-bar { max-width: 520px; margin: 0 auto 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .scheme-bar button { flex: 1; min-width: 100px; padding: 10px; border: 1px solid #e2e6ee; background: #fff; border-radius: 10px; cursor: pointer; font-size: 13px; color: #6b7280; font-family: inherit; }
+  .scheme-bar button.on { background: #eef4ff; border-color: #3370ff; color: #3370ff; font-weight: 600; }
+
+  .card { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; border: 1px solid #eef0f4; overflow: hidden; }
+  .card-head { padding: 14px 18px; border-bottom: 1px solid #f3f4f6; display: flex; align-items: center; }
+  .card-head h3 { font-size: 15px; font-weight: 600; }
+  .step-title { padding: 14px 18px 0; font-size: 13px; font-weight: 600; }
+  .step-title em { font-style: normal; color: #9ca3af; font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .body { padding: 14px 18px 18px; }
+  .note { margin-top: 10px; padding: 8px 11px; background: #f7f8fa; border-radius: 8px; font-size: 12px; color: #6b7280; line-height: 1.7; }
+
+  /* 方案说明 */
+  .desc { max-width: 520px; margin: 18px auto 0; background: #fffbe6; border: 1px solid #fde68a; border-radius: 10px; padding: 12px 16px; font-size: 12.5px; color: #92400e; line-height: 1.7; }
+  .desc b { color: #78350f; }
+
+  /* 通用：单选卡片 */
+  .opt { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1.5px solid #e5e7eb; border-radius: 10px; margin-bottom: 9px; cursor: pointer; font-size: 13.5px; color: #374151; transition: all .15s; }
+  .opt:last-child { margin-bottom: 0; }
+  .opt .rd { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #cbd5e1; flex: none; display: flex; align-items: center; justify-content: center; }
+  .opt .rd::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: transparent; }
+  .opt.on { border-color: #3370ff; background: #f7f9ff; }
+  .opt.on .rd { border-color: #3370ff; }
+  .opt.on .rd::after { background: #3370ff; }
+  .opt .tx { flex: 1; }
+  .opt .tx b { display: block; font-size: 13.5px; font-weight: 600; color: #1f2937; }
+  .opt .tx small { font-size: 11.5px; color: #9ca3af; }
+  .opt.on .tx b { color: #3370ff; }
+
+  /* 方案B：两列卡片 */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .grid .opt { flex-direction: column; align-items: flex-start; gap: 6px; margin: 0; }
+  .grid .opt .rd { position: absolute; top: 10px; right: 10px; }
+  .grid .opt { position: relative; }
+
+  /* 方案C：下划线tab式 */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid #e5e7eb; }
+  .tabs button { flex: 1; padding: 10px 4px; border: none; background: none; font-size: 13px; color: #6b7280; cursor: pointer; font-family: inherit; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button.on { color: #3370ff; font-weight: 600; border-bottom-color: #3370ff; }
+
+  /* 方案D：chip 标签选择 */
+  .chips { display: flex; flex-wrap: wrap; gap: 9px; }
+  .chips .chip { padding: 9px 16px; border: 1.5px solid #e5e7eb; border-radius: 999px; cursor: pointer; font-size: 13px; color: #4b5563; font-family: inherit; background: #fff; }
+  .chips .chip.on { border-color: #3370ff; background: #eef4ff; color: #3370ff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="scheme-bar" id="bar">
+  <button data-s="A" class="on">方案 A · 单选卡片</button>
+  <button data-s="B">方案 B · 两列卡片</button>
+  <button data-s="C">方案 C · 下划线 Tab</button>
+  <button data-s="D">方案 D · 胶囊标签</button>
+</div>
+
+<div class="card">
+  <div class="card-head"><h3>新建还原</h3></div>
+  <div class="step-title">第 5 步 · 遇到同名文件<em>已有同名文件时的处理方式</em></div>
+  <div class="body" id="body"></div>
+  <div class="note" id="note">当前选择：仅覆盖有变化 —— 内容没变的文件不重写</div>
+</div>
+
+<div class="desc" id="desc"></div>
+
+<script>
+const OPTS = [
+  { k: "always", name: "全部覆盖", sub: "直接覆盖本地同名文件" },
+  { k: "if-changed", name: "仅覆盖有变化", sub: "内容没变的文件不重写" },
+  { k: "never", name: "跳过已存在", sub: "已存在的文件保持不动" },
+  { k: "rename", name: "保留两者", sub: "还原版本加后缀另存" },
+];
+let scheme = "A";
+let sel = "if-changed";
+
+const DESCS = {
+  A: "<b>方案 A · 单选卡片（竖排）</b>：每个选项一张完整卡片，左侧圆形单选钮，标题 + 一行说明。选中项蓝框 + 浅蓝底。最清晰、信息最全，但占纵向空间最大（4 项约 4 行）。",
+  B: "<b>方案 B · 两列卡片</b>：2×2 网格，每个选项一张卡片，标题在上、说明在下，右上角圆形单选钮。信息密度高、一屏看全，移动端窄屏也友好。",
+  C: "<b>方案 C · 下划线 Tab</b>：4 个选项横排成一排 tab，选中项下划线 + 蓝色高亮，其余灰字。最紧凑，但选项名 4 个字时横排略显拥挤，且没有说明文字的空间。",
+  D: "<b>方案 D · 胶囊标签</b>：4 个选项做成圆角胶囊（chip），横向自动换行，选中项蓝底蓝字。轻量、现代，适合选项名短的情况，但没有每项说明。",
+};
+
+function render() {
+  const b = document.getElementById("body");
+  if (scheme === "A") {
+    b.innerHTML = OPTS.map(o => `
+      <div class="opt ${sel === o.k ? "on" : ""}" onclick="pick('${o.k}')">
+        <span class="rd"></span>
+        <span class="tx"><b>${o.name}</b><small>${o.sub}</small></span>
+      </div>`).join("");
+  } else if (scheme === "B") {
+    b.innerHTML = `<div class="grid">` + OPTS.map(o => `
+      <div class="opt ${sel === o.k ? "on" : ""}" onclick="pick('${o.k}')">
+        <span class="rd"></span>
+        <span class="tx"><b>${o.name}</b><small>${o.sub}</small></span>
+      </div>`).join("") + `</div>`;
+  } else if (scheme === "C") {
+    b.innerHTML = `<div class="tabs">` + OPTS.map(o => `
+      <button class="${sel === o.k ? "on" : ""}" onclick="pick('${o.k}')">${o.name}</button>`).join("") + `</div>`;
+  } else {
+    b.innerHTML = `<div class="chips">` + OPTS.map(o => `
+      <button class="chip ${sel === o.k ? "on" : ""}" onclick="pick('${o.k}')">${o.name}</button>`).join("") + `</div>`;
+  }
+  document.getElementById("desc").innerHTML = DESCS[scheme];
+  const o = OPTS.find(x => x.k === sel);
+  document.getElementById("note").textContent = `当前选择：${o.name} —— ${o.sub}`;
+}
+
+function pick(k) { sel = k; render(); }
+
+document.getElementById("bar").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  scheme = b.dataset.s;
+  document.querySelectorAll("#bar button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>备份目的地下拉方案预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; padding: 32px 16px 64px; color: #1f2937; }
+  h1 { font-size: 20px; text-align: center; margin-bottom: 6px; }
+  .tip { text-align: center; color: #6b7280; font-size: 13px; margin-bottom: 32px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; max-width: 1280px; margin: 0 auto; }
+  .col { background: #fff; border-radius: 16px; padding: 20px; width: 380px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  .col h2 { font-size: 15px; margin-bottom: 2px; }
+  .col h2 em { font-style: normal; color: #3370ff; background: #eef4ff; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: 1px; }
+  .desc { font-size: 12px; color: #6b7280; margin-bottom: 16px; line-height: 1.6; }
+  .sec-head { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px; }
+  .sec-head::before { content: ""; width: 3px; height: 13px; background: #3370ff; border-radius: 2px; }
+
+  /* ============ 方案 A：大输入框式原生 select（带图标 + 自绘箭头） ============ */
+  .selA-wrap { position: relative; }
+  .selA { width: 100%; appearance: none; -webkit-appearance: none; border: 1px solid #e5e7eb; border-radius: 10px; padding: 13px 40px 13px 42px; font-size: 14px; color: #1f2937; background: #fafbfc; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .selA:hover { border-color: #c8d4f0; }
+  .selA:focus { outline: none; border-color: #3370ff; box-shadow: 0 0 0 3px rgba(51,112,255,.12); background: #fff; }
+  .selA-wrap .ic { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; pointer-events: none; }
+  .selA-wrap .arr { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af; font-size: 11px; }
+  .selA-wrap .arr::before { content: ""; display: block; width: 8px; height: 8px; border-right: 1.5px solid #9ca3af; border-bottom: 1.5px solid #9ca3af; transform: rotate(45deg) translate(-1px,-1px); }
+
+  /* ============ 方案 B：自定义下拉（两行信息 + 选中态 + 勾） ============ */
+  .selB { position: relative; user-select: none; }
+  .selB-btn { width: 100%; display: flex; align-items: center; gap: 12px; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 14px; background: #fafbfc; cursor: pointer; text-align: left; transition: border-color .15s, box-shadow .15s; }
+  .selB-btn:hover { border-color: #c8d4f0; }
+  .selB.open .selB-btn { border-color: #3370ff; box-shadow: 0 0 0 3px rgba(51,112,255,.12); background: #fff; }
+  .selB-btn .ic { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex: none; }
+  .ic.tianyi { background: #eef4ff; }
+  .ic.y115 { background: #ecfdf5; }
+  .selB-btn .tx { flex: 1; min-width: 0; }
+  .selB-btn .tx b { display: block; font-size: 14px; font-weight: 600; }
+  .selB-btn .tx span { display: block; font-size: 12px; color: #9ca3af; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .selB-btn .arr2 { color: #9ca3af; transition: transform .2s; }
+  .selB.open .arr2 { transform: rotate(180deg); }
+  .selB-btn .ph { font-size: 14px; color: #9ca3af; }
+  .selB-pop { position: absolute; left: 0; right: 0; top: calc(100% + 6px); background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.12); overflow: hidden; z-index: 5; opacity: 0; transform: translateY(-6px); pointer-events: none; transition: all .18s; }
+  .selB.open .selB-pop { opacity: 1; transform: none; pointer-events: auto; }
+  .selB-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; }
+  .selB-item + .selB-item { border-top: 1px solid #f3f4f6; }
+  .selB-item:hover { background: #f5f8ff; }
+  .selB-item.on { background: #eef4ff; }
+  .selB-item .ic { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex: none; }
+  .selB-item .tx { flex: 1; min-width: 0; }
+  .selB-item .tx b { display: block; font-size: 14px; font-weight: 600; }
+  .selB-item .tx span { display: block; font-size: 12px; color: #9ca3af; margin-top: 1px; }
+  .selB-item .ck { color: #3370ff; font-weight: 700; opacity: 0; }
+  .selB-item.on .ck { opacity: 1; }
+
+  /* ============ 方案 C：点击弹出底部抽屉选择器（移动端风） ============ */
+  .selC-btn { width: 100%; display: flex; align-items: center; gap: 12px; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 14px; background: #fafbfc; cursor: pointer; text-align: left; }
+  .selC-btn:hover { border-color: #c8d4f0; }
+  .selC-btn .ic { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex: none; }
+  .selC-btn .tx b { display: block; font-size: 14px; font-weight: 600; }
+  .selC-btn .tx span { display: block; font-size: 12px; color: #9ca3af; margin-top: 1px; }
+  .selC-btn .arr2 { margin-left: auto; color: #9ca3af; }
+  .selC-btn .ph { font-size: 14px; color: #9ca3af; }
+  .maskC { position: fixed; inset: 0; background: rgba(17,24,39,.45); z-index: 50; display: none; align-items: flex-end; justify-content: center; }
+  .maskC.show { display: flex; }
+  .sheet { background: #fff; border-radius: 16px 16px 0 0; width: 100%; max-width: 420px; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); animation: up .22s; }
+  @keyframes up { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+  .sheet .bar { width: 36px; height: 4px; border-radius: 2px; background: #e5e7eb; margin: 0 auto 14px; }
+  .sheet h3 { font-size: 16px; text-align: center; margin-bottom: 14px; }
+  .sheet .it { display: flex; align-items: center; gap: 12px; padding: 12px 10px; border-radius: 12px; cursor: pointer; }
+  .sheet .it:hover, .sheet .it.on { background: #f5f8ff; }
+  .sheet .it .ic { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 19px; flex: none; }
+  .sheet .it .tx { flex: 1; }
+  .sheet .it .tx b { display: block; font-size: 15px; }
+  .sheet .it .tx span { display: block; font-size: 12px; color: #9ca3af; margin-top: 2px; }
+  .sheet .it .ck { color: #3370ff; font-weight: 700; }
+
+  .flow { display: flex; align-items: center; gap: 6px; margin-top: 14px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 10px; padding: 9px 12px; font-size: 12px; color: #374151; }
+  .flow .n { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
+  .flow .n.hi { border-color: #3370ff; color: #3370ff; background: #eef4ff; font-weight: 600; }
+  .flow .lk { color: #9ca3af; }
+</style>
+</head>
+<body>
+<h1>备份目的地 · 下拉框三个方案</h1>
+<p class="tip">均为可交互演示：点一下试试（方案 C 会弹出底部抽屉）</p>
+<div class="grid">
+
+  <!-- 方案 A -->
+  <div class="col">
+    <h2>方案 A <em>原生 select 强化</em></h2>
+    <p class="desc">保留原生 select（滚轮/键盘/自动定位天然可用），只强化外观：加云盘图标、自绘箭头、聚焦蓝色光圈。改动最小，列表样式受系统限制（单行文字）。</p>
+    <div class="sec-head">备份目的地</div>
+    <div class="selA-wrap">
+      <span class="ic">☁️</span>
+      <select class="selA" id="selA" onchange="flowA(this)">
+        <option value="" selected disabled>请选择仓库</option>
+        <option value="tianyi">天翼相册（天翼 · 飞牛加密备份）</option>
+        <option value="y115">115资料备份（115 · 资料备份）</option>
+      </select>
+      <span class="arr"></span>
+    </div>
+    <div class="flow" id="flowA" style="display:none">
+      <span class="n">fnos 本地</span><span class="lk">──▶</span><span class="n hi" id="faRepo"></span><span class="lk">──▶</span><span class="n" id="faDir"></span>
+    </div>
+  </div>
+
+  <!-- 方案 B -->
+  <div class="col">
+    <h2>方案 B <em>自定义下拉 · 两行信息</em></h2>
+    <p class="desc">自绘下拉面板：按钮和选项都是「图标 + 仓库名 + 云端目录」两行结构，选中项蓝底打勾，展开/收起带动画。信息量最大，与飞牛原生观感最接近，需要多写一点交互代码。</p>
+    <div class="sec-head">备份目的地</div>
+    <div class="selB" id="selB">
+      <button type="button" class="selB-btn" onclick="toggleB(event)">
+        <span class="ic tianyi" id="bIc">☁️</span>
+        <span class="tx" id="bTx"><span class="ph">请选择仓库</span></span>
+        <span class="arr2">▾</span>
+      </button>
+      <div class="selB-pop">
+        <div class="selB-item" data-v="tianyi" onclick="pickB('tianyi', '☁️', '天翼相册', '天翼 · 飞牛加密备份')">
+          <span class="ic tianyi">☁️</span>
+          <span class="tx"><b>天翼相册</b><span>天翼云盘 · 飞牛加密备份</span></span>
+          <span class="ck">✓</span>
+        </div>
+        <div class="selB-item" data-v="y115" onclick="pickB('y115', '🟢', '115资料备份', '115 · 资料备份')">
+          <span class="ic y115">🟢</span>
+          <span class="tx"><b>115资料备份</b><span>115 网盘 · 资料备份</span></span>
+          <span class="ck">✓</span>
+        </div>
+      </div>
+    </div>
+    <div class="flow" id="flowB" style="display:none">
+      <span class="n">fnos 本地</span><span class="lk">──▶</span><span class="n hi" id="fbRepo"></span><span class="lk">──▶</span><span class="n" id="fbDir"></span>
+    </div>
+  </div>
+
+  <!-- 方案 C -->
+  <div class="col">
+    <h2>方案 C <em>底部抽屉选择器</em></h2>
+    <p class="desc">点击后从底部弹出选择抽屉（和「添加来源地」同款交互）：大图标、大字、点击即选带勾。手机端体验最好，和 App 现有弹窗风格统一；桌面端稍重一点。</p>
+    <div class="sec-head">备份目的地</div>
+    <button type="button" class="selC-btn" onclick="openC()">
+      <span class="ic tianyi" id="cIc">☁️</span>
+      <span class="tx" id="cTx"><span class="ph">请选择仓库</span></span>
+      <span class="arr2">›</span>
+    </button>
+    <div class="flow" id="flowC" style="display:none">
+      <span class="n">fnos 本地</span><span class="lk">──▶</span><span class="n hi" id="fcRepo"></span><span class="lk">──▶</span><span class="n" id="fcDir"></span>
+    </div>
+  </div>
+</div>
+
+<!-- 方案 C 抽屉 -->
+<div class="maskC" id="maskC" onclick="if(event.target===this)closeC()">
+  <div class="sheet">
+    <div class="bar"></div>
+    <h3>选择备份目的地</h3>
+    <div class="it" id="c-tianyi" onclick="pickC('tianyi','☁️','天翼相册','天翼云盘 · 飞牛加密备份')">
+      <span class="ic tianyi">☁️</span>
+      <span class="tx"><b>天翼相册</b><span>天翼云盘 · 飞牛加密备份</span></span>
+      <span class="ck">✓</span>
+    </div>
+    <div class="it" id="c-y115" onclick="pickC('y115','🟢','115资料备份','115 网盘 · 资料备份')">
+      <span class="ic y115">🟢</span>
+      <span class="tx"><b>115资料备份</b><span>115 网盘 · 资料备份</span></span>
+      <span class="ck">✓</span>
+    </div>
+  </div>
+</div>
+
+<script>
+function flowA(s) {
+  var m = { tianyi: ["天翼相册", "飞牛加密备份"], y115: ["115资料备份", "资料备份"] };
+  var v = m[s.value]; if (!v) return;
+  document.getElementById("flowA").style.display = "flex";
+  document.getElementById("faRepo").textContent = v[0];
+  document.getElementById("faDir").textContent = v[1];
+}
+function toggleB(e) { e.stopPropagation(); document.getElementById("selB").classList.toggle("open"); }
+document.addEventListener("click", function () { document.getElementById("selB").classList.remove("open"); });
+function pickB(v, ic, name, dir) {
+  var sel = document.getElementById("selB");
+  sel.classList.remove("open");
+  sel.querySelector(".selB-btn .ic").textContent = ic;
+  sel.querySelector(".selB-btn .ic").className = "ic " + (v === "y115" ? "y115" : "tianyi");
+  sel.querySelector("#bTx").innerHTML = "<b>" + name + "</b><span>" + dir + "</span>";
+  var items = sel.querySelectorAll(".selB-item");
+  items.forEach(function (i) { i.classList.toggle("on", i.dataset.v === v); });
+  document.getElementById("flowB").style.display = "flex";
+  document.getElementById("fbRepo").textContent = name;
+  document.getElementById("fbDir").textContent = dir.split(" · ")[1];
+}
+var cState = null;
+function openC() { document.getElementById("maskC").classList.add("show"); }
+function closeC() { document.getElementById("maskC").classList.remove("show"); }
+function pickC(v, ic, name, dir) {
+  cState = v;
+  document.querySelector(".selC-btn .ic").textContent = ic;
+  document.querySelector(".selC-btn .ic").className = "ic " + (v === "y115" ? "y115" : "tianyi");
+  document.getElementById("cTx").innerHTML = "<b>" + name + "</b><span>" + dir + "</span>";
+  document.getElementById("c-tianyi").classList.toggle("on", v === "tianyi");
+  document.getElementById("c-y115").classList.toggle("on", v === "y115");
+  closeC();
+  document.getElementById("flowC").style.display = "flex";
+  document.getElementById("fcRepo").textContent = name;
+  document.getElementById("fcDir").textContent = dir.split(" · ")[1];
+}
+</script>
+</body>
+</html>

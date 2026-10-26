@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务执行计划 · 三方案预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6f8; color: #111827; padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .intro { color: #6b7280; font-size: 13px; margin-bottom: 28px; line-height: 1.7; }
+  .intro b { color: #3370ff; }
+
+  .plan { margin-bottom: 40px; }
+  .plan-title { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .badge {
+    width: 26px; height: 26px; border-radius: 8px; background: #3370ff; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+  }
+  .plan-title h2 { font-size: 16px; }
+  .plan-desc { color: #6b7280; font-size: 13px; margin-bottom: 14px; line-height: 1.7; }
+
+  /* 模拟应用内卡片容器 */
+  .mock-card { background: #fff; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.05); overflow: hidden; }
+  .opt-row {
+    display: flex; align-items: center; padding: 14px 18px; cursor: pointer;
+    border-bottom: 1px solid #f3f4f6; font-size: 14px;
+  }
+  .opt-row span { color: #374151; }
+  .opt-row em { font-style: normal; margin-left: auto; color: #3370ff; font-weight: 500; font-size: 13px; }
+  .opt-row .arr { width: 8px; height: 8px; border-right: 1.6px solid #c2c7d0; border-bottom: 1.6px solid #c2c7d0;
+    transform: rotate(45deg); margin-left: 10px; transition: transform .2s; }
+  .opt-row .arr.up { transform: rotate(-135deg); }
+  .opt-body { padding: 6px 18px 18px; background: #fafbfc; }
+
+  /* 方案A 分段切换 */
+  .seg {
+    display: flex; background: #eef0f4; border-radius: 10px; padding: 3px; margin: 14px 0;
+  }
+  .seg button {
+    flex: 1; border: 0; background: transparent; padding: 8px 0; border-radius: 8px;
+    font-size: 13px; color: #6b7280; cursor: pointer; transition: all .15s; font-family: inherit;
+  }
+  .seg button.on { background: #fff; color: #3370ff; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+  /* 方案B 下拉 */
+  .bdrop-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 14px; background: #fff;
+    cursor: pointer; font-family: inherit; font-size: 14px;
+  }
+  .bdrop-btn .ic { font-size: 18px; }
+  .bdrop-btn .tx { flex: 1; }
+  .bdrop-btn .tx b { display: block; font-size: 14px; }
+  .bdrop-btn .tx span { display: block; color: #9ca3af; font-size: 12px; margin-top: 1px; }
+  .bdrop-btn .arr2 { color: #c2c7d0; }
+
+  /* 方案C radio 行 */
+  .pick-row {
+    display: flex; align-items: center; gap: 10px; padding: 12px 6px;
+    border-bottom: 1px solid #f3f4f6; cursor: pointer; font-size: 14px;
+  }
+  .pick-row:last-of-type { border-bottom: 0; }
+  .pick-dot { width: 16px; height: 16px; border-radius: 50%; border: 1.6px solid #d1d5db; flex-shrink: 0; position: relative; }
+  .pick-row.sel .pick-dot { border-color: #3370ff; }
+  .pick-row.sel .pick-dot::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 50%; background: #3370ff;
+  }
+  .pick-row.sel b { color: #3370ff; }
+  .pick-sub { color: #9ca3af; font-size: 12px; margin-left: auto; }
+  .pick-detail { padding: 2px 6px 12px 36px; }
+
+  /* 通用配置面板 */
+  .cfg-panel { margin-top: 12px; }
+  .cfg-label { font-size: 12px; color: #6b7280; margin: 12px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1px solid #e5e7eb; background: #fff; color: #374151; border-radius: 8px;
+    padding: 7px 13px; font-size: 13px; cursor: pointer; transition: all .12s; font-family: inherit;
+    user-select: none;
+  }
+  .chip.on { background: #eef4ff; border-color: #3370ff; color: #3370ff; font-weight: 600; }
+  .chip.wd { width: 44px; text-align: center; padding: 7px 0; }
+  .chip.day { min-width: 42px; text-align: center; padding: 7px 6px; }
+  .time-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .time-row input[type="time"] {
+    border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; font-size: 14px; font-family: inherit;
+  }
+  .num-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .num-row input {
+    width: 70px; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font-size: 14px; font-family: inherit;
+  }
+  .num-row .unit { color: #6b7280; font-size: 13px; }
+  .quick { margin-top: 8px; }
+
+  .summary {
+    margin-top: 14px; background: #eef4ff; border-radius: 10px; padding: 10px 14px;
+    font-size: 13px; color: #3370ff; display: flex; align-items: center; gap: 8px;
+  }
+  .summary .ic { font-size: 15px; }
+
+  .hidden { display: none; }
+  .tip { color: #9ca3af; font-size: 12px; margin-top: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>任务执行计划 · 三方案预览</h1>
+  <p class="intro">
+    新增能力：<b>按天</b>（可设每 N 天）· <b>按周</b>（多选周几）· <b>按月</b>（多选几号 / 最后一天），均支持指定执行时间；
+    原有的手动 / 固定间隔保留。点下方各交互元素可直接试效果，选中后底部会实时生成计划摘要。
+  </p>
+
+  <!-- ============ 方案 A ============ -->
+  <div class="plan">
+    <div class="plan-title"><span class="badge">A</span><h2>分段切换（推荐）</h2></div>
+    <p class="plan-desc">顶部五段切换，选中即见对应配置，层级最浅、一步到位；手机端也好看。默认展示「每天」。</p>
+    <div class="mock-card">
+      <div class="opt-row"><span>任务执行计划</span><em id="aEm">每天 03:00</em><i class="arr up"></i></div>
+      <div class="opt-body">
+        <div class="seg" id="aSeg">
+          <button data-v="manual">手动</button>
+          <button data-v="daily" class="on">每天</button>
+          <button data-v="weekly">每周</button>
+          <button data-v="monthly">每月</button>
+          <button data-v="interval">间隔</button>
+        </div>
+
+        <div class="cfg-panel hidden" data-for="manual">
+          <div class="tip">不设自动计划，需要时在任务卡片上点 ▷ 手动执行。</div>
+        </div>
+
+        <div class="cfg-panel" data-for="daily">
+          <div class="num-row">
+            每 <input type="number" id="aDays" value="1" min="1" max="365" style="width:60px"> <span class="unit">天执行一次</span>
+          </div>
+          <div class="cfg-label">执行时间</div>
+          <div class="time-row"><input type="time" id="aTime" value="03:00"></div>
+        </div>
+
+        <div class="cfg-panel hidden" data-for="weekly">
+          <div class="cfg-label">重复（可多选）</div>
+          <div class="chips" id="aWd">
+            <button class="chip wd" data-v="1">一</button>
+            <button class="chip wd" data-v="2">二</button>
+            <button class="chip wd" data-v="3">三</button>
+            <button class="chip wd" data-v="4">四</button>
+            <button class="chip wd on" data-v="5">五</button>
+            <button class="chip wd" data-v="6">六</button>
+            <button class="chip wd" data-v="0">日</button>
+          </div>
+          <div class="cfg-label">执行时间</div>
+          <div class="time-row"><input type="time" id="aTime2" value="03:00"></div>
+        </div>
+
+        <div class="cfg-panel hidden" data-for="monthly">
+          <div class="cfg-label">执行日期（可多选）</div>
+          <div class="chips" id="aDay"></div>
+          <div class="cfg-label">执行时间</div>
+          <div class="time-row"><input type="time" id="aTime3" value="03:00"></div>
+        </div>
+
+        <div class="cfg-panel hidden" data-for="interval">
+          <div class="num-row">
+            每 <input type="number" id="aHrs" value="6" min="1" max="720"> <span class="unit">小时执行一次</span>
+          </div>
+        </div>
+
+        <div class="summary"><span class="ic">🗓️</span><span id="aSum">每天 03:00 自动备份</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 B ============ -->
+  <div class="plan">
+    <div class="plan-title"><span class="badge">B</span><h2>下拉选择（与目的地同款 BDrop）</h2></div>
+    <p class="plan-desc">频率用和「备份目的地」一致的两行式下拉，展开面板放配置；全应用交互最统一，但比 A 多一层点击。</p>
+    <div class="mock-card">
+      <div class="opt-row"><span>任务执行计划</span><em id="bEm">每周 五 03:00</em><i class="arr up"></i></div>
+      <div class="opt-body">
+        <button class="bdrop-btn" id="bBtn">
+          <span class="ic">🔁</span>
+          <span class="tx"><b id="bTitle">每周</b><span id="bSub">周五 03:00</span></span>
+          <span class="arr2">▾</span>
+        </button>
+        <div class="cfg-panel" id="bPanel">
+          <div class="cfg-label">重复（可多选）</div>
+          <div class="chips" id="bWd">
+            <button class="chip wd" data-v="1">一</button>
+            <button class="chip wd" data-v="2">二</button>
+            <button class="chip wd" data-v="3">三</button>
+            <button class="chip wd" data-v="4">四</button>
+            <button class="chip wd on" data-v="5">五</button>
+            <button class="chip wd" data-v="6">六</button>
+            <button class="chip wd" data-v="0">日</button>
+          </div>
+          <div class="cfg-label">执行时间</div>
+          <div class="time-row"><input type="time" id="bTime" value="03:00"></div>
+          <div class="summary"><span class="ic">🗓️</span><span id="bSum">每周五 03:00 自动备份</span></div>
+        </div>
+        <div class="tip">▼ 下拉展开效果示意（实际应用中为完整 BDrop 面板）</div>
+        <div class="chips quick" id="bFreq">
+          <button class="chip" data-v="manual">🤚 手动</button>
+          <button class="chip" data-v="daily">☀️ 每天</button>
+          <button class="chip on" data-v="weekly">📅 每周</button>
+          <button class="chip" data-v="monthly">🗓 每月</button>
+          <button class="chip" data-v="interval">⏱ 固定间隔</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案 C ============ -->
+  <div class="plan">
+    <div class="plan-title"><span class="badge">C</span><h2>radio 行内展开（现有样式扩展）</h2></div>
+    <p class="plan-desc">保持现在的单选行样式，每个频率行右侧显示当前配置摘要，选中后行内展开配置。改动最小、与现有页面完全一致，但列表会变长。</p>
+    <div class="mock-card">
+      <div class="opt-row"><span>任务执行计划</span><em id="cEm">每月 1、15 日 03:00</em><i class="arr up"></i></div>
+      <div class="opt-body">
+        <div id="cList">
+          <div class="pick-row" data-v="manual">
+            <span class="pick-dot"></span><b>手动触发</b><span class="pick-sub">不自动执行</span>
+          </div>
+          <div class="pick-row" data-v="daily">
+            <span class="pick-dot"></span><b>按天</b><span class="pick-sub" id="cSubDaily">每 1 天 · 03:00</span>
+          </div>
+          <div class="pick-detail hidden" data-for="daily">
+            <div class="num-row">每 <input type="number" id="cDays" value="1" min="1" max="365" style="width:60px"> <span class="unit">天 · 执行时间</span>
+              <input type="time" id="cTimeD" value="03:00"></div>
+          </div>
+          <div class="pick-row sel" data-v="weekly">
+            <span class="pick-dot"></span><b>按周</b><span class="pick-sub" id="cSubWeekly">周五 · 03:00</span>
+          </div>
+          <div class="pick-detail" data-for="weekly">
+            <div class="chips" id="cWd">
+              <button class="chip wd" data-v="1">一</button>
+              <button class="chip wd" data-v="2">二</button>
+              <button class="chip wd" data-v="3">三</button>
+              <button class="chip wd" data-v="4">四</button>
+              <button class="chip wd on" data-v="5">五</button>
+              <button class="chip wd" data-v="6">六</button>
+              <button class="chip wd" data-v="0">日</button>
+            </div>
+            <div class="time-row"><input type="time" id="cTimeW" value="03:00"></div>
+          </div>
+          <div class="pick-row" data-v="monthly">
+            <span class="pick-dot"></span><b>按月</b><span class="pick-sub" id="cSubMonthly">1、15 日 · 03:00</span>
+          </div>
+          <div class="pick-detail hidden" data-for="monthly">
+            <div class="chips" id="cDay"></div>
+            <div class="time-row"><input type="time" id="cTimeM" value="03:00"></div>
+          </div>
+          <div class="pick-row" data-v="interval">
+            <span class="pick-dot"></span><b>固定间隔</b><span class="pick-sub">每 24 小时</span>
+          </div>
+          <div class="pick-detail hidden" data-for="interval">
+            <div class="num-row">每 <input type="number" id="cHrs" value="24" min="1" max="720" style="width:60px"> <span class="unit">小时</span></div>
+          </div>
+        </div>
+        <div class="summary"><span class="ic">🗓️</span><span id="cSum">每月 1、15 日 03:00 自动备份</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const WD = { 0: "周日", 1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六" };
+// 生成 1-31 + 末天 日期 chips
+function fillDays(el, defaults) {
+  for (let d = 1; d <= 31; d++) {
+    const b = document.createElement("button");
+    b.className = "chip day" + (defaults.includes(d) ? " on" : "");
+    b.dataset.v = d; b.textContent = d;
+    el.appendChild(b);
+  }
+  const last = document.createElement("button");
+  last.className = "chip day" + (defaults.includes("last") ? " on" : "");
+  last.dataset.v = "last"; last.textContent = "末天";
+  el.appendChild(last);
+}
+fillDays(document.getElementById("aDay"), [1]);
+fillDays(document.getElementById("cDay"), [1, 15]);
+function toggle(el) {
+  el.addEventListener("click", (e) => {
+    const c = e.target.closest(".chip"); if (!c) return;
+    c.classList.toggle("on");
+  });
+}
+function sel1(el) {
+  el.addEventListener("click", (e) => {
+    const c = e.target.closest(".chip"); if (!c) return;
+    el.querySelectorAll(".chip").forEach((x) => x.classList.remove("on"));
+    c.classList.add("on");
+  });
+}
+const on = (el) => [...el.querySelectorAll(".chip.on")].map((x) => x.dataset.v).sort((a, b) => (+a || 99) - (+b || 99));
+const wdText = (vs) => vs.map((v) => WD[v]).join("、");
+const dayText = (vs) => vs.map((v) => (v === "last" ? "末天" : v + " 日")).join("、");
+
+// ---------- 方案 A ----------
+const aSeg = document.getElementById("aSeg");
+aSeg.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  aSeg.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+  b.classList.add("on");
+  document.querySelectorAll("#aSeg ~ .cfg-panel, .opt-body .cfg-panel[data-for]").forEach(() => {});
+  document.querySelectorAll(".plan:first-of-type .cfg-panel, .cfg-panel[data-for]").forEach(() => {});
+  document.querySelectorAll("[data-for]").forEach((p) => {
+    if (p.closest(".plan").querySelector(".badge").textContent === "A") p.classList.toggle("hidden", p.dataset.for !== b.dataset.v);
+  });
+  aSum();
+});
+["aWd"].forEach((id) => toggle(document.getElementById(id)));
+["aDay"].forEach((id) => toggle(document.getElementById(id)));
+function aSum() {
+  const v = aSeg.querySelector(".on").dataset.v;
+  const em = document.getElementById("aEm"), sum = document.getElementById("aSum");
+  if (v === "manual") { em.textContent = "手动"; sum.textContent = "不自动执行，手动点 ▷ 备份"; }
+  else if (v === "daily") {
+    const n = +document.getElementById("aDays").value || 1, t = document.getElementById("aTime").value;
+    em.textContent = (n === 1 ? "每天 " : "每 " + n + " 天 ") + t;
+    sum.textContent = "每 " + n + " 天 " + t + " 自动备份";
+  } else if (v === "weekly") {
+    const vs = on(document.getElementById("aWd")), t = document.getElementById("aTime2").value;
+    em.textContent = "每周 " + (wdText(vs) || "—") + " " + t;
+    sum.textContent = vs.length ? "每" + wdText(vs).replace(/周/g, "") .replace(/^(.)/, (m)=>"周"+m) .replace(/^周周/, "每周") + " " + t + " 自动备份" : "请选择周几";
+  } else if (v === "monthly") {
+    const vs = on(document.getElementById("aDay")), t = document.getElementById("aTime3").value;
+    em.textContent = "每月 " + (dayText(vs) || "—") + " " + t;
+    sum.textContent = vs.length ? "每月 " + dayText(vs) + " " + t + " 自动备份" : "请选择日期";
+  } else {
+    const h = +document.getElementById("aHrs").value || 6;
+    em.textContent = "每 " + h + " 小时"; sum.textContent = "每 " + h + " 小时自动备份";
+  }
+}
+["aDays","aTime","aTime2","aTime3","aHrs"].forEach((id) => document.getElementById(id).addEventListener("input", aSum));
+aSum();
+
+// ---------- 方案 B ----------
+const bFreq = document.getElementById("bFreq");
+const FREQ_META = {
+  manual: ["🤚", "手动", "不自动执行"],
+  daily: ["☀️", "每天", "每天 03:00"],
+  weekly: ["📅", "每周", "周五 03:00"],
+  monthly: ["🗓", "每月", "1 日 03:00"],
+  interval: ["⏱", "固定间隔", "每 6 小时"],
+};
+function bRender() {
+  const v = bFreq.querySelector(".on").dataset.v;
+  const m = FREQ_META[v];
+  document.getElementById("bTitle").textContent = m[1];
+  document.getElementById("bSub").textContent = m[2];
+  document.getElementById("bEm").textContent = m[1] === "手动" ? "手动" : m[1] + " " + m[2];
+}
+bFreq.addEventListener("click", (e) => {
+  const c = e.target.closest(".chip"); if (!c) return;
+  bFreq.querySelectorAll(".chip").forEach((x) => x.classList.remove("on"));
+  c.classList.add("on"); bRender();
+});
+toggle(document.getElementById("bWd"));
+document.getElementById("bTime").addEventListener("input", () => {
+  const vs = on(document.getElementById("bWd")), t = document.getElementById("bTime").value;
+  const txt = "每周" + vs.map((v) => WD[v].slice(1)).join("、") + " " + t;
+  document.getElementById("bSub").textContent = txt.slice(2);
+  document.getElementById("bEm").textContent = txt;
+  document.getElementById("bSum").textContent = txt + " 自动备份";
+});
+bRender();
+
+// ---------- 方案 C ----------
+const cList = document.getElementById("cList");
+cList.addEventListener("click", (e) => {
+  const row = e.target.closest(".pick-row"); if (!row) return;
+  cList.querySelectorAll(".pick-row").forEach((r) => r.classList.remove("sel"));
+  row.classList.add("sel");
+  document.querySelectorAll("#cList .pick-detail").forEach((p) => p.classList.add("hidden"));
+  const d = cList.querySelector('.pick-detail[data-for="' + row.dataset.v + '"]');
+  if (d) d.classList.remove("hidden");
+  cSum();
+});
+["cWd","cDay"].forEach((id) => toggle(document.getElementById(id)));
+function cSum() {
+  const v = cList.querySelector(".pick-row.sel").dataset.v;
+  const em = document.getElementById("cEm"), sum = document.getElementById("cSum");
+  if (v === "manual") { em.textContent = "手动"; sum.textContent = "不自动执行，手动点 ▷ 备份"; }
+  else if (v === "daily") {
+    const n = +document.getElementById("cDays").value || 1, t = document.getElementById("cTimeD").value;
+    document.getElementById("cSubDaily").textContent = "每 " + n + " 天 · " + t;
+    em.textContent = "每 " + n + " 天 " + t;
+    sum.textContent = "每 " + n + " 天 " + t + " 自动备份";
+  } else if (v === "weekly") {
+    const vs = on(document.getElementById("cWd")), t = document.getElementById("cTimeW").value;
+    document.getElementById("cSubWeekly").textContent = (wdText(vs) || "—") + " · " + t;
+    em.textContent = "每周 " + (wdText(vs) || "—") + " " + t;
+    sum.textContent = vs.length ? "每" + vs.map((x)=>WD[x]).join("、") + " " + t + " 自动备份" : "请选择周几";
+  } else if (v === "monthly") {
+    const vs = on(document.getElementById("cDay")), t = document.getElementById("cTimeM").value;
+    document.getElementById("cSubMonthly").textContent = (dayText(vs) || "—") + " · " + t;
+    em.textContent = "每月 " + (dayText(vs) || "—") + " " + t;
+    sum.textContent = vs.length ? "每月 " + dayText(vs) + " " + t + " 自动备份" : "请选择日期";
+  } else {
+    const h = +document.getElementById("cHrs").value || 24;
+    em.textContent = "每 " + h + " 小时"; sum.textContent = "每 " + h + " 小时自动备份";
+  }
+}
+["cDays","cTimeD","cTimeW","cTimeM","cHrs"].forEach((id) => document.getElementById(id).addEventListener("input", cSum));
+cSum();
+</script>
+</body>
+</html>

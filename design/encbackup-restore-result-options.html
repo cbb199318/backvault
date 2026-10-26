@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>还原结果摘要方案</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f3f5f9; color: #1f2937; padding: 32px 20px 60px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: #8b9098; margin-bottom: 28px; }
+  .sec { margin-bottom: 42px; }
+  .sec-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .sec-desc { font-size: 12.5px; color: #9ca3af; margin-bottom: 16px; }
+
+  /* 卡片基础（复用变体1） */
+  .card { background: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+  .top { display: flex; align-items: center; gap: 10px; }
+  .name { font-size: 14.5px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; flex: none; }
+  .pill.ok { background: #e7f8ec; color: #16803a; }
+  .pill.fail { background: #fdecec; color: #dc2626; }
+  .pill.run { background: #eef4ff; color: #3370ff; }
+  .pill.idle { background: #f1f3f7; color: #6b7280; }
+  .rows { margin-top: 9px; border-top: 1px solid #f3f5f9; padding-top: 9px; display: flex; flex-direction: column; gap: 5px; }
+  .row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #6b7280; }
+  .row .k { color: #9ca3af; width: 34px; flex: none; }
+  .row .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ============ 方案 1：统计徽章行 ============ */
+  .p1-stats { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .p1-stat { flex: 1; min-width: 0; background: #f8fafc; border: 1px solid #eef0f4; border-radius: 8px; padding: 7px 6px; text-align: center; }
+  .p1-stat .n { font-size: 15px; font-weight: 700; display: block; line-height: 1.2; }
+  .p1-stat .l { font-size: 10.5px; color: #9ca3af; display: block; margin-top: 2px; }
+  .p1-stat.add .n { color: #16a34a; }
+  .p1-stat.ov .n { color: #3370ff; }
+  .p1-stat.rn .n { color: #d97706; }
+  .p1-stat.sk .n { color: #9ca3af; }
+
+  /* ============ 方案 2：单行精炼 + 可展开 ============ */
+  .p2-line { font-size: 12px; color: #16a34a; margin-top: 9px; display: flex; align-items: center; gap: 6px; }
+  .p2-line .more { color: #9ca3af; cursor: pointer; font-size: 11px; }
+  .p2-detail { margin-top: 6px; background: #f8fafc; border-radius: 8px; padding: 8px 10px; font-size: 11.5px; color: #6b7280; display: flex; gap: 12px; flex-wrap: wrap; }
+  .p2-detail span b { color: #1f2937; }
+
+  /* ============ 方案 3：结果图标 + 一句短结论 ============ */
+  .p3-res { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; }
+  .p3-res.ok { background: #e7f8ec; color: #16803a; }
+  .p3-res.fail { background: #fdecec; color: #dc2626; }
+  .p3-res.idle { background: #f1f3f7; color: #6b7280; }
+  .p3-res .ic { font-size: 14px; font-weight: 700; }
+
+  /* 失败 / 停止示例 */
+  .fail-box { font-size: 12px; color: #dc2626; margin-top: 9px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>还原结果摘要 — 优化方案</h1>
+  <p class="sub">问题：成功时底部绿色长句（"已还原 1 项到 /vol1/1000/下载（新增 1 / 覆盖 0 / 保留两者 0 / 跳过 0）"）太长、主次不分。以下把统计拆出结构化呈现，并覆盖失败/停止状态。</p>
+
+  <!-- 方案 1 -->
+  <div class="sec">
+    <div class="sec-title">方案 1：统计徽章行</div>
+    <div class="sec-desc">把「新增/覆盖/保留/跳过」拆成 4 个并列小徽章，数字大字 + 标签小字，一眼看清分布。原长句只保留「已还原 N 项」。</div>
+
+    <div class="card">
+      <div class="top"><span class="name">相册资料 → 天翼</span><span class="pill ok">已还原</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">快照</span><span class="v">65087fea</span></div>
+        <div class="row"><span class="k">目标</span><span class="v">➝ /vol1/1000/下载</span></div>
+        <div class="row"><span class="k">时间</span><span class="v">10-26 15:03</span></div>
+      </div>
+      <div class="p1-stats">
+        <div class="p1-stat add"><span class="n">1</span><span class="l">新增</span></div>
+        <div class="p1-stat ov"><span class="n">0</span><span class="l">覆盖</span></div>
+        <div class="p1-stat rn"><span class="n">0</span><span class="l">保留两者</span></div>
+        <div class="p1-stat sk"><span class="n">0</span><span class="l">跳过</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="name">测试2</span><span class="pill fail">失败</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">快照</span><span class="v">2ca3ca90</span></div>
+        <div class="row"><span class="k">目标</span><span class="v">➝ /vol1/1000/下载/yc</span></div>
+        <div class="row"><span class="k">时间</span><span class="v">10-26 09:16</span></div>
+      </div>
+      <div class="fail-box">⚠ 目标目录不存在或无写入权限</div>
+    </div>
+  </div>
+
+  <!-- 方案 2 -->
+  <div class="sec">
+    <div class="sec-title">方案 2：单行精炼 + 可展开</div>
+    <div class="sec-desc">默认只显示一句精炼结论「已还原 1 项」，统计细节折叠在「详情」里点开才看。最克制。</div>
+
+    <div class="card">
+      <div class="top"><span class="name">相册资料 → 天翼</span><span class="pill ok">已还原</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">快照</span><span class="v">65087fea</span></div>
+        <div class="row"><span class="k">目标</span><span class="v">➝ /vol1/1000/下载</span></div>
+        <div class="row"><span class="k">时间</span><span class="v">10-26 15:03</span></div>
+      </div>
+      <div class="p2-line"><span>✓ 已还原 1 项</span><span class="more">详情 ▾</span></div>
+      <div class="p2-detail">
+        <span>新增 <b>1</b></span><span>覆盖 <b>0</b></span><span>保留两者 <b>0</b></span><span>跳过 <b>0</b></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="name">测试2</span><span class="pill idle">已停止</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">快照</span><span class="v">2ca3ca90</span></div>
+        <div class="row"><span class="k">目标</span><span class="v">⌖ 原位置</span></div>
+        <div class="row"><span class="k">时间</span><span class="v">10-26 09:13</span></div>
+      </div>
+      <div class="fail-box" style="color:#6b7280">已手动停止</div>
+    </div>
+  </div>
+
+  <!-- 方案 3 -->
+  <div class="sec">
+    <div class="sec-title">方案 3：结果图标 + 一句短结论</div>
+    <div class="sec-desc">底部用一块浅色「结果条」（绿/红/灰），图标 + 短结论。成功只显示「已还原 N 项」，失败显示错误，统计并入结论精简。</div>
+
+    <div class="card">
+      <div class="top"><span class="name">相册资料 → 天翼</span><span class="pill ok">已还原</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">快照</span><span class="v">65087fea</span></div>
+        <div class="row"><span class="k">目标</span><span class="v">➝ /vol1/1000/下载</span></div>
+        <div class="row"><span class="k">时间</span><span class="v">10-26 15:03</span></div>
+      </div>
+      <div class="p3-res ok"><span class="ic">✓</span><span>已还原 1 项（新增 1 · 覆盖 0 · 跳过 0）</span></div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="name">测试2</span><span class="pill fail">失败</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">快照</span><span class="v">2ca3ca90</span></div>
+        <div class="row"><span class="k">目标</span><span class="v">➝ /vol1/1000/下载/yc</span></div>
+        <div class="row"><span class="k">时间</span><span class="v">10-26 09:16</span></div>
+      </div>
+      <div class="p3-res fail"><span class="ic">✕</span><span>目标目录不存在或无写入权限</span></div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="name">资料库 → 115 云盘</span><span class="pill run">还原中</span></div>
+      <div class="rows">
+        <div class="row"><span class="k">快照</span><span class="v">7d9e2f11</span></div>
+        <div class="row"><span class="k">目标</span><span class="v">➝ /vol1/1000/恢复</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>备份进度精简版预览 — encbackup</title>
+<style>
+  :root {
+    --blue: #3370ff;
+    --blue-l: #5ca0ff;
+    --blue-bg: #dbeafe;
+    --ink: #1c1f23;
+    --ink2: #4b5563;
+    --ink3: #8b9098;
+    --line: #eceef1;
+    --card: #fff;
+    --green: #22c55e;
+    --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f2f4f8; color: var(--ink); padding: 28px 20px 60px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: var(--ink3); margin-bottom: 24px; line-height: 1.6; }
+
+  /* ===== 任务卡片（沿用现有结构，位置不变） ===== */
+  .task-card {
+    background: var(--card); border-radius: 12px; padding: 16px 20px 16px;
+    box-shadow: 0 1px 3px rgba(16,24,40,.05);
+  }
+  .tc-top { display: flex; align-items: flex-start; gap: 14px; }
+  .tc-icon { position: relative; flex-shrink: 0; width: 40px; height: 40px; }
+  .tc-icon svg { display: block; }
+  .badge {
+    position: absolute; right: -4px; bottom: -3px; width: 16px; height: 16px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff; border: 2px solid #fff; background: var(--blue);
+  }
+  .spin {
+    width: 8px; height: 8px; border: 1.5px solid #bfdbfe; border-top-color: #fff;
+    border-radius: 50%; animation: rot .9s linear infinite;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .tc-title { flex: 1; min-width: 0; }
+  .tc-title > b { font-size: 15px; font-weight: 600; display: block; }
+  .tc-status { font-size: 12.5px; color: var(--blue); margin-top: 5px; }
+  .tc-acts { display: flex; gap: 6px; flex-shrink: 0; }
+  .icon-btn {
+    width: 30px; height: 30px; border: none; background: #f3f4f6; color: #6b7280;
+    border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: #e8eaee; }
+
+  .tc-grid { display: flex; align-items: center; gap: 18px; margin-top: 14px; padding-top: 13px; border-top: 1px solid #f5f6f8; }
+  .tc-cell { flex: 1; min-width: 0; }
+  .cell-head { display: flex; align-items: center; gap: 7px; }
+  .cell-head b { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .cell-head b.dim { color: var(--ink3); font-weight: 500; }
+  .cell-sub { font-size: 12px; color: var(--ink3); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tc-arrow { flex-shrink: 0; color: #9db8e8; }
+
+  .bar { height: 8px; background: var(--blue-bg); border-radius: 6px; overflow: hidden; }
+  .bar-in { height: 100%; background: var(--blue); border-radius: 6px; transition: width 1.5s; }
+
+  /* ===== 进度区（追加在最下方，精简） ===== */
+  .pg { margin-top: 14px; padding-top: 13px; border-top: 1px solid #f5f6f8; }
+  .pg-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink2); margin-bottom: 9px; }
+  .pg-head .spin { border-color: #93c5fd; border-top-color: #2563eb; width: 11px; height: 11px; }
+  .pg-head .pct { font-weight: 700; color: var(--blue); font-size: 13px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .pg-meta { display: flex; flex-wrap: wrap; gap: 4px 22px; font-size: 12px; color: var(--ink2); margin-top: 9px; }
+  .pg-meta .k { color: var(--ink3); margin-right: 4px; }
+  .pg-meta .v { font-variant-numeric: tabular-nums; }
+  .pg-err { color: var(--amber); margin-left: auto; }
+
+  .note { font-size: 12px; color: var(--ink3); background: #eef2ff; border: 1px solid #dbe4ff; border-radius: 10px; padding: 10px 14px; margin-top: 24px; line-height: 1.7; }
+  .note b { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>备份进度精简版预览</h1>
+  <p class="sub">源目录 / 目标目录 / 上次备份 / 下次备份位置不变，仅在卡片最下方追加一行精简进度：进度条 + 开始时间 + 数据量（不显示文件数）。</p>
+
+  <div class="task-card">
+    <!-- 第一行：图标 + 名称 + 状态（不变） -->
+    <div class="tc-top">
+      <div class="tc-icon">
+        <svg viewBox="0 0 48 48" width="40" height="40">
+          <path fill="#5ca0ff" d="M4 12a4 4 0 0 1 4-4h10l4 5h18a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V12Z"/>
+          <path fill="#3370ff" d="M4 17h40v21a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V17Z"/>
+        </svg>
+        <span class="badge"><i class="spin"></i></span>
+      </div>
+      <div class="tc-title">
+        <b>相册</b>
+        <div class="tc-status">备份中…</div>
+      </div>
+      <div class="tc-acts">
+        <button class="icon-btn" title="停止"><svg viewBox="0 0 24 24" width="15" height="15"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg></button>
+        <button class="icon-btn" title="还原"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 5.5V2.8L7.6 6.4 12 10V7.5a6.5 6.5 0 1 1-6.4 7.7"/></svg></button>
+      </div>
+    </div>
+
+    <!-- 第二行：来源 → 目的地 → 下次（不变） -->
+    <div class="tc-grid">
+      <div class="tc-cell"><div class="cell-head"><b>fnos（本地）</b></div><div class="cell-sub">/vol1/1000/相册</div></div>
+      <div class="tc-arrow">→</div>
+      <div class="tc-cell"><div class="cell-head"><b>天翼云盘</b></div><div class="cell-sub">天翼云盘/飞牛加密备份</div></div>
+      <div class="tc-cell"><div class="cell-head"><b class="dim">下次</b></div><div class="cell-sub">10-28 03:00</div></div>
+    </div>
+
+    <!-- 第三行：精简进度（新增，追加在最下） -->
+    <div class="pg">
+      <div class="pg-head">
+        <span class="spin"></span> 正在备份
+        <span class="pct">63.5%</span>
+      </div>
+      <div class="bar"><div class="bar-in" style="width:63.5%"></div></div>
+      <div class="pg-meta">
+        <span><span class="k">开始时间</span><span class="v">16:02</span></span>
+        <span><span class="k">数据量</span><span class="v">182.4 / 287.2 GB</span></span>
+        <span class="pg-err">⚠ 2 个错误</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>说明：</b>进度区仅三样内容 —— 一条进度条 + 开始时间 + 数据量（已上传/总量），不再显示文件数；有错误时右侧追一条黄色「⚠ N 个错误」。后端需补 <code>started_at</code> 字段即可，其余字段现有接口已具备。
+  </div>
+</div>
+</body>
+</html>

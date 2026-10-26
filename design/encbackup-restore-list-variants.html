@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>还原历史列表 — 方案A变体（无左色条）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f3f5f9; color: #1f2937; padding: 32px 20px 60px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: #8b9098; margin-bottom: 28px; }
+  .sec { margin-bottom: 42px; }
+  .sec-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .sec-title .tag { font-size: 11px; background: #eef4ff; color: #3370ff; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .sec-desc { font-size: 12.5px; color: #9ca3af; margin-bottom: 16px; }
+
+  .ok { color: #16a34a; } .fail { color: #dc2626; } .run { color: #3370ff; }
+
+  /* ============ 变体 1：胶囊 + 细分行 ============ */
+  .v1 { background: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .v1-top { display: flex; align-items: center; gap: 10px; }
+  .v1-name { font-size: 14.5px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; flex: none; }
+  .pill.ok { background: #e7f8ec; color: #16803a; }
+  .pill.fail { background: #fdecec; color: #dc2626; }
+  .pill.run { background: #eef4ff; color: #3370ff; }
+  .v1-rows { margin-top: 9px; border-top: 1px solid #f3f5f9; padding-top: 9px; display: flex; flex-direction: column; gap: 5px; }
+  .v1-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #6b7280; }
+  .v1-row .k { color: #9ca3af; width: 52px; flex: none; }
+  .v1-row .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v1-prog { margin-top: 10px; }
+  .v1-prog .bar { height: 6px; background: #eef0f4; border-radius: 999px; overflow: hidden; }
+  .v1-prog .bar i { display: block; height: 100%; background: #3370ff; border-radius: 999px; }
+  .v1-prog .txt { font-size: 11px; color: #6b7280; margin-top: 5px; display: flex; justify-content: space-between; }
+  .v1-msg { font-size: 12px; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: #fef2f2; color: #dc2626; }
+
+  /* ============ 变体 2：右侧状态区块 ============ */
+  .v2 { background: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(16,24,40,.06); display: flex; gap: 14px; align-items: flex-start; }
+  .v2-main { flex: 1; min-width: 0; }
+  .v2-name { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v2-sub { font-size: 12px; color: #8b9098; margin-top: 5px; line-height: 1.6; }
+  .v2-side { flex: none; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .v2-status { font-size: 13px; font-weight: 600; }
+  .v2-status.ok { color: #16a34a; } .v2-status.fail { color: #dc2626; } .v2-status.run { color: #3370ff; }
+  .v2-time { font-size: 11.5px; color: #c0c6cf; }
+
+  /* ============ 变体 3：状态图标 + 单行摘要 ============ */
+  .v3 { background: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(16,24,40,.06); display: flex; gap: 13px; align-items: flex-start; }
+  .v3-icon { width: 36px; height: 36px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; }
+  .v3-icon.ok { background: #e7f8ec; color: #16a34a; }
+  .v3-icon.fail { background: #fdecec; color: #dc2626; }
+  .v3-icon.run { background: #eef4ff; color: #3370ff; }
+  .v3-main { flex: 1; min-width: 0; }
+  .v3-name { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-oneline { font-size: 12px; color: #8b9098; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-right { flex: none; text-align: right; }
+  .v3-status { font-size: 12.5px; font-weight: 600; }
+  .v3-time { font-size: 11.5px; color: #c0c6cf; margin-top: 3px; }
+
+  /* ============ 变体 4：胶囊状态 + 三列网格 ============ */
+  .v4 { background: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .v4-top { display: flex; align-items: center; gap: 10px; }
+  .v4-name { font-size: 14.5px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v4-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-top: 10px; }
+  .v4-cell { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .v4-cell .k { color: #9ca3af; flex: none; }
+  .v4-cell .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v4-msg { font-size: 12px; margin-top: 8px; color: #dc2626; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>还原历史列表 — 方案A变体（去掉左色条）</h1>
+  <p class="sub">基于方案 A 的信息分层 + 状态胶囊，去掉左侧竖向色带，改用其他方式强化状态识别。4 个变体。</p>
+
+  <!-- 变体 1 -->
+  <div class="sec">
+    <div class="sec-title">变体 1：胶囊 + 细分行</div>
+    <div class="sec-desc">顶部「名称 + 状态胶囊」，下方细分三行（快照 / 目标位置 / 时间），带标签对齐。信息最清晰。</div>
+
+    <div class="v1">
+      <div class="v1-top"><span class="v1-name">相册资料 → 天翼</span><span class="pill ok">已还原</span></div>
+      <div class="v1-rows">
+        <div class="v1-row"><span class="k">快照</span><span class="v">a3f2c1b0</span></div>
+        <div class="v1-row"><span class="k">目标</span><span class="v">⌖ 原位置</span></div>
+        <div class="v1-row"><span class="k">时间</span><span class="v">10-26 15:42</span></div>
+      </div>
+    </div>
+
+    <div class="v1">
+      <div class="v1-top"><span class="v1-name">资料库 → 115 云盘</span><span class="pill run">还原中</span></div>
+      <div class="v1-rows">
+        <div class="v1-row"><span class="k">快照</span><span class="v">7d9e2f11</span></div>
+        <div class="v1-row"><span class="k">目标</span><span class="v">➝ /vol1/1000/恢复</span></div>
+      </div>
+      <div class="v1-prog"><div class="bar"><i style="width:62%"></i></div><div class="txt"><span>62% · 12,846 个文件 / 83.2 GB</span><span>■ 停止</span></div></div>
+    </div>
+
+    <div class="v1">
+      <div class="v1-top"><span class="v1-name">相册资料 → 天翼</span><span class="pill fail">失败</span></div>
+      <div class="v1-rows">
+        <div class="v1-row"><span class="k">快照</span><span class="v">1b8c4d22</span></div>
+        <div class="v1-row"><span class="k">目标</span><span class="v">⌖ 原位置</span></div>
+        <div class="v1-row"><span class="k">时间</span><span class="v">10-25 09:41</span></div>
+      </div>
+      <div class="v1-msg">仓库密码错误，无法连接云端</div>
+    </div>
+  </div>
+
+  <!-- 变体 2 -->
+  <div class="sec">
+    <div class="sec-title">变体 2：右侧状态区块</div>
+    <div class="sec-desc">左侧名称+摘要，右侧独立状态区块（彩色状态文字 + 时间），状态右对齐更醒目。</div>
+
+    <div class="v2">
+      <div class="v2-main">
+        <div class="v2-name">相册资料 → 天翼</div>
+        <div class="v2-sub">快照 a3f2c1b0 · ⌖ 原位置</div>
+      </div>
+      <div class="v2-side"><span class="v2-status ok">✓ 已还原</span><span class="v2-time">10-26 15:42</span></div>
+    </div>
+
+    <div class="v2">
+      <div class="v2-main">
+        <div class="v2-name">资料库 → 115 云盘</div>
+        <div class="v2-sub">快照 7d9e2f11 · ➝ /vol1/1000/恢复</div>
+      </div>
+      <div class="v2-side"><span class="v2-status run">⟳ 还原中 62%</span><span class="v2-time">10-26 15:58</span></div>
+    </div>
+
+    <div class="v2">
+      <div class="v2-main">
+        <div class="v2-name">相册资料 → 天翼</div>
+        <div class="v2-sub">快照 1b8c4d22 · ⌖ 原位置 · 仓库密码错误</div>
+      </div>
+      <div class="v2-side"><span class="v2-status fail">✕ 失败</span><span class="v2-time">10-25 09:41</span></div>
+    </div>
+  </div>
+
+  <!-- 变体 3 -->
+  <div class="sec">
+    <div class="sec-title">变体 3：状态图标 + 单行摘要</div>
+    <div class="sec-desc">左侧彩色状态图标块（✓/⟳/!），中间名称+单行摘要，右侧状态+时间。紧凑有辨识度。</div>
+
+    <div class="v3">
+      <div class="v3-icon ok">✓</div>
+      <div class="v3-main"><div class="v3-name">相册资料 → 天翼</div><div class="v3-oneline">快照 a3f2c1b0 · ⌖ 原位置</div></div>
+      <div class="v3-right"><div class="v3-status ok">已还原</div><div class="v3-time">10-26 15:42</div></div>
+    </div>
+
+    <div class="v3">
+      <div class="v3-icon run">⟳</div>
+      <div class="v3-main"><div class="v3-name">资料库 → 115 云盘</div><div class="v3-oneline">快照 7d9e2f11 · ➝ /vol1/1000/恢复</div></div>
+      <div class="v3-right"><div class="v3-status run">还原中 62%</div><div class="v3-time">10-26 15:58</div></div>
+    </div>
+
+    <div class="v3">
+      <div class="v3-icon fail">!</div>
+      <div class="v3-main"><div class="v3-name">相册资料 → 天翼</div><div class="v3-oneline">快照 1b8c4d22 · ⌖ 原位置 · 仓库密码错误</div></div>
+      <div class="v3-right"><div class="v3-status fail">失败</div><div class="v3-time">10-25 09:41</div></div>
+    </div>
+  </div>
+
+  <!-- 变体 4 -->
+  <div class="sec">
+    <div class="sec-title">变体 4：胶囊 + 三列网格</div>
+    <div class="sec-desc">顶部「名称 + 胶囊」，下方两列网格展示快照/目标/时间，信息横向排布更省垂直空间。</div>
+
+    <div class="v4">
+      <div class="v4-top"><span class="v4-name">相册资料 → 天翼</span><span class="pill ok">已还原</span></div>
+      <div class="v4-grid">
+        <div class="v4-cell"><span class="k">快照</span><span class="v">a3f2c1b0</span></div>
+        <div class="v4-cell"><span class="k">时间</span><span class="v">10-26 15:42</span></div>
+        <div class="v4-cell"><span class="k">目标</span><span class="v">⌖ 原位置</span></div>
+      </div>
+    </div>
+
+    <div class="v4">
+      <div class="v4-top"><span class="v4-name">资料库 → 115 云盘</span><span class="pill run">还原中</span></div>
+      <div class="v4-grid">
+        <div class="v4-cell"><span class="k">快照</span><span class="v">7d9e2f11</span></div>
+        <div class="v4-cell"><span class="k">时间</span><span class="v">10-26 15:58</span></div>
+        <div class="v4-cell"><span class="k">目标</span><span class="v">➝ /vol1/1000/恢复</span></div>
+      </div>
+    </div>
+
+    <div class="v4">
+      <div class="v4-top"><span class="v4-name">相册资料 → 天翼</span><span class="pill fail">失败</span></div>
+      <div class="v4-grid">
+        <div class="v4-cell"><span class="k">快照</span><span class="v">1b8c4d22</span></div>
+        <div class="v4-cell"><span class="k">时间</span><span class="v">10-25 09:41</span></div>
+        <div class="v4-cell"><span class="k">目标</span><span class="v">⌖ 原位置</span></div>
+      </div>
+      <div class="v4-msg">仓库密码错误，无法连接云端</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

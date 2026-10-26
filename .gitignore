@@ -1,0 +1,29 @@
+# ==== 敏感：真实运行时数据/凭证（绝对不能提交） ====
+# 备份出的真实配置，含云盘 WebDAV 凭证、restic 仓库密码、内网地址
+backup-*/
+data/
+
+# ==== 构建产物 ====
+# fpk 打包产物（含编译二进制）
+*.fpk
+
+# 编译后的后端二进制
+backend/encbackup-server
+encbackup/app/server/encbackup-server
+
+# restic / rclone 第三方二进制（体积大，应从官方下载）
+encbackup/app/server/engines/
+
+# ==== 前端 ====
+frontend/node_modules/
+frontend/dist/
+
+# ==== 系统/编辑器 ====
+.DS_Store
+*.log
+*.tmp
+.idea/
+.vscode/
+
+# fpk 布局中的前端产物（build.sh 会重新生成）
+encbackup/app/server/public/

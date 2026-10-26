@@ -1,0 +1,27 @@
+# 加密备份 - Docker Compose 示例
+# 用法：
+#   1. 修改下方 AUTH_PASS 为强密码
+#   2. 把 ./backup-src 换成你实际要备份的目录（或删掉换成绝对路径挂载）
+#   3. docker compose up -d
+#   4. 浏览器访问 http://主机IP:5175，用 AUTH_USER/AUTH_PASS 登录
+services:
+  encbackup:
+    build: .
+    image: encbackup:latest
+    container_name: encbackup
+    restart: unless-stopped
+    ports:
+      - "5175:5175"
+    environment:
+      # Web 登录（裸端口暴露，必须设置强密码！）
+      AUTH_USER: admin
+      AUTH_PASS: "changeme-please"
+      # Web 界面「我的文件」的根目录（对应下方挂载）
+      USER_ROOT: /src
+      # 时区（可选）
+      TZ: Asia/Shanghai
+    volumes:
+      # 配置/仓库凭据/日志/缓存（升级镜像不丢数据）
+      - ./data:/data
+      # 备份源目录（按需修改，可多个）
+      - ./backup-src:/src:ro

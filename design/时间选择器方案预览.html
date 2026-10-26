@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>执行时间选择器 · 三方案预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6f8; color: #111827; padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .intro { color: #6b7280; font-size: 13px; margin-bottom: 28px; line-height: 1.7; }
+  .intro b { color: #3370ff; }
+
+  .plan { margin-bottom: 40px; }
+  .plan-title { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .badge {
+    width: 26px; height: 26px; border-radius: 8px; background: #3370ff; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+  }
+  .plan-title h2 { font-size: 16px; }
+  .plan-desc { color: #6b7280; font-size: 13px; margin-bottom: 14px; line-height: 1.7; }
+
+  .mock-card { background: #fff; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.05); overflow: visible; }
+  .opt-body { padding: 16px 18px 18px; background: #fafbfc; }
+  .fld-label { font-size: 12px; color: #6b7280; margin-bottom: 8px; }
+
+  .summary {
+    margin-top: 14px; background: #eef4ff; border-radius: 10px; padding: 10px 14px;
+    font-size: 13px; color: #3370ff; display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ===== 方案 A：步进器 ===== */
+  .stepper {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px;
+  }
+  .stepper .col { display: flex; flex-direction: column; align-items: center; }
+  .stepper .col + .col.sep::before { content: ":"; font-size: 18px; color: #9ca3af; margin: 0 2px; }
+  .stepper button {
+    border: 0; background: transparent; width: 44px; height: 24px; cursor: pointer;
+    color: #3370ff; font-size: 14px; line-height: 24px; border-radius: 6px; font-family: inherit;
+  }
+  .stepper button:hover { background: #eef4ff; }
+  .stepper .val {
+    width: 44px; text-align: center; font-size: 20px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .stepper .unit { font-size: 10px; color: #9ca3af; }
+  .quick-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip {
+    border: 1px solid #e5e7eb; background: #fff; color: #374151; border-radius: 8px;
+    padding: 6px 13px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .chip.on { background: #eef4ff; border-color: #3370ff; color: #3370ff; font-weight: 600; }
+
+  /* ===== 方案 B：双列下拉 ===== */
+  .dual-drop { display: flex; gap: 10px; }
+  .dd { position: relative; width: 130px; }
+  .dd-btn {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    border: 1px solid #d1d5db; border-radius: 10px; padding: 10px 14px; background: #fff;
+    font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; font-variant-numeric: tabular-nums;
+  }
+  .dd-btn .arr { color: #c2c7d0; font-size: 12px; }
+  .dd-pop {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.14); max-height: 264px; overflow-y: auto; display: none;
+  }
+  .dd.open .dd-pop { display: block; }
+  .dd-item {
+    padding: 10px 0; text-align: center; font-size: 14px; cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .dd-item:hover { background: #f0f5ff; color: #3370ff; }
+  .dd-item.on { background: #eef4ff; color: #3370ff; font-weight: 600; }
+
+  /* ===== 方案 C：滚轮 ===== */
+  .wheel-wrap { display: flex; justify-content: center; gap: 4px; }
+  .wheel {
+    width: 96px; height: 180px; overflow-y: scroll; scroll-snap-type: y mandatory;
+    border-radius: 10px; scrollbar-width: none; position: relative;
+    background: linear-gradient(180deg, #fafbfc 0%, #fff 33%, #fff 67%, #fafbfc 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 28%, #000 72%, transparent 100%);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 28%, #000 72%, transparent 100%);
+  }
+  .wheel::-webkit-scrollbar { display: none; }
+  .wheel-item {
+    height: 44px; scroll-snap-align: center; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #9ca3af; cursor: pointer; font-variant-numeric: tabular-nums;
+    transition: color .15s, transform .15s;
+  }
+  .wheel-item.cur { color: #111827; font-weight: 700; font-size: 22px; }
+  .wheel-item.wu { font-size: 10px; color: #c2c7d0; }
+  .wheel-sep { display: flex; align-items: center; font-size: 22px; font-weight: 700; color: #3370ff; padding-bottom: 2px; }
+  .wheel-note { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>执行时间选择器 · 三方案预览</h1>
+  <p class="intro">
+    替换原生 <code>&lt;input type="time"&gt;</code>（不同浏览器样式不可控、手机端体验差）。
+    三个方案都支持 <b>5 分钟步进</b>，选中后底部摘要实时更新。可直接点击试效果。
+  </p>
+
+  <!-- 方案 A -->
+  <div class="plan">
+    <div class="plan-title"><span class="badge">A</span><h2>步进器 + 快捷时刻（推荐）</h2></div>
+    <p class="plan-desc">时/分上下点击调整，加减都在明面上，不会误触；配一排常用时刻一键选中。桌面/手机表现一致，无弹层。</p>
+    <div class="mock-card">
+      <div class="opt-body">
+        <div class="fld-label">执行时间</div>
+        <div class="stepper">
+          <div class="col">
+            <button id="aHU">▲</button>
+            <div class="val" id="aHV">03</div><div class="unit">时</div>
+            <button id="aHD">▼</button>
+          </div>
+          <div class="col sep"></div>
+          <div class="col">
+            <button id="aMU">▲</button>
+            <div class="val" id="aMV">00</div><div class="unit">分</div>
+            <button id="aMD">▼</button>
+          </div>
+        </div>
+        <div class="quick-chips" id="aQuick">
+          <button class="chip" data-t="00:00">00:00</button>
+          <button class="chip on" data-t="03:00">03:00</button>
+          <button class="chip" data-t="12:00">12:00</button>
+          <button class="chip" data-t="18:00">18:00</button>
+          <button class="chip" data-t="22:00">22:00</button>
+        </div>
+        <div class="summary"><span>🗓️</span><span id="aSum">每周 五 03:00 自动备份</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案 B -->
+  <div class="plan">
+    <div class="plan-title"><span class="badge">B</span><h2>双列下拉（BDrop 同款）</h2></div>
+    <p class="plan-desc">小时、分钟各一个下拉，与「备份目的地」「仓库类型」完全同款交互；分钟按 5 步进共 12 项，一眼可选。</p>
+    <div class="mock-card">
+      <div class="opt-body">
+        <div class="fld-label">执行时间</div>
+        <div class="dual-drop">
+          <div class="dd" id="bH">
+            <button class="dd-btn"><span id="bHV">03 时</span><span class="arr">▾</span></button>
+            <div class="dd-pop"></div>
+          </div>
+          <div class="dd" id="bM">
+            <button class="dd-btn"><span id="bMV">00 分</span><span class="arr">▾</span></button>
+            <div class="dd-pop"></div>
+          </div>
+        </div>
+        <div class="summary"><span>🗓️</span><span id="bSum">每周 五 03:00 自动备份</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案 C -->
+  <div class="plan">
+    <div class="plan-title"><span class="badge">C</span><h2>滚轮选择器（手机端体验最佳）</h2></div>
+    <p class="plan-desc">iOS 风格滚轮，直接滑动选择（也可以点某一项吸附到中间）；中间项加粗放大、上下渐隐。视觉最精致，桌面端略占空间。</p>
+    <div class="mock-card">
+      <div class="opt-body">
+        <div class="fld-label">执行时间</div>
+        <div class="wheel-wrap">
+          <div class="wheel" id="wH"></div>
+          <div class="wheel-sep">:</div>
+          <div class="wheel" id="wM"></div>
+        </div>
+        <div class="wheel-note">上下滑动 / 点选任意一项（5 分钟步进）</div>
+        <div class="summary"><span>🗓️</span><span id="cSum">每周 五 03:00 自动备份</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const pad = (n) => String(n).padStart(2, "0");
+let A = { h: 3, m: 0 }, B = { h: 3, m: 0 }, C = { h: 3, m: 0 };
+const WD = ["日", "一", "二", "三", "四", "五", "六"];
+const selWd = [5];
+const wdText = () => "每周 " + selWd.map((d) => WD[d]).join("、");
+const sumText = (t) => wdText() + " " + t + " 自动备份";
+
+/* ---- 方案 A：步进器 ---- */
+function aRender() {
+  document.getElementById("aHV").textContent = pad(A.h);
+  document.getElementById("aMV").textContent = pad(A.m);
+  document.getElementById("aSum").textContent = sumText(pad(A.h) + ":" + pad(A.m));
+  document.querySelectorAll("#aQuick .chip").forEach((c) => {
+    c.classList.toggle("on", c.dataset.t === pad(A.h) + ":" + pad(A.m));
+  });
+}
+function stepH(d) { A.h = ((A.h + d) % 24 + 24) % 24; aRender(); }
+function stepM(d) { A.m = ((A.m + d) % 60 + 60) % 60; aRender(); }
+document.getElementById("aHU").onclick = () => stepH(1);
+document.getElementById("aHD").onclick = () => stepH(-1);
+document.getElementById("aMU").onclick = () => stepM(5);
+document.getElementById("aMD").onclick = () => stepM(-5);
+document.getElementById("aQuick").addEventListener("click", (e) => {
+  const c = e.target.closest(".chip"); if (!c) return;
+  const [h, m] = c.dataset.t.split(":").map(Number);
+  A = { h, m }; aRender();
+});
+aRender();
+
+/* ---- 方案 B：双列下拉 ---- */
+function fillDD(id, values, cur, onPick) {
+  const dd = document.getElementById(id), pop = dd.querySelector(".dd-pop");
+  values.forEach((v) => {
+    const d = document.createElement("div");
+    d.className = "dd-item" + (v === cur ? " on" : "");
+    d.textContent = pad(v);
+    d.onclick = () => { onPick(v); dd.classList.remove("open"); };
+    pop.appendChild(d);
+  });
+  dd.querySelector(".dd-btn").onclick = () => {
+    document.querySelectorAll(".dd.open").forEach((x) => x !== dd && x.classList.remove("open"));
+    dd.classList.toggle("open");
+  };
+}
+function bRender() {
+  document.getElementById("bHV").textContent = pad(B.h) + " 时";
+  document.getElementById("bMV").textContent = pad(B.m) + " 分";
+  document.getElementById("bSum").textContent = sumText(pad(B.h) + ":" + pad(B.m));
+}
+fillDD("bH", [...Array(24).keys()], 3, (v) => { B.h = v; bRender(); });
+fillDD("bM", [...Array(12).keys()].map((i) => i * 5), 0, (v) => { B.m = v; bRender(); });
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".dd")) document.querySelectorAll(".dd.open").forEach((x) => x.classList.remove("open"));
+});
+bRender();
+
+/* ---- 方案 C：滚轮 ---- */
+function buildWheel(id, values, cur, onChange) {
+  const w = document.getElementById(id);
+  const padEl = document.createElement("div");
+  padEl.style.height = "68px"; w.appendChild(padEl);
+  values.forEach((v) => {
+    const it = document.createElement("div");
+    it.className = "wheel-item"; it.textContent = pad(v); it.dataset.v = v;
+    it.onclick = () => {
+      w.scrollTop = it.offsetTop - (w.clientHeight - it.clientHeight) / 2;
+    };
+    w.appendChild(it);
+  });
+  const padEl2 = document.createElement("div");
+  padEl2.style.height = "68px"; w.appendChild(padEl2);
+  let timer = null;
+  w.addEventListener("scroll", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const center = w.scrollTop + w.clientHeight / 2;
+      let best = null, bestD = 1e9;
+      w.querySelectorAll(".wheel-item").forEach((it) => {
+        const c = it.offsetTop + it.clientHeight / 2;
+        const d = Math.abs(c - center);
+        if (d < bestD) { bestD = d; best = it; }
+      });
+      w.querySelectorAll(".wheel-item").forEach((it) => it.classList.remove("cur"));
+      best.classList.add("cur");
+      onChange(+best.dataset.v);
+    }, 90);
+  });
+  // 初始定位
+  requestAnimationFrame(() => {
+    const it = w.querySelector('.wheel-item[data-v="' + cur + '"]');
+    if (it) w.scrollTop = it.offsetTop - (w.clientHeight - it.clientHeight) / 2;
+  });
+}
+function cRender() {
+  document.getElementById("cSum").textContent = sumText(pad(C.h) + ":" + pad(C.m));
+}
+buildWheel("wH", [...Array(24).keys()], 3, (v) => { C.h = v; cRender(); });
+buildWheel("wM", [...Array(12).keys()].map((i) => i * 5), 0, (v) => { C.m = v; cRender(); });
+cRender();
+</script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>查看日志优化方案预览 — encbackup</title>
+<style>
+  :root {
+    --blue: #3370ff; --blue-l: #5ca0ff; --blue-bg: #dbeafe;
+    --ink: #1c1f23; --ink2: #4b5563; --ink3: #8b9098; --line: #eceef1;
+    --green: #22c55e; --amber: #f59e0b; --red: #dc2626;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f2f4f8; color: var(--ink); padding: 28px 20px 60px; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: var(--ink3); margin-bottom: 8px; line-height: 1.6; }
+  .cur { font-size: 12px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 30px; line-height: 1.7; }
+  .cur code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink2); background: #f5f6f8; padding: 1px 5px; border-radius: 4px; }
+
+  .opt { margin-bottom: 40px; }
+  .opt-tag { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--blue); margin-bottom: 6px; }
+  .opt-tag .pill { background: var(--blue); color: #fff; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; }
+  .opt-desc { font-size: 12.5px; color: var(--ink2); margin-bottom: 14px; line-height: 1.6; }
+
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,24,40,.05); overflow: hidden; }
+  .card-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .card-head b { font-size: 13px; }
+  .card-head .spacer { flex: 1; }
+  .chip { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; }
+  .chip.ok { background: #e7f8ec; color: #16803a; }
+  .chip.bad { background: #fdeaea; color: #c62828; }
+  .chip.run { background: #e8f0ff; color: #2563eb; }
+
+  /* 摘要卡（所有方案共用核心） */
+  .sum-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); }
+  .sum-cell { background: #fff; padding: 14px 16px; }
+  .sum-cell .v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sum-cell .l { font-size: 11.5px; color: var(--ink3); margin-top: 3px; }
+  .sum-cell.hl .v { color: var(--blue); }
+  .sum-cell.good .v { color: var(--green); }
+
+  /* 进度条 */
+  .bar { height: 8px; background: var(--blue-bg); border-radius: 6px; overflow: hidden; }
+  .bar-in { height: 100%; background: var(--blue); border-radius: 6px; }
+
+  .section { padding: 14px 16px; border-top: 1px solid var(--line); }
+  .section .ttl { font-size: 12px; font-weight: 700; color: var(--ink3); margin-bottom: 10px; letter-spacing: .3px; }
+
+  /* 时间轴 */
+  .timeline { display: flex; flex-direction: column; gap: 2px; }
+  .tl-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 6px 8px; border-radius: 8px; }
+  .tl-row .t { color: var(--ink3); font-variant-numeric: tabular-nums; flex-shrink: 0; width: 52px; }
+  .tl-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .tl-row .dot.blue { background: var(--blue); }
+  .tl-row .dot.green { background: var(--green); }
+  .tl-row .dot.amber { background: var(--amber); }
+  .tl-row .msg { color: var(--ink); }
+  .tl-row.warn { background: #fff8ec; }
+  .tl-row.warn .msg { color: #b45309; }
+
+  /* 错误折叠 */
+  .err-box { border: 1px solid #fcd5d5; background: #fef6f6; border-radius: 10px; padding: 10px 12px; }
+  .err-box summary { cursor: pointer; font-size: 12.5px; color: #c62828; font-weight: 600; }
+  .err-box pre { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #7c3a3a; margin-top: 8px; white-space: pre-wrap; word-break: break-all; max-height: 140px; overflow: auto; }
+
+  /* 折叠原始日志 */
+  .raw-toggle { font-size: 12px; color: var(--ink3); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .raw-toggle:hover { color: var(--blue); }
+  .raw-box { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #4b5563; background: #0f1115; color: #c7ccd4; border-radius: 10px; padding: 12px; margin-top: 10px; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto; display: none; }
+  .raw-box.on { display: block; }
+
+  .tag-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag-pills button { font-size: 11.5px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--line); background: #fff; color: var(--ink2); cursor: pointer; }
+  .tag-pills button.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  .note { font-size: 12px; color: var(--ink3); background: #eef2ff; border: 1px solid #dbe4ff; border-radius: 10px; padding: 10px 14px; margin-top: 26px; line-height: 1.7; }
+  .note b { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>「查看日志」优化方案预览</h1>
+  <p class="sub">现状问题：日志抽屉直接显示 restic 原始输出 —— 命令回显 + <code>[diag]</code> + 数百条 JSON status 轮询 + 末尾 summary JSON，普通用户看不懂。</p>
+  <div class="cur">原始日志长这样（片段）：<br>
+  <code>{"message_type":"status","seconds_elapsed":5,"percent_done":0.5322616075324769,"total_files":621,"files_done":274,...}</code><br>
+  <code>{"message_type":"status","seconds_elapsed":5,"percent_done":0.562997948259582,"total_files":631,...}</code> ……重复上百条</div>
+
+  <!-- ================= 方案 1 ================= -->
+  <div class="opt">
+    <div class="opt-tag"><span class="pill">方案 1</span>结果摘要卡（首屏只看结论）</div>
+    <p class="opt-desc">打开日志先给一张「结果摘要卡」：状态 / 文件数 / 数据量 / 用时四个大字，下面是关键时间轴（开始 → 扫描 → 上传 → 完成），错误用黄色标出可点开。原始日志折叠到底部，默认不展开。</p>
+    <div class="card">
+      <div class="card-head">
+        <span class="chip ok">✓ 成功</span>
+        <b>10-26 17:00 的备份</b>
+        <span class="spacer"></span>
+        <span class="raw-toggle">查看原始日志 ▾</span>
+      </div>
+      <div class="sum-grid">
+        <div class="sum-cell"><div class="v">10-26 17:00</div><div class="l">开始时间</div></div>
+        <div class="sum-cell hl"><div class="v">12,846</div><div class="l">文件数</div></div>
+        <div class="sum-cell hl"><div class="v">13.5 GB</div><div class="l">数据量</div></div>
+        <div class="sum-cell good"><div class="v">18 分 32 秒</div><div class="l">用时</div></div>
+      </div>
+      <div class="section">
+        <div class="ttl">关键节点</div>
+        <div class="timeline">
+          <div class="tl-row"><span class="t">17:00</span><span class="dot blue"></span><span class="msg">开始扫描源目录</span></div>
+          <div class="tl-row"><span class="t">17:02</span><span class="dot blue"></span><span class="msg">开始上传（共 12,846 个文件）</span></div>
+          <div class="tl-row warn"><span class="t">17:08</span><span class="dot amber"></span><span class="msg">⚠ 3 个文件无法读取（已跳过）</span></div>
+          <div class="tl-row"><span class="t">17:18</span><span class="dot green"></span><span class="msg">备份完成，快照已写入云端</span></div>
+        </div>
+      </div>
+      <div class="section" style="border-top:none; padding-top:0;">
+        <details class="err-box">
+          <summary>⚠ 3 个警告（点击展开）</summary>
+          <pre>/vol1/1000/资料/xxx.tmp: permission denied
+/vol1/1000/资料/yyy: file vanished before read</pre>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 方案 2 ================= -->
+  <div class="opt">
+    <div class="opt-tag"><span class="pill">方案 2</span>实时进度面板（运行中看动效）</div>
+    <p class="opt-desc">运行中显示一个大进度条 + 实时跳动的「已上传 / 速度」，底下滚一条当前正在处理的文件名；结束后自动切换成方案 1 的摘要卡。适合「备份时点进来看看跑到哪了」。</p>
+    <div class="card">
+      <div class="card-head">
+        <span class="chip run">⟳ 备份中</span>
+        <b>10-26 17:10</b>
+        <span class="spacer"></span>
+        <span style="font-weight:700;color:var(--blue)">63.5%</span>
+      </div>
+      <div class="section">
+        <div class="bar"><div class="bar-in" style="width:63.5%"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);margin-top:8px;font-variant-numeric:tabular-nums;">
+          <span>已上传 8.6 GB / 13.5 GB</span><span>48.6 MB/s</span>
+        </div>
+      </div>
+      <div class="section">
+        <div class="ttl">正在处理</div>
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink2);background:#f5f6f8;border-radius:8px;padding:8px 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">/相册/2026/10/IMG_8842.HEIC</div>
+      </div>
+      <div class="section" style="border-top:none; padding-top:0;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--ink3);">
+          <span>文件 12,846</span><span>·</span><span>已用时 8 分</span><span>·</span><span>预计剩余 4 分</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 方案 3 ================= -->
+  <div class="opt">
+    <div class="opt-tag"><span class="pill">方案 3</span>分层折叠（进阶用户可下钻）</div>
+    <p class="opt-desc">三级结构：摘要 → 关键事件 → 原始 JSON（默认折叠）。顶部用标签切换「摘要 / 事件 / 原始」。兼顾小白（只看摘要）和排查问题的进阶用户（可展开原始）。</p>
+    <div class="card">
+      <div class="card-head">
+        <span class="chip ok">✓ 成功</span>
+        <b>10-26 17:00 的备份</b>
+        <span class="spacer"></span>
+        <div class="tag-pills">
+          <button class="on">摘要</button><button>事件</button><button>原始</button>
+        </div>
+      </div>
+      <div class="sum-grid">
+        <div class="sum-cell"><div class="v">12,846</div><div class="l">文件数</div></div>
+        <div class="sum-cell"><div class="v">13.5 GB</div><div class="l">数据量</div></div>
+        <div class="sum-cell"><div class="v">18 分 32 秒</div><div class="l">用时</div></div>
+        <div class="sum-cell good"><div class="v">0 错误</div><div class="l">结果</div></div>
+      </div>
+      <div class="section">
+        <div class="ttl">关键事件（点击可查看对应原始行）</div>
+        <div class="timeline">
+          <div class="tl-row"><span class="t">17:00</span><span class="dot blue"></span><span class="msg">扫描完成，共 12,846 个文件</span></div>
+          <div class="tl-row"><span class="t">17:18</span><span class="dot green"></span><span class="msg">上传完成，快照 <code style="font-family:monospace;font-size:11px;background:#f5f6f8;padding:1px 5px;border-radius:4px;">a3f9c2e1</code></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 方案 4 ================= -->
+  <div class="opt">
+    <div class="opt-tag"><span class="pill">方案 4</span>「一句话」结果 + 图形化</div>
+    <p class="opt-desc">最激进：把日志抽象成一句人话（"今早 3 点备份成功，上传 1.2 万文件 / 13.5GB，用时 18 分钟"），配一条迷你进度/耗时条形图。日志几乎不露 JSON，只留一个「下载日志」按钮。</p>
+    <div class="card">
+      <div class="card-head">
+        <span class="chip ok">✓ 成功</span>
+        <b>最近一次备份</b>
+        <span class="spacer"></span>
+        <button style="font-size:12px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer;">下载日志</button>
+      </div>
+      <div class="section" style="padding:18px 16px;">
+        <div style="font-size:14px;line-height:1.7;color:var(--ink);">
+          今天 <b>03:00</b> 的定时备份 <b style="color:var(--green)">成功</b>：<br>
+          上传了 <b>12,846 个文件</b>（13.5 GB），用时 <b>18 分 32 秒</b>，无错误。
+        </div>
+      </div>
+      <div class="section" style="padding-top:0;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink3);">
+          <span>扫描</span>
+          <div style="flex:1;display:flex;gap:3px;height:10px;">
+            <div style="flex:1;background:#dbeafe;border-radius:3px;" title="扫描 2 分钟"></div>
+            <div style="flex:3;background:#3370ff;border-radius:3px;" title="上传 15 分钟"></div>
+            <div style="flex:0.6;background:#22c55e;border-radius:3px;" title="收尾 1 分钟"></div>
+          </div>
+          <span>完成</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>建议：</b>方案 1（结果摘要卡）最均衡，覆盖大多数「我就想知道这次成功没、传了多少」的诉求；方案 2 补上「运行中实时看」的体验。两者可组合：<b>运行中 → 方案 2 实时面板，结束后 → 方案 1 摘要卡</b>。原始日志统一折叠成「查看原始日志」入口，进阶排查才展开。后端只需解析 restic 的 <code>status</code>/<code>summary</code>/<code>error</code> JSON 行即可，无需改 restic 本身。
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新建还原 · 分步向导 方案对比</title>
+<style>
+  :root { --primary:#3370ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f4f5f8; padding: 24px 12px 60px; color: #1f2937; }
+
+  /* 方案切换条 */
+  .scheme-bar { max-width: 640px; margin: 0 auto 18px; display: flex; gap: 8px; }
+  .scheme-bar button { flex: 1; padding: 11px; border: 1px solid #e2e6ee; background: #fff; border-radius: 10px; cursor: pointer; font-size: 13px; color: #6b7280; font-family: inherit; }
+  .scheme-bar button.on { background: #eef4ff; border-color: #3370ff; color: #3370ff; font-weight: 600; }
+
+  .phone { max-width: 640px; margin: 0 auto; }
+  .hint { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 14px; }
+
+  /* 弹窗外壳 */
+  .modal { background: #fff; border-radius: 16px; overflow: hidden; border: 1px solid #eef0f4; }
+  .modal-head { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid #f3f4f6; }
+  .modal-head h3 { font-size: 15px; font-weight: 600; flex: 1; }
+  .x { border: none; background: none; font-size: 18px; color: #9ca3af; cursor: pointer; }
+
+  /* 顶部步骤条 */
+  .stepper { display: flex; align-items: center; padding: 14px 18px; gap: 6px; border-bottom: 1px solid #f3f4f6; background: #fafbfd; }
+  .step-dot { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; cursor: pointer; }
+  .step-dot .n { width: 24px; height: 24px; border-radius: 50%; background: #e5e9f0; color: #9ca3af; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .step-dot .lb { font-size: 10.5px; color: #9ca3af; white-space: nowrap; }
+  .step-dot.on .n { background: #3370ff; color: #fff; }
+  .step-dot.on .lb { color: #3370ff; font-weight: 600; }
+  .step-dot.done .n { background: #e8f4ec; color: #16803a; }
+  .step-dot.done .lb { color: #16803a; }
+  .step-line { flex: none; width: 18px; height: 1.5px; background: #e5e9f0; margin-bottom: 16px; }
+  .step-line.done { background: #3370ff; }
+
+  /* 主体 */
+  .body { padding: 16px 18px; }
+  .step-title { font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 12px; }
+  .step-title em { font-style: normal; color: #9ca3af; font-weight: 400; font-size: 12px; margin-left: 6px; }
+
+  /* 任务列表 */
+  .task-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #eef0f4; border-radius: 10px; margin-bottom: 10px; cursor: pointer; }
+  .task-item:hover, .task-item.on { border-color: #3370ff; background: #f7f9ff; }
+  .task-ic { width: 34px; height: 34px; border-radius: 9px; background: #eef4ff; color: #3370ff; display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none; }
+  .task-txt { flex: 1; min-width: 0; }
+  .task-txt b { display: block; font-size: 13.5px; color: #1f2937; }
+  .task-txt small { font-size: 11.5px; color: #9ca3af; }
+  .arrow { color: #c0c4cc; flex: none; }
+
+  /* 快照时间线 */
+  .snap-row { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid #eef0f4; border-radius: 10px; margin-bottom: 8px; cursor: pointer; font-size: 12.5px; }
+  .snap-row.on { border-color: #3370ff; background: #f7f9ff; }
+  .snap-dot { width: 8px; height: 8px; border-radius: 50%; background: #3370ff; flex: none; }
+  .snap-t { color: #1f2937; font-weight: 600; flex: none; }
+  .snap-id { color: #6b7280; font-family: monospace; }
+  .snap-files { color: #9ca3af; flex: 1; text-align: right; }
+  .snap-badge { font-size: 10.5px; padding: 2px 8px; border-radius: 20px; background: #f1f3f7; color: #6b7280; flex: none; }
+
+  /* 分段 */
+  .seg { display: flex; gap: 8px; margin-bottom: 12px; }
+  .seg button { flex: 1; padding: 9px; border: 1px solid #e2e6ee; background: #fff; border-radius: 8px; cursor: pointer; font-size: 13px; color: #4b5563; font-family: inherit; }
+  .seg button.on { border-color: #3370ff; color: #3370ff; background: #f7f9ff; font-weight: 600; }
+  .dest-note { font-size: 12px; color: #9ca3af; line-height: 1.6; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #e2e6ee; border-radius: 8px; font-size: 13px; font-family: inherit; color: #1f2937; }
+
+  /* 底部按钮 */
+  .foot { display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid #f3f4f6; }
+  .btn { padding: 11px 18px; border-radius: 10px; font-size: 14px; cursor: pointer; font-family: inherit; border: 1px solid transparent; }
+  .btn.ghost { flex: 1; background: #fff; border-color: #e2e6ee; color: #4b5563; }
+  .btn.primary { flex: 1.6; background: #3370ff; color: #fff; font-weight: 600; }
+  .btn.primary:disabled { background: #c3d0ff; cursor: not-allowed; }
+  .btn.ghost:disabled { color: #c0c4cc; cursor: not-allowed; }
+
+  /* flow-line */
+  .flow { display: flex; align-items: center; gap: 8px; padding: 12px 18px; background: #fafbfd; border-top: 1px solid #f3f4f6; font-size: 12.5px; color: #6b7280; }
+  .flow .node { background: #eef4ff; color: #3370ff; padding: 4px 10px; border-radius: 6px; }
+  .flow .node.hi { background: #3370ff; color: #fff; }
+  .flow .lk { color: #c0c4cc; }
+
+  /* 方案差异说明 */
+  .diff-note { max-width: 640px; margin: 20px auto 0; background: #fffbe6; border: 1px solid #fde68a; border-radius: 10px; padding: 12px 16px; font-size: 12.5px; color: #92400e; line-height: 1.7; }
+  .diff-note b { color: #78350f; }
+</style>
+</head>
+<body>
+
+<div class="scheme-bar" id="schemeBar">
+  <button data-s="A" class="on">方案 A · 线性向导</button>
+  <button data-s="B">方案 B · 步骤条+锚点</button>
+  <button data-s="C">方案 C · 单页滚动+底部</button>
+</div>
+<p class="hint">三个方案都已把「选择备份任务」合并进同一步流程。切换上方按钮对比。</p>
+
+<div class="phone" id="phone"></div>
+<div class="diff-note" id="diffNote"></div>
+
+<script>
+const TASKS = [
+  { name: "相册备份", sub: "上次备份 10-26 08:30 · 12 个快照" },
+  { name: "资料备份", sub: "上次备份 10-25 22:00 · 8 个快照" },
+];
+const SNAPS = [
+  { id: "3f8a2c1e", t: "10-26 08:30", files: "12,480 个文件 · 38.2 GB", badge: "最新" },
+  { id: "9d41b7a2", t: "10-23 08:30", files: "12,361 个文件 · 37.9 GB", badge: "+119" },
+  { id: "7c02e9f5", t: "10-20 08:30", files: "12,055 个文件 · 37.4 GB", badge: "+306" },
+];
+
+// 统一流程：5 步
+const STEPS = [
+  { id:"task",  label:"选任务", title:"选择备份任务", hint:"选择要还原哪个备份任务的数据" },
+  { id:"snap",  label:"选快照", title:"选择快照", hint:"选择要还原到的时间点" },
+  { id:"files", label:"选文件", title:"选择要还原的文件", hint:"可进入子目录勾选" },
+  { id:"dest",  label:"目的地", title:"还原到哪里", hint:"写回原位置或指定新路径" },
+  { id:"conf",  label:"冲突", title:"遇到同名文件", hint:"已有同名文件时的处理方式" },
+];
+
+let scheme = "A";
+let cur = 0;
+const state = { task: null, snap: null, files: [], dest: "original", conflict: "if-changed" };
+
+function doneStep(i) {
+  const s = STEPS[i].id;
+  if (s === "task") return !!state.task;
+  if (s === "snap") return !!state.snap;
+  if (s === "files") return state.files.length > 0;
+  if (s === "dest") return true;
+  if (s === "conf") return true;
+  return false;
+}
+
+function stepperHTML(interactive) {
+  return `<div class="stepper">
+    ${STEPS.map((s, i) => {
+      const cls = i === cur ? "on" : (doneStep(i) ? "done" : "");
+      const click = (interactive && (doneStep(i) || i <= cur)) ? `onclick="goto(${i})"` : "";
+      return `${i > 0 ? `<div class="step-line ${doneStep(i-1) ? "done" : ""}"></div>` : ""}
+      <div class="step-dot ${cls}" ${click} style="cursor:${click ? "pointer" : "default"}">
+        <span class="n">${doneStep(i) ? "✓" : i+1}</span>
+        <span class="lb">${s.label}</span>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function bodyHTML() {
+  const s = STEPS[cur];
+  let inner = "";
+  if (s.id === "task") {
+    inner = TASKS.map((t, i) => `
+      <div class="task-item ${state.task && state.task.name === t.name ? "on" : ""}" onclick="pickTask(${i})">
+        <span class="task-ic">↺</span>
+        <span class="task-txt"><b>${t.name}</b><small>${t.sub}</small></span>
+        <svg class="arrow" viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="#c0c4cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>
+      </div>`).join("");
+  } else if (s.id === "snap") {
+    inner = SNAPS.map((sn, i) => `
+      <div class="snap-row ${state.snap && state.snap.id === sn.id ? "on" : ""}" onclick="pickSnap(${i})">
+        <span class="snap-dot"></span>
+        <span class="snap-t">${sn.t}</span>
+        <span class="snap-id">${sn.id}</span>
+        <span class="snap-files">${sn.files}</span>
+        <span class="snap-badge">${sn.badge}</span>
+      </div>`).join("");
+  } else if (s.id === "files") {
+    inner = `<div class="seg"><button class="on">浏览文件树（点此弹选择器）</button></div>
+      <div class="dest-note">mock：此处为文件选择入口，点击后弹出独立选择器，已选文件显示在下方标签。</div>`;
+  } else if (s.id === "dest") {
+    inner = `<div class="seg">
+      <button class="${state.dest === "original" ? "on" : ""}" onclick="setDest('original')">原位置</button>
+      <button class="${state.dest === "custom" ? "on" : ""}" onclick="setDest('custom')">新路径</button>
+    </div>
+    ${state.dest === "original"
+      ? `<div class="dest-note">将写回原路径：/vol1/1000/相册</div>`
+      : `<input placeholder="/vol1/1000/还原目录（将自动创建）">`}`;
+  } else if (s.id === "conf") {
+    const opts = [["always","全部覆盖"],["if-changed","仅覆盖有变化"],["never","跳过已存在"]];
+    inner = `<div class="seg">
+      ${opts.map(o => `<button class="${state.conflict === o[0] ? "on" : ""}" onclick="setConf('${o[0]}')">${o[1]}</button>`).join("")}
+    </div>
+    <div class="dest-note">{{${state.conflict === "always" ? "直接覆盖本地同名文件" : state.conflict === "if-changed" ? "内容没变的文件不重写" : "已存在的文件保持不动"}}</div>`;
+  }
+  return `<div class="body">
+    <div class="step-title">第 ${cur+1} 步 · ${s.title}<em>${s.hint}</em></div>
+    ${inner}
+  </div>`;
+}
+
+function footHTML() {
+  const isLast = cur === STEPS.length - 1;
+  const prevDisabled = cur === 0;
+  const nextDisabled = !doneStep(cur);
+  // 方案A/B 用 上一步/下一步，最后一步用「开始还原」
+  if (scheme === "A" || scheme === "B") {
+    return `<div class="foot">
+      <button class="btn ghost" ${prevDisabled ? "disabled" : ""} onclick="prev()">上一步</button>
+      ${isLast
+        ? `<button class="btn primary" onclick="alert('开始还原（mock）')">开始还原</button>`
+        : `<button class="btn primary" ${nextDisabled ? "disabled" : ""} onclick="next()">下一步</button>`}
+    </div>`;
+  }
+  // 方案C：单页滚动，底部固定「开始还原」+ 顶部步骤条
+  return `<div class="foot">
+    <button class="btn ghost" onclick="scrollTop()">回到顶部</button>
+    <button class="btn primary" onclick="alert('开始还原（mock）')">开始还原</button>
+  </div>`;
+}
+
+// ===== 方案C：单页滚动视图 =====
+function bodyAllHTML() {
+  return `<div class="body">
+    ${STEPS.map((s, i) => `
+      <div style="margin-bottom:16px">
+        <div class="step-title">${i+1}. ${s.title}<em>${s.hint}</em></div>
+        ${sectionInner(s.id)}
+      </div>`).join("")}
+    <div class="flow"><span class="node">📁 快照 3f8a2c1e</span><span class="lk">──▶</span><span class="node hi">⌖ 原位置</span></div>
+  </div>`;
+}
+function sectionInner(id) {
+  if (id === "task") return TASKS.map((t,i)=>`<div class="task-item ${state.task && state.task.name===t.name?"on":""}" onclick="pickTask(${i})"><span class="task-ic">↺</span><span class="task-txt"><b>${t.name}</b><small>${t.sub}</small></span><svg class="arrow" viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="#c0c4cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg></div>`).join("");
+  if (id === "snap") return SNAPS.map((sn,i)=>`<div class="snap-row ${state.snap && state.snap.id===sn.id?"on":""}" onclick="pickSnap(${i})"><span class="snap-dot"></span><span class="snap-t">${sn.t}</span><span class="snap-id">${sn.id}</span><span class="snap-files">${sn.files}</span><span class="snap-badge">${sn.badge}</span></div>`).join("");
+  if (id === "files") return `<div class="seg"><button class="on">浏览文件树</button></div><div class="dest-note">文件选择入口（mock）</div>`;
+  if (id === "dest") return `<div class="seg"><button class="${state.dest==="original"?"on":""}" onclick="setDest('original')">原位置</button><button class="${state.dest==="custom"?"on":""}" onclick="setDest('custom')">新路径</button></div>${state.dest==="original"?'<div class="dest-note">将写回原路径：/vol1/1000/相册</div>':'<input placeholder="/vol1/1000/还原目录">'}`;
+  if (id === "conf") return `<div class="seg">${[["always","全部覆盖"],["if-changed","仅覆盖有变化"],["never","跳过已存在"]].map(o=>`<button class="${state.conflict===o[0]?"on":""}" onclick="setConf('${o[0]}')">${o[1]}</button>`).join("")}</div>`;
+  return "";
+}
+
+function render() {
+  const p = document.getElementById("phone");
+  if (scheme === "C") {
+    p.innerHTML = `<div class="modal">
+      <div class="modal-head"><h3>新建还原</h3><button class="x">✕</button></div>
+      ${stepperHTML(true)}
+      ${bodyAllHTML()}
+      ${footHTML()}
+    </div>`;
+  } else {
+    p.innerHTML = `<div class="modal">
+      <div class="modal-head"><h3>新建还原 — ${state.task ? state.task.name : "未选任务"}</h3><button class="x">✕</button></div>
+      ${stepperHTML(scheme === "B")}
+      ${bodyHTML()}
+      ${scheme === "A" && (state.snap || state.files.length) ? `<div class="flow"><span class="node">📁 快照 ${state.snap ? state.snap.id : "…"}</span><span class="lk">──▶</span><span class="node hi">${state.dest === "original" ? "⌖ 原位置" : "➝ 新路径"}</span></div>` : ""}
+      ${footHTML()}
+    </div>`;
+  }
+  updateDiff();
+}
+
+function updateDiff() {
+  const notes = {
+    A: "<b>方案 A · 线性向导（严格上一步/下一步）</b>：所有步骤合并进同一个窗口，顶部一条 5 段步骤条（不可点击跳转，只能上一步/下一步顺序走），中间一次只显示当前一步，底部是「上一步 / 下一步」（最后一步变「开始还原」）。最聚焦、最不易出错，但想回改某一步要一路点「上一步」。",
+    B: "<b>方案 B · 步骤条可点击 + 上一步/下一步</b>：和方案 A 一样是单窗口线性向导，但顶部步骤条<u>可点击直达</u>（已完成或当前步骤可点，未到的灰掉），底部保留「上一步/下一步」。兼顾聚焦和灵活回改，是最实用的折中。",
+    C: "<b>方案 C · 单页滚动 + 底部固定按钮</b>：所有步骤竖排在一页里从上往下滚，顶部步骤条仅作进度指示（滚动时高亮当前段），底部固定「回到顶部 / 开始还原」。一屏看全、可自由上下滚动，但步骤多时页面较长。",
+  };
+  document.getElementById("diffNote").innerHTML = notes[scheme];
+}
+
+// 交互
+function pickTask(i) { state.task = TASKS[i]; if (scheme === "A" || scheme === "B") { next(); return; } render(); }
+function pickSnap(i) { state.snap = SNAPS[i]; if (scheme === "A" || scheme === "B") { next(); return; } render(); }
+function setDest(v) { state.dest = v; render(); }
+function setConf(v) { state.conflict = v; render(); }
+function goto(i) { if (scheme === "B") { cur = i; render(); } }
+function next() { if (cur < STEPS.length - 1) { cur++; render(); } }
+function prev() { if (cur > 0) { cur--; render(); } }
+function scrollTop() { window.scrollTo({ top: 0, behavior: "smooth" }); }
+
+document.getElementById("schemeBar").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  scheme = b.dataset.s;
+  cur = 0;
+  document.querySelectorAll("#schemeBar button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

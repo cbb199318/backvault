@@ -1,0 +1,15 @@
+appname=encbackup
+version=0.2.2
+display_name=加密备份
+desc=基于 restic 的飞牛加密备份应用：向导式创建任务，定时加密备份到云盘（天翼/115/OpenList 挂载），支持可视化浏览快照与精确还原。
+maintainer=caobingbing
+maintainer_url=https://github.com/caobingbing
+distributor=caobingbing
+source=thirdparty
+platform=x86
+desktop_uidir=ui
+desktop_applaunchname=encbackup.main
+os_min_version=1.1.3100
+ctl_stop=true
+checkport=false
+changelog=0.2.2 界面仿飞牛原生备份重制：桌面左侧导航+任务卡片，手机顶部Tab+详情卡片，仓库管理独立页面。
