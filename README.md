@@ -16,6 +16,26 @@
 - 🖥️ **双端适配**：桌面左侧导航 + 任务卡片；手机顶部 Tab + 底部抽屉
 - 📦 **双形态部署**：fnOS fpk 应用包 + Docker 镜像
 
+## 界面预览
+
+### 备份任务
+
+![备份任务列表](design/screenshots/01-backup-tasks.png)
+
+向导式创建备份任务，任务卡片内嵌来源 → 目标流向与调度信息：
+
+![创建备份任务](design/screenshots/02-create-task.png)
+
+### 还原
+
+还原历史列表，每条记录展示快照 / 目标 / 时间 / 结果：
+
+![还原历史](design/screenshots/03-restore.png)
+
+五步还原向导（选任务 → 选快照 → 选文件 → 选目的地 → 冲突策略）：
+
+![新建还原向导](design/screenshots/04-restore-wizard.png)
+
 ## 技术栈
 
 | 层 | 技术 |
