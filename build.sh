@@ -32,14 +32,14 @@ ls -lh "${APPDIR}/app/server/engines/"
 echo "== 5/5 打包 =="
 if [ "${1:-fpk}" = "docker" ]; then
   echo "   → Docker 镜像"
-  docker build -t encbackup:latest .
+  docker build -t backvault:latest .
   echo ""
-  echo "镜像构建完成：encbackup:latest"
+  echo "镜像构建完成：backvault:latest"
   echo "运行示例："
-  echo "  docker run -d --name encbackup -p 5175:5175 \\"
+  echo "  docker run -d --name backvault -p 5175:5175 \\"
   echo "    -v \$(pwd)/data:/data -v /你的备份目录:/src:ro \\"
   echo "    -e AUTH_USER=admin -e AUTH_PASS=改成强密码 -e USER_ROOT=/src \\"
-  echo "    encbackup:latest"
+  echo "    backvault:latest"
   exit 0
 fi
 

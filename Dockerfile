@@ -5,13 +5,13 @@
 #   ./build.sh docker
 #
 # 运行示例：
-#   docker run -d --name encbackup \
+#   docker run -d --name backvault \
 #     -p 5175:5175 \
 #     -v $(pwd)/data:/data \
 #     -v /你的备份源目录:/src:ro \
 #     -e AUTH_USER=admin -e AUTH_PASS=请改成强密码 \
 #     -e USER_ROOT=/src \
-#     encbackup:latest
+#     backvault:latest
 #
 # 说明：
 #   - /data 存放 config.json、rclone.conf、日志、缓存（升级镜像不丢数据）

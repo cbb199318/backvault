@@ -5,10 +5,10 @@
 #   3. docker compose up -d
 #   4. 浏览器访问 http://主机IP:5175，用 AUTH_USER/AUTH_PASS 登录
 services:
-  encbackup:
+  backvault:
     build: .
-    image: encbackup:latest
-    container_name: encbackup
+    image: backvault:latest
+    container_name: backvault
     restart: unless-stopped
     ports:
       - "5175:5175"

@@ -1,4 +1,4 @@
-# 加密备份（encbackup）
+# BackVault
 
 基于 [restic](https://restic.net/) 的**飞牛（fnOS）加密备份应用**。向导式创建备份任务，定时加密备份到云盘（天翼云盘 / 115 网盘 / OpenList 挂载的任意 WebDAV），支持可视化浏览快照与精确还原。
 
