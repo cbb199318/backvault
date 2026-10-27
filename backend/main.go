@@ -118,6 +118,8 @@ type Task struct {
 	LastBytes    int64    `json:"last_bytes"`
 	LastSnapID   string   `json:"last_snapshot_id"`
 	LastDuration int      `json:"last_duration_sec"`
+	NextRunAt    string   `json:"next_run_at,omitempty"` // 下次运行时间（计算填充，不落盘）
+	AuthWarn     string   `json:"auth_warn,omitempty"`   // 云盘授权失效告警（运行时探测填充，不落盘）
 }
 
 type Config struct {
@@ -168,6 +170,18 @@ var (
 	runCur   []string
 	runErrs  int64
 	runLog   string // 当前运行日志文件路径
+)
+
+// 云盘授权探测缓存：key=远端名(ol:xxx)，value=探测结论与时间。避免每 30s 调度都跑一遍 rclone。
+type authProbe struct {
+	ok      bool
+	hint    string
+	checked time.Time
+}
+
+var (
+	authMu   sync.Mutex
+	authCache = map[string]authProbe{}
 )
 
 func maskPasswords() {
@@ -239,6 +253,70 @@ func findTask(id string) *Task {
 		}
 	}
 	return nil
+}
+
+// olRemote：返回仓库的 OpenList 中转远端名（如 "ol:115"），非 ol 中转返回空串。
+func olRemote(repo *Repo) string {
+	if strings.HasPrefix(repo.URI, "rclone:ol:") {
+		return strings.TrimPrefix(repo.URI, "rclone:")
+	}
+	if strings.HasPrefix(repo.URI, "ol:") {
+		return repo.URI
+	}
+	return ""
+}
+
+// probeCloudAuth：探测云盘授权是否有效。仅对走 OpenList 中转的仓库（uri 以 ol: 开头）有意义。
+// 用 rclone rcat 上传一个探测文件再删除，判断「写入能力」——列目录对授权失效不敏感
+// （115 授权失效时列目录仍返回 directory not found，只有写入才报 500）。
+// 带缓存（5 分钟），避免频繁探测。返回 (ok, hint)。
+func probeCloudAuth(repo *Repo) (bool, string) {
+	remote := olRemote(repo)
+	if remote == "" {
+		return true, "" // 非 ol 中转（WebDAV 直连）不探测
+	}
+
+	authMu.Lock()
+	if p, ok := authCache[remote]; ok && time.Since(p.checked) < 5*time.Minute {
+		res := p
+		authMu.Unlock()
+		return res.ok, res.hint
+	}
+	authMu.Unlock()
+
+	probeName := "_auth_probe_" + randomID()
+	cmd := exec.Command(binPath("rclone"), "rcat", remote+"/"+probeName,
+		"--contimeout", "10s", "--timeout", "20s")
+	cmd.Env = rcloneEnv()
+	cmd.Stdin = strings.NewReader("probe")
+	out, err := cmd.CombinedOutput()
+	ok := err == nil
+	if ok {
+		// 探测成功，清理探测文件（失败不阻塞结果）
+		_ = exec.Command(binPath("rclone"), "deletefile", remote+"/"+probeName,
+			"--contimeout", "10s", "--timeout", "20s").Run()
+	}
+	hint := ""
+	if !ok {
+		so := string(out)
+		switch {
+		case strings.Contains(so, "401") || strings.Contains(so, "refresh_token") || strings.Contains(so, "unauthorized"):
+			hint = "云盘授权已失效，请到 OpenList 后台重新授权该网盘"
+		case strings.Contains(so, "500") || strings.Contains(so, "Internal Server Error"):
+			hint = "云盘写入失败（返回 500），通常是授权已失效，请到 OpenList 后台重新授权该网盘"
+		default:
+			line := strings.TrimSpace(strings.SplitN(strings.TrimSpace(so), "\n", 2)[0])
+			if len(line) > 120 {
+				line = line[:120] + "…"
+			}
+			hint = "云盘连接异常：" + line
+		}
+	}
+
+	authMu.Lock()
+	authCache[remote] = authProbe{ok: ok, hint: hint, checked: time.Now()}
+	authMu.Unlock()
+	return ok, hint
 }
 
 var cloudLabelMap = map[string]string{"tianyi": "天翼云盘", "y115": "115"}
@@ -345,6 +423,10 @@ func initFailHint(logPath string) string {
 		return "该云端目录下已存在一个加密仓库（可能是之前创建过的，密码与本仓库不一致）。请换一个云端目录名，或先在「云盘仓库」里删除旧仓库"
 	case strings.Contains(s, "wrong password"):
 		return "仓库密码不正确"
+	case cloudUploadFailed(s):
+		// 列目录正常但上传 500：几乎可以肯定是云盘授权（token/cookie）失效，
+		// 而不是网络或密码问题。把根因明确抛给用户，避免只看到笼统的 500。
+		return "云盘写入失败（上传返回 500）。通常是云盘授权已失效——请到 OpenList 后台对该网盘重新授权/重新登录，再重试；若刚授权过，也可能是云盘接口临时故障，稍后重试"
 	}
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	var tail []string
@@ -362,6 +444,19 @@ func initFailHint(logPath string) string {
 		return msg
 	}
 	return "exit status 1"
+}
+
+// cloudUploadFailed：判断 init 失败是否属于「云盘上传（写入）500」。
+// 特征：日志里同时出现「上传错误」与「500」——说明列目录/认证阶段正常，
+// 但写入被服务端拒绝，最典型的原因是云盘授权（refresh_token/cookie）失效。
+func cloudUploadFailed(s string) bool {
+	uploadErr := strings.Contains(s, "unchunked simple update failed") ||
+		strings.Contains(s, "Post request put error") ||
+		strings.Contains(s, "put error") ||
+		strings.Contains(s, "rcat error")
+	http500 := strings.Contains(s, "500 Internal Server Error") ||
+		strings.Contains(s, "unexpected HTTP response (500)")
+	return uploadErr && http500
 }
 
 // ---------------------------------------------------------------------------
@@ -497,6 +592,19 @@ func runTask(t *Task) error {
 	repo := findRepo(t.RepoID)
 	if repo == nil {
 		return fmt.Errorf("仓库 %s 不存在", t.RepoID)
+	}
+
+	// 备份前探测云盘授权：失效时直接明确报错，避免 restic 产生一串 500 重试日志
+	if ok, hint := probeCloudAuth(repo); !ok {
+		cfgMu.Lock()
+		if lt := findTask(t.ID); lt != nil {
+			lt.LastStatus = "failed"
+			lt.LastRunAt = time.Now().Format("2006-01-02 15:04:05")
+			lt.LastMessage = hint
+		}
+		_ = saveConfig()
+		cfgMu.Unlock()
+		return fmt.Errorf("%s", hint)
 	}
 
 	stateMu.Lock()
@@ -683,6 +791,72 @@ func schedHM(s string) (int, int, bool) {
 	return h, m, true
 }
 
+// nextRunAt 计算任务的下一次运行时间（仅用于展示，不影响实际调度）。
+// 返回空字符串表示无计划（manual / 已停用）。
+func nextRunAt(t *Task, now time.Time) string {
+	if !t.Enabled || t.SchedMode == "manual" {
+		return ""
+	}
+	switch t.SchedMode {
+	case "daily":
+		h, m, ok := schedHM(t.DailyTime)
+		if !ok {
+			return ""
+		}
+		n := t.DailyDays
+		if n < 1 {
+			n = 1
+		}
+		cand := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, time.Local)
+		for !cand.After(now) {
+			cand = cand.AddDate(0, 0, n)
+		}
+		return cand.Format("2006-01-02 15:04:05")
+	case "weekly":
+		h, m, ok := schedHM(t.DailyTime)
+		if !ok || len(t.WeeklyDays) == 0 {
+			return ""
+		}
+		for d := 0; d <= 7; d++ {
+			cand := time.Date(now.Year(), now.Month(), now.Day()+d, h, m, 0, 0, time.Local)
+			if cand.After(now) && containsInt(t.WeeklyDays, int(cand.Weekday())) {
+				return cand.Format("2006-01-02 15:04:05")
+			}
+		}
+		return ""
+	case "monthly":
+		h, m, ok := schedHM(t.DailyTime)
+		if !ok || len(t.MonthlyDays) == 0 {
+			return ""
+		}
+		// 最多向后找 62 天，覆盖所有月份组合
+		for d := 0; d <= 62; d++ {
+			cand := time.Date(now.Year(), now.Month(), now.Day()+d, h, m, 0, 0, time.Local)
+			day := cand.Day()
+			lastDay := time.Date(cand.Year(), cand.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+			if cand.After(now) && (containsInt(t.MonthlyDays, day) || (day == lastDay && containsInt(t.MonthlyDays, -1))) {
+				return cand.Format("2006-01-02 15:04:05")
+			}
+		}
+		return ""
+	case "interval":
+		if t.IntervalHrs <= 0 {
+			return ""
+		}
+		lastDone, _ := time.ParseInLocation("2006-01-02 15:04:05", t.LastDoneAt, time.Local)
+		base := lastDone
+		if base.IsZero() {
+			base = now
+		}
+		next := base.Add(time.Duration(t.IntervalHrs) * time.Hour)
+		for !next.After(now) {
+			next = next.Add(time.Duration(t.IntervalHrs) * time.Hour)
+		}
+		return next.Format("2006-01-02 15:04:05")
+	}
+	return ""
+}
+
 func scheduler() {
 	for {
 		time.Sleep(30 * time.Second)
@@ -752,12 +926,45 @@ func scheduler() {
 		}
 		cfgMu.Unlock()
 
+		// 调度循环顺带做云盘授权探测：为每个 enabled 任务的 ol 仓库探测一次，
+		// 把失效告警写入 Task.AuthWarn，前端任务卡片可直接标红（无需等备份失败）。
+		go refreshAuthWarns()
+
 		for _, t := range due {
 			go func(task *Task) {
 				_ = runTask(task)
 			}(t)
 			time.Sleep(2 * time.Second) // 保证串行（runTask 内部有 running 互斥）
 		}
+	}
+}
+
+// refreshAuthWarns：遍历 enabled 任务的仓库，探测云盘授权（结果只写 authCache，
+// 由 configHandler 返回时填充到 Task.AuthWarn，避免污染落盘的 cfg）。
+func refreshAuthWarns() {
+	cfgMu.Lock()
+	var repoIDs []string
+	seen := map[string]bool{}
+	for i := range cfg.Tasks {
+		t := &cfg.Tasks[i]
+		if !t.Enabled || t.SchedMode == "manual" {
+			continue
+		}
+		if !seen[t.RepoID] {
+			seen[t.RepoID] = true
+			repoIDs = append(repoIDs, t.RepoID)
+		}
+	}
+	cfgMu.Unlock()
+
+	for _, rid := range repoIDs {
+		cfgMu.Lock()
+		repo := findRepo(rid)
+		cfgMu.Unlock()
+		if repo == nil {
+			continue
+		}
+		_, _ = probeCloudAuth(repo) // 结果进 authCache
 	}
 }
 
@@ -832,6 +1039,20 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		cp.Tasks = append([]Task(nil), cfg.Tasks...)
+		now := time.Now()
+		for i := range cp.Tasks {
+			cp.Tasks[i].NextRunAt = nextRunAt(&cfg.Tasks[i], now)
+			// 填充云盘授权告警：从 authCache 读该任务仓库的探测结论
+			if rp := findRepo(cp.Tasks[i].RepoID); rp != nil {
+				if rem := olRemote(rp); rem != "" {
+					authMu.Lock()
+					if p, ok := authCache[rem]; ok && !p.ok {
+						cp.Tasks[i].AuthWarn = p.hint
+					}
+					authMu.Unlock()
+				}
+			}
+		}
 		writeJSON(w, 200, &cp)
 		return
 	}

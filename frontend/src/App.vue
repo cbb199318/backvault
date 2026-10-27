@@ -60,6 +60,21 @@ function fmtClock(iso) {
   return sameDay ? hm : `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${hm}`;
 }
 
+// "2006-01-02 15:04:05" → "明天 03:00" / "10-28 03:00"
+function fmtNextRun(s) {
+  if (!s) return "";
+  const d = new Date(s.replace(" ", "T"));
+  if (isNaN(d)) return "";
+  const hm = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTarget = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((startOfTarget - startOfToday) / 86400000);
+  if (diffDays === 0) return "今天 " + hm;
+  if (diffDays === 1) return "明天 " + hm;
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${hm}`;
+}
+
 function schedText(t) {
   if (t.sched_mode === "manual") return "手动";
   if (t.sched_mode === "daily") {
@@ -118,13 +133,15 @@ function destPath(r) {
 function statusInfo(t) {
   if (t.enabled === false) return { cls: "disabled", badge: "minus", text: "已禁用" };
   if (t.last_status === "running") return { cls: "running", badge: "run", text: "备份中…" };
-  if (t.last_status === "success")
+  if (t.auth_warn) return { cls: "failed", badge: "warn", text: "云盘授权失效", detail: t.auth_warn };
+  // 兼容历史数据：迁移自 Backrest 的任务 last_status 为空但 last_done_at 有值（已备份成功过）
+  if (t.last_status === "success" || (t.last_status === "" && t.last_done_at))
     return {
       cls: "success", badge: "ok",
       text: "上次备份 " + fmtShort(t.last_done_at),
-      detail: "传输完成 " + (t.last_files || 0).toLocaleString() + " 项" +
+      detail: (t.last_files ? "传输完成 " + (t.last_files || 0).toLocaleString() + " 项" +
         (t.last_bytes ? " / " + fmtBytes(t.last_bytes) : "") +
-        (t.last_duration_sec ? " · 用时 " + fmtDuration(t.last_duration_sec) : ""),
+        (t.last_duration_sec ? " · 用时 " + fmtDuration(t.last_duration_sec) : "") : ""),
     };
   if (t.last_status === "failed")
     return { cls: "failed", badge: "warn", text: "备份失败 " + fmtShort(t.last_run_at), detail: t.last_message || "" };
@@ -1225,7 +1242,7 @@ onUnmounted(() => {
                 </div>
                 <div class="tc-cell next">
                   <div class="cell-head"><b class="dim">下次</b></div>
-                  <div class="cell-sub">{{ t.enabled === false ? "–" : schedText(t) === "手动" ? "–" : schedText(t) }}</div>
+                  <div class="cell-sub">{{ t.next_run_at ? fmtNextRun(t.next_run_at) : "–" }}</div>
                 </div>
               </div>
 
@@ -1272,7 +1289,7 @@ onUnmounted(() => {
               <div class="mc-row"><span>来源地</span><span>fnos（本地）</span></div>
               <div class="mc-row"><span>目的地</span><span>{{ repoName(t.repo_id) }} · {{ destPath(repoObj(t.repo_id)) }}</span></div>
               <div class="mc-row"><span>上次备份</span><span>{{ t.last_done_at ? fmtShort(t.last_done_at) : "无记录" }}</span></div>
-              <div class="mc-row"><span>下次备份</span><span>{{ t.enabled === false ? "无计划" : schedText(t) === "手动" ? "无计划" : schedText(t) }}</span></div>
+              <div class="mc-row"><span>下次备份</span><span>{{ t.next_run_at ? fmtNextRun(t.next_run_at) : "无计划" }}</span></div>
 
               <!-- 运行中进度（仅当前任务，手机卡片） -->
               <div class="tc-progress" v-if="t.id === progress.task_id">
@@ -2778,7 +2795,7 @@ html.scroll-locked body {
 .toast {
   position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
   background: #1f2937; color: #fff; padding: 11px 22px; border-radius: 10px;
-  font-size: 14px; z-index: 99; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  font-size: 14px; z-index: 9999; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 .toast.bad { background: #dc2626; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
