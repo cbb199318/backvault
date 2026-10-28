@@ -114,7 +114,7 @@ type Task struct {
 	CreatedAt    string   `json:"created_at"`
 	LastRunAt    string   `json:"last_run_at"`
 	LastDoneAt   string   `json:"last_done_at"` // 上次成功结束时间（调度去重用）
-	LastStatus   string   `json:"last_status"`  // success | failed | running | ""
+	LastStatus   string   `json:"last_status"`  // success | failed | running | stopped | ""
 	LastMessage  string   `json:"last_message"`
 	LastFiles    int64    `json:"last_files"`
 	LastBytes    int64    `json:"last_bytes"`
@@ -589,6 +589,7 @@ type runResult struct {
 	Bytes      int64
 	Err        error
 	ErrOutput  string
+	Stopped    bool // 手动停止（区别于真实失败）
 }
 
 // runRestic 执行一条 restic 命令，逐行解析 --json 输出更新进度，日志写入 writer。
@@ -664,6 +665,7 @@ func runRestic(repo *Repo, args []string, logFile *os.File, stop chan struct{}, 
 		<-finished
 		<-done
 		res.Err = fmt.Errorf("已手动停止")
+		res.Stopped = true
 		return res
 	}
 }
@@ -795,7 +797,10 @@ func runTask(t *Task) error {
 		}
 		return nil
 	}
-	if res.Err != nil {
+	if res.Stopped {
+		lt.LastStatus = "stopped"
+		lt.LastMessage = "已手动停止"
+	} else if res.Err != nil {
 		lt.LastStatus = "failed"
 		lt.LastMessage = res.Err.Error()
 	} else {

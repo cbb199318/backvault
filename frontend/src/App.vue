@@ -145,6 +145,8 @@ function statusInfo(t) {
     };
   if (t.last_status === "failed")
     return { cls: "failed", badge: "warn", text: "备份失败 " + fmtShort(t.last_run_at), detail: t.last_message || "" };
+  if (t.last_status === "stopped")
+    return { cls: "idle", badge: "minus", text: "已停止", detail: "上次运行 " + fmtShort(t.last_run_at) + " 已手动停止" };
   return { cls: "idle", badge: "none", text: "从未备份" };
 }
 
