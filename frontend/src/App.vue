@@ -1525,7 +1525,7 @@ onUnmounted(() => {
                     复制
                   </button>
                 </div>
-                <div class="hint-box">{{ wiz.editing ? "仓库密码只能设置一次，后续不可修改。" : "仓库密码只能设置一次，保存后不可修改，请妥善保管；忘记密码将无法恢复数据。" }}</div>
+                <div class="hint-box" v-if="!wiz.editing">仓库密码只能设置一次，保存后不可修改，请妥善保管；忘记密码将无法恢复数据。</div>
               </div>
               <div class="flow-line" v-if="destReady && wiz.form.paths.length">
                 <span class="node">fnos 本地</span><i class="lk">──▶</i>
