@@ -507,6 +507,8 @@ const cloudOptions = [
 ];
 const repoModal = reactive({
   show: false,
+  saving: false,
+  savingText: "",
   form: { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other" },
 });
 // WebDAV 连接测试
@@ -573,7 +575,7 @@ function onCloudChange() {
 }
 // 云盘目录浏览（选云端目录：mode = repo 仓库设置 / dest 任务目的地）；remote 为 rclone 远端名（ol:天翼云盘 / wd-xxx）
 // base：浏览起点根（WebDAV 仓库 = 其 URI 限定的子目录，用户只能在仓库范围内选）
-const cloudBrowser = reactive({ show: false, path: "", dirs: [], loading: false, cloud: "", remote: "", mode: "repo", creating: false, base: "" });
+const cloudBrowser = reactive({ show: false, path: "", dirs: [], loading: false, cloud: "", remote: "", mode: "repo", creating: false, base: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other" });
 function remoteOf(cloudKey) {
   const r = cfg.repos.find((x) => x.id === cloudKey); // 下拉新 value：仓库 id
   if (r) return r.cloud === "webdav" ? (r.remote || "") : remoteOf(r.cloud);
@@ -583,9 +585,19 @@ function remoteOf(cloudKey) {
 async function openCloudBrowser() {
   cloudBrowser.show = true;
   cloudBrowser.mode = "repo";
-  cloudBrowser.cloud = cloudLabels[repoModal.form.cloud] || repoModal.form.cloud;
+  // WebDAV 新建：显示友好标签；已保存的 WebDAV 仓库显示其名字；ol 云盘显示中文名
+  if (repoModal.form.cloud === "webdav") {
+    cloudBrowser.cloud = repoModal.form.name || "WebDAV";
+  } else {
+    cloudBrowser.cloud = cloudLabels[repoModal.form.cloud] || repoModal.form.cloud;
+  }
   // WebDAV 仓库用真实远端名（wd-xxx），ol 云盘用 ol:云盘名；否则 rclone 找不到 config 段
   cloudBrowser.remote = repoModal.form.cloud === "webdav" ? (repoModal.form.remote || "") : remoteOf(repoModal.form.cloud);
+  // 新建 WebDAV（remote 未生成）：把地址/账号传给后端，用临时 :webdav: 直接浏览
+  cloudBrowser.dav_url = repoModal.form.cloud === "webdav" && !repoModal.form.remote ? repoModal.form.dav_url : "";
+  cloudBrowser.dav_user = repoModal.form.cloud === "webdav" && !repoModal.form.remote ? repoModal.form.dav_user : "";
+  cloudBrowser.dav_pass = repoModal.form.cloud === "webdav" && !repoModal.form.remote ? repoModal.form.dav_pass : "";
+  cloudBrowser.dav_vendor = repoModal.form.dav_vendor || "other";
   cloudBrowser.base = ""; // 仓库模式下不限定根（在服务器范围内选仓库目录）
   cloudBrowser.path = "";
   await browseCloud("");
@@ -595,6 +607,7 @@ function openDestBrowser() {
   cloudBrowser.mode = "dest";
   cloudBrowser.cloud = cloudLabels[wiz.form.dest_cloud] || destCloudLabel(wiz.form.dest_cloud);
   cloudBrowser.remote = remoteOf(wiz.form.dest_cloud);
+  cloudBrowser.dav_url = cloudBrowser.dav_user = cloudBrowser.dav_pass = "";
   // WebDAV 仓库：以仓库 URI 限定的子目录为浏览根（选天翼仓库就只看得到天翼内）
   const r = cfg.repos.find((x) => x.id === wiz.form.dest_cloud) || cfg.repos.find((x) => (x.remote || x.id) === wiz.form.dest_cloud);
   cloudBrowser.base = r && r.cloud === "webdav" ? ((uriToParts(r.uri) || {}).subdir || "") : "";
@@ -607,7 +620,11 @@ async function browseCloud(p) {
   try {
     const r = await api("/api/browse-cloud", {
       method: "POST",
-      body: JSON.stringify({ cloud: cloudBrowser.cloud, remote: cloudBrowser.remote, path: p }),
+      body: JSON.stringify({
+        cloud: cloudBrowser.cloud, remote: cloudBrowser.remote, path: p,
+        dav_url: cloudBrowser.dav_url || "", dav_user: cloudBrowser.dav_user || "",
+        dav_pass: cloudBrowser.dav_pass || "", dav_vendor: cloudBrowser.dav_vendor || "other",
+      }),
     });
     if (r.error) showToast("云盘读取失败（可能风控限流）：" + r.error, "bad");
     cloudBrowser.dirs = r.dirs || [];
@@ -646,7 +663,11 @@ async function confirmMkdir() {
   mkdirDlg.creating = true;
   try {
     const full = (cloudBrowser.path ? cloudBrowser.path + "/" : "") + name;
-    const r = await api("/api/mkdir-cloud", { method: "POST", body: JSON.stringify({ cloud: cloudBrowser.cloud, remote: cloudBrowser.remote, path: full }) });
+    const r = await api("/api/mkdir-cloud", { method: "POST", body: JSON.stringify({
+      cloud: cloudBrowser.cloud, remote: cloudBrowser.remote, path: full,
+      dav_url: cloudBrowser.dav_url || "", dav_user: cloudBrowser.dav_user || "",
+      dav_pass: cloudBrowser.dav_pass || "", dav_vendor: cloudBrowser.dav_vendor || "other",
+    }) });
     if (r.error) {
       showToast("创建失败：" + r.error, "bad");
     } else {
@@ -663,18 +684,22 @@ async function confirmMkdir() {
   mkdirDlg.creating = false;
 }
 async function saveRepo() {
+  if (repoModal.saving) return;
   const f = repoModal.form;
   f.uri = f.cloud === "webdav" ? (f.subdir || "").replace(/^\/+|\/+$/g, "") : buildURI();
   if (!f.name || !f.uri || (!f.password && !f.id)) {
-    showToast("仓库名称、云端目录、密码均必填", "bad");
+    showToast("保存失败：仓库名称、云端目录、密码均必填", "bad");
     return;
   }
   if (f.cloud === "webdav" && (!f.dav_url.trim() || !f.dav_user.trim())) {
-    showToast("WebDAV 地址与账号必填", "bad");
+    showToast("保存失败：WebDAV 地址与账号必填", "bad");
     return;
   }
+  repoModal.saving = true;
+  repoModal.savingText = f.id ? "正在保存…" : "正在初始化云端仓库（restic init，可能需十几秒）…";
   try {
-    await api("/api/repos", { method: "POST", body: JSON.stringify(f) });
+    const r = await api("/api/repos", { method: "POST", body: JSON.stringify(f) });
+    if (r.error) { showToast("保存失败：" + r.error, "bad"); return; }
     showToast("仓库已保存");
     repoModal.show = false;
     loadAll();
@@ -684,7 +709,10 @@ async function saveRepo() {
       setTimeout(() => { cloudPick.show = true; }, 260);
     }
   } catch (e) {
-    showToast(e.message, "bad");
+    showToast("保存失败：" + e.message, "bad");
+  } finally {
+    repoModal.saving = false;
+    repoModal.savingText = "";
   }
 }
 async function verifyRepo(r) {
@@ -712,7 +740,7 @@ async function confirmRmRepo() {
   rmDlg.busy = true;
   try {
     await api(`/api/repos/${rmDlg.opt.id}/delete`, { method: "POST" });
-    showToast("云端已移除（云盘上的数据不受影响）");
+    showToast("仓库已移除");
     if (wiz.form.dest_cloud && rmDlg.opt && (rmDlg.opt.id === wiz.form.dest_cloud || (rmDlg.opt.remote || rmDlg.opt.id) === wiz.form.dest_cloud)) {
       wiz.form.dest_cloud = "";
       wiz.form.dest_subdir = "";
@@ -1600,7 +1628,7 @@ onUnmounted(() => {
               <span>云端目录（可选）</span>
               <div class="inrow">
                 <input v-model="repoModal.form.subdir" placeholder="默认根目录，可手动输入子目录" />
-                <button v-if="repoModal.form.remote" class="btn ghost sm" @click="openCloudBrowser">浏览</button>
+                <button v-if="repoModal.form.remote || repoModal.form.dav_url" class="btn ghost sm" @click="openCloudBrowser">浏览</button>
               </div>
             </div>
             <div class="uri-prev mono">rclone:{{ repoModal.form.remote || "<保存时生成远端>" }}:{{ repoModal.form.subdir || "" }}</div>
@@ -1625,10 +1653,13 @@ onUnmounted(() => {
           </label>
           <div class="hint-box">保存后可点「验证」确认密码与云端连接；restic 会自动创建缺失的仓库目录。</div>
         </div>
+        <div v-if="repoModal.saving" class="saving-tip">
+          <span class="spin"></span><span>{{ repoModal.savingText || "保存中…" }}</span>
+        </div>
         <div class="modal-foot even">
           <span class="spacer"></span>
-          <button class="btn ghost" @click="repoModal.show = false">取消</button>
-          <button class="btn primary" @click="saveRepo">保存</button>
+          <button class="btn ghost" @click="repoModal.show = false" :disabled="repoModal.saving">取消</button>
+          <button class="btn primary" @click="saveRepo" :disabled="repoModal.saving">{{ repoModal.saving ? "保存中…" : "保存" }}</button>
         </div>
       </div>
     </div>
@@ -1781,7 +1812,7 @@ onUnmounted(() => {
         </div>
         <div class="modal-foot col">
           <div class="toolbarC">
-            <button type="button" class="mkdir-btn" v-if="cloudBrowser.mode === 'dest'" :disabled="mkdirDlg.creating" @click="openMkdirDlg">{{ mkdirDlg.creating ? "创建中…" : "新建文件夹" }}</button>
+            <button type="button" class="mkdir-btn" :disabled="mkdirDlg.creating" @click="openMkdirDlg">{{ mkdirDlg.creating ? "创建中…" : "新建文件夹" }}</button>
             <button class="btn primary block" :disabled="cloudBrowser.mode === 'dest' && !cloudBrowser.path" @click="chooseCloudDir">使用当前目录</button>
           </div>
         </div>
@@ -2036,7 +2067,7 @@ onUnmounted(() => {
       <div class="modal" style="width:400px;" @click.stop>
         <div class="modal-body" style="padding-top:20px;">
           <h3 style="font-size:16px; text-align:center; margin-bottom:6px;">移除「{{ rmDlg.opt ? rmDlg.opt.name : "" }}」？</h3>
-          <p style="font-size:13px; color:#6b7280; text-align:center; margin-bottom:14px;">仅从本应用移除，<b>不会删除云盘上的数据</b></p>
+          <p style="font-size:13px; color:#6b7280; text-align:center; margin-bottom:14px;">已备份的数据会保留在云盘；<b>未备份的空仓库将一并清理</b></p>
         </div>
         <div class="modal-foot pair">
           <button class="btn ghost block" @click="rmDlg.show = false">取消</button>
@@ -2454,6 +2485,10 @@ html.scroll-locked body {
 .modal-body { padding: 8px 20px; overflow-y: auto; overscroll-behavior: contain; }
 .modal-foot { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-top: 1px solid #f3f4f6; }
 .spacer { flex: 1; }
+/* 保存中的进度提示条（仓库保存/init 可能耗时十几秒） */
+.saving-tip { display: flex; align-items: center; gap: 9px; padding: 10px 20px 0; font-size: 13px; color: #2563eb; }
+.saving-tip .spin { width: 14px; height: 14px; border: 2px solid #bfdbfe; border-top-color: #2563eb; border-radius: 50%; animation: sp 0.7s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
 /* even：底部按钮等宽均分（上一步/下一步） */
 .modal-foot.even .btn { flex: 1 1 0; min-width: 0; padding: 10px 18px; }
 

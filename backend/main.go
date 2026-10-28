@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -284,17 +285,25 @@ func probeCloudAuth(repo *Repo) (bool, string) {
 	}
 	authMu.Unlock()
 
+	// 探测文件写到仓库子目录下（避免污染云盘根），用唯一名避免并发冲突
+	probeDir := remote
+	if sub := strings.TrimPrefix(strings.TrimPrefix(repo.URI, "rclone:"), remote); sub != "" {
+		probeDir = remote + "/" + strings.Trim(sub, "/")
+	}
 	probeName := "_auth_probe_" + randomID()
-	cmd := exec.Command(binPath("rclone"), "rcat", remote+"/"+probeName,
+	probePath := probeDir + "/" + probeName
+	cmd := exec.Command(binPath("rclone"), "rcat", probePath,
 		"--contimeout", "10s", "--timeout", "20s")
 	cmd.Env = rcloneEnv()
 	cmd.Stdin = strings.NewReader("probe")
 	out, err := cmd.CombinedOutput()
 	ok := err == nil
 	if ok {
-		// 探测成功，清理探测文件（失败不阻塞结果）
-		_ = exec.Command(binPath("rclone"), "deletefile", remote+"/"+probeName,
-			"--contimeout", "10s", "--timeout", "20s").Run()
+		// 探测成功，清理探测文件（115 上传慢，删除也加长超时；失败不阻塞结果）
+		del := exec.Command(binPath("rclone"), "deletefile", probePath,
+			"--contimeout", "10s", "--timeout", "30s")
+		del.Env = rcloneEnv()
+		_ = del.Run()
 	}
 	hint := ""
 	if !ok {
@@ -423,6 +432,10 @@ func initFailHint(logPath string) string {
 		return "该云端目录下已存在一个加密仓库（可能是之前创建过的，密码与本仓库不一致）。请换一个云端目录名，或先在「云盘仓库」里删除旧仓库"
 	case strings.Contains(s, "wrong password"):
 		return "仓库密码不正确"
+	case cloudDirNotFound(s):
+		// rclone 写入报 404：云端目录不存在（WebDAV 根下没有这个子目录），
+		// 需要先创建目录，或改用已存在的目录（如「天翼云盘/飞牛加密备份」）。
+		return "云端目录不存在（写入返回 404）。请先在该网盘里创建对应目录，或在「云端目录」里选择已存在的路径（WebDAV 需带一级目录名，如「天翼云盘/飞牛加密备份」）"
 	case cloudUploadFailed(s):
 		// 列目录正常但上传 500：几乎可以肯定是云盘授权（token/cookie）失效，
 		// 而不是网络或密码问题。把根因明确抛给用户，避免只看到笼统的 500。
@@ -446,6 +459,13 @@ func initFailHint(logPath string) string {
 	return "exit status 1"
 }
 
+// cloudDirNotFound：判断 init 失败是否属于「云端目录不存在（404）」。
+// 特征：日志里出现 404 Not Found（rclone 写入目标路径不存在）。
+func cloudDirNotFound(s string) bool {
+	return strings.Contains(s, "404 Not Found") ||
+		strings.Contains(s, "Not Found: 404")
+}
+
 // cloudUploadFailed：判断 init 失败是否属于「云盘上传（写入）500」。
 // 特征：日志里同时出现「上传错误」与「500」——说明列目录/认证阶段正常，
 // 但写入被服务端拒绝，最典型的原因是云盘授权（refresh_token/cookie）失效。
@@ -457,6 +477,66 @@ func cloudUploadFailed(s string) bool {
 	http500 := strings.Contains(s, "500 Internal Server Error") ||
 		strings.Contains(s, "unexpected HTTP response (500)")
 	return uploadErr && http500
+}
+
+// purgeCloudRepo：用 rclone purge 删除仓库对应的云端目录。
+// init 失败回滚时调用，清掉 restic 写了一半的 config/keys/data 半成品，
+// 否则下次在同一目录新建仓库会撞「config file already exists」。
+// URI 形如 rclone:<remote>:<path>，取其 <remote>:<path> 交给 rclone purge。
+// 仅对 rclone 后端生效；失败不阻塞回滚（仅告警日志）。
+func purgeCloudRepo(repo *Repo) {
+	if repo == nil || !strings.HasPrefix(repo.URI, "rclone:") {
+		return
+	}
+	target := strings.TrimPrefix(repo.URI, "rclone:")
+	if target == "" {
+		return
+	}
+	// rclone purge 需要远程在 rclone.conf 里已配置；WebDAV 直连仓库写入了对应 wd- 段，
+	// ol 段（OpenList）也常驻，均可用。加超时避免 purge 本身卡死。
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binPath("rclone"), "purge", target)
+	cmd.Env = rcloneEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[warn] 回滚清理云端目录失败 %s: %v: %s", target, err, strings.TrimSpace(string(out)))
+	} else {
+		log.Printf("回滚已清理云端目录 %s", target)
+	}
+}
+
+// initRepoTimeout：执行 restic init，带超时。云盘 404/500 时 restic 会无限退避重试
+// （30s→1m→2m…），必须加超时避免保存仓库的请求被卡死。stderr 落 logPath 供 initFailHint 诊断。
+func initRepoTimeout(repo *Repo, logPath string, timeout time.Duration) runResult {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binPath("restic"), "init")
+	cmd.Env = append(os.Environ(), resticEnv(repo)...)
+	var lf *os.File
+	if logPath != "" {
+		if f, err := os.Create(logPath); err == nil {
+			lf = f
+			cmd.Stderr = f
+			fmt.Fprintf(f, "$ restic init\n")
+		}
+	}
+	if lf != nil {
+		defer lf.Close()
+	}
+	var stderrBuf bytes.Buffer
+	if lf == nil {
+		cmd.Stderr = &stderrBuf
+	}
+	err := cmd.Run()
+	res := runResult{Err: err}
+	if err != nil {
+		res.ErrOutput = err.Error()
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		res.Err = fmt.Errorf("初始化超时（%v）：云端写入无响应，可能是目录不存在或授权失效", timeout)
+		res.ErrOutput = res.Err.Error()
+	}
+	return res
 }
 
 // ---------------------------------------------------------------------------
@@ -1143,27 +1223,33 @@ func reposHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
-		// 新仓库自动 restic init（目录冲突时回滚并报错）
+		// 新仓库自动 restic init（目录冲突/云盘不可写时回滚并报错）
+		// 用带超时的执行，避免云盘 404/500 时 restic 无限退避重试卡死保存请求
 		if isNew {
 			logPath := filepath.Join(varDir(), "init-"+nr.ID+".log")
-			lf, _ := os.Create(logPath)
-			ires := runRestic(&nr, []string{"init"}, lf, nil, false)
-			lf.Close()
+			ires := initRepoTimeout(&nr, logPath, 180*time.Second)
 			if ires.Err != nil {
 				hint := initFailHint(logPath)
+				// init 失败回滚：删除刚创建的仓库（本地记录）
+				_ = deleteRepoByID(nr.ID)
 				if strings.Contains(hint, "已存在一个加密仓库") {
-					_ = deleteRepoByID(nr.ID)
+					// 目录冲突：云端目录里已有一个仓库（可能是旧仓库/密码不一致），
+					// 此时不 purge，避免误删已有数据，仅提示用户换目录
 					writeJSON(w, 400, map[string]string{"error": hint})
 					return
 				}
-			} else {
-				cfgMu.Lock()
-				if lr := findRepo(nr.ID); lr != nil {
-					lr.Inited = true
-				}
-				_ = saveConfig()
-				cfgMu.Unlock()
+				// 非冲突类失败（404 目录不存在 / 500 上传失败 / 超时）：
+				// restic 可能已写了一半 config/keys 半成品，purge 清掉避免下次撞冲突
+				purgeCloudRepo(&nr)
+				writeJSON(w, 400, map[string]string{"error": "仓库初始化失败：" + hint})
+				return
 			}
+			cfgMu.Lock()
+			if lr := findRepo(nr.ID); lr != nil {
+				lr.Inited = true
+			}
+			_ = saveConfig()
+			cfgMu.Unlock()
 		}
 		writeJSON(w, 200, map[string]string{"id": nr.ID})
 	case http.MethodDelete:
@@ -1174,19 +1260,58 @@ func reposHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteRepoByID：删除仓库（DELETE /api/repos/{id} 与 POST /api/repos/{id}/delete 共用）
+// 若为「空壳/残缺」仓库（无快照，多为 init 失败残留的半成品），连带清理云端目录，
+// 否则下次在同目录新建会撞「config file already exists」。
+// 有真实快照数据的仓库只删本地记录、保留云盘数据（与前端「不删云盘数据」承诺一致）。
 func deleteRepoByID(id string) error {
 	if id == "" {
 		return fmt.Errorf("缺少 id")
 	}
+	// 先取出待删仓库的副本，判断是否为空壳，再删本地记录。
+	var target Repo
+	found := false
 	cfgMu.Lock()
-	defer cfgMu.Unlock()
 	for i := range cfg.Repos {
 		if cfg.Repos[i].ID == id {
+			target = cfg.Repos[i]
 			cfg.Repos = append(cfg.Repos[:i], cfg.Repos[i+1:]...)
+			found = true
 			break
 		}
 	}
-	return saveConfig()
+	saveErr := saveConfig()
+	cfgMu.Unlock()
+
+	if !found {
+		return saveErr
+	}
+	// 空壳判断：restic snapshots 为空（无备份数据）→ 视为残留半成品，purge 云端。
+	// 独立于锁外执行，rclone purge / restic snapshots 可能耗时较长，避免阻塞其他请求。
+	if repoHasNoSnapshots(&target) {
+		purgeCloudRepo(&target)
+	}
+	return saveErr
+}
+
+// repoHasNoSnapshots：判断仓库是否无任何快照（空壳/残缺）。查不到仓库或出错时保守返回 false（不 purge）。
+func repoHasNoSnapshots(repo *Repo) bool {
+	if repo == nil || !strings.HasPrefix(repo.URI, "rclone:") {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binPath("restic"), "snapshots", "--json")
+	cmd.Env = append(os.Environ(), resticEnv(repo)...)
+	out, err := cmd.Output()
+	if err != nil {
+		// 读不到仓库（密码错/目录缺失/超时）→ 保守不 purge，避免误删
+		return false
+	}
+	var snaps []map[string]interface{}
+	if json.Unmarshal(out, &snaps) != nil {
+		return false
+	}
+	return len(snaps) == 0
 }
 
 func errStr(err error) string {
@@ -1268,16 +1393,16 @@ func tasksHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// 新建仓库时自动 restic init（失败不阻塞建任务，首次备份会再报）
+		// 用带超时的执行，避免 115 等慢写入云盘 init 卡在 create key 无限等待
 		initErr := ""
 		if newRepo != nil {
 			logPath := filepath.Join(varDir(), "init-"+newRepo.ID+".log")
-			lf, _ := os.Create(logPath)
-			ires := runRestic(newRepo, []string{"init"}, lf, nil, false)
-			lf.Close()
+			ires := initRepoTimeout(newRepo, logPath, 180*time.Second)
 			if ires.Err != nil {
 				hint := initFailHint(logPath)
 				if strings.Contains(hint, "已存在一个加密仓库") {
-					// 目录冲突：回滚刚建的仓库（密码与已有仓库不一致，留着也无法用），让用户重新选目录
+					// 目录冲突：云端目录里已有仓库，不 purge（避免误删已有数据），
+					// 只回滚刚建的本地记录，让用户重新选目录
 					_ = deleteRepoByID(newRepo.ID)
 					writeJSON(w, 400, map[string]string{"error": hint})
 					return
@@ -1878,12 +2003,41 @@ func browseCloudHandler(w http.ResponseWriter, r *http.Request) {
 		Cloud  string `json:"cloud"`  // 旧参数：天翼云盘 / 115（走 ol 中转）
 		Remote string `json:"remote"` // 完整远端名："ol:天翼云盘" 或 "wd-xxxxxxxx"（WebDAV 直连）
 		Path   string `json:"path"`   // 云盘内路径，空 = 根
+		// 临时 WebDAV 参数（新建仓库时 remote 尚未生成，直接用地址+账号浏览）
+		DavURL    string `json:"dav_url"`
+		DavUser   string `json:"dav_user"`
+		DavPass   string `json:"dav_pass"`
+		DavVendor string `json:"dav_vendor"`
 	}
 	_ = readBody(r, &req)
-	if req.Remote == "" && req.Cloud == "" {
+	if req.Remote == "" && req.Cloud == "" && req.DavURL == "" {
 		writeJSON(w, 400, map[string]string{"error": "missing cloud"})
 		return
 	}
+
+	// 临时 WebDAV（新建仓库预览）：用 :webdav: 动态参数列目录，不落 rclone.conf
+	// 注意：路径必须紧跟 :webdav:，flag 放最后（rclone 语法）
+	var tmpArgs []string
+	if req.DavURL != "" {
+		vendor := req.DavVendor
+		if vendor == "" {
+			vendor = "other"
+		}
+		webdavPath := ":webdav:"
+		if p := strings.Trim(req.Path, "/"); p != "" {
+			webdavPath += p
+		}
+		tmpArgs = []string{"lsf", webdavPath, "--webdav-url", strings.TrimSpace(req.DavURL), "--webdav-vendor", vendor, "--dirs-only"}
+		if u := strings.TrimSpace(req.DavUser); u != "" {
+			tmpArgs = append(tmpArgs, "--webdav-user", u)
+		}
+		if p := strings.TrimSpace(req.DavPass); p != "" {
+			if ob := rcloneObscure(p); ob != "" {
+				tmpArgs = append(tmpArgs, "--webdav-pass", ob)
+			}
+		}
+	}
+
 	remote := req.Remote
 	if remote == "" {
 		remote = "ol:" + req.Cloud
@@ -1894,7 +2048,13 @@ func browseCloudHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Path != "" {
 		remote += "/" + strings.Trim(req.Path, "/")
 	}
-	cmd := exec.Command(binPath("rclone"), "lsf", remote, "--dirs-only")
+
+	var cmd *exec.Cmd
+	if tmpArgs != nil {
+		cmd = exec.Command(binPath("rclone"), tmpArgs...)
+	} else {
+		cmd = exec.Command(binPath("rclone"), "lsf", remote, "--dirs-only")
+	}
 	cmd.Env = rcloneEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1922,13 +2082,38 @@ func mkdirCloudHandler(w http.ResponseWriter, r *http.Request) {
 		Cloud  string `json:"cloud"`
 		Remote string `json:"remote"` // 完整远端名（WebDAV：wd-xxxxxxxx）
 		Path   string `json:"path"`   // 完整云端路径
+		// 临时 WebDAV 参数（新建仓库时 remote 未生成）
+		DavURL    string `json:"dav_url"`
+		DavUser   string `json:"dav_user"`
+		DavPass   string `json:"dav_pass"`
+		DavVendor string `json:"dav_vendor"`
 	}
 	_ = readBody(r, &req)
+
+	// 临时 WebDAV：用 :webdav: 动态参数（路径紧跟 :webdav:，flag 放最后）
+	var tmpArgs []string
+	if req.DavURL != "" {
+		vendor := req.DavVendor
+		if vendor == "" {
+			vendor = "other"
+		}
+		webdavPath := ":webdav:" + strings.Trim(req.Path, "/")
+		tmpArgs = []string{"mkdir", webdavPath, "--webdav-url", strings.TrimSpace(req.DavURL), "--webdav-vendor", vendor}
+		if u := strings.TrimSpace(req.DavUser); u != "" {
+			tmpArgs = append(tmpArgs, "--webdav-user", u)
+		}
+		if p := strings.TrimSpace(req.DavPass); p != "" {
+			if ob := rcloneObscure(p); ob != "" {
+				tmpArgs = append(tmpArgs, "--webdav-pass", ob)
+			}
+		}
+	}
+
 	remote := req.Remote
 	if remote == "" {
 		remote = "ol:" + req.Cloud
 	}
-	if remote == "ol:" && strings.Trim(req.Path, "/") == "" {
+	if remote == "ol:" && strings.Trim(req.Path, "/") == "" && tmpArgs == nil {
 		writeJSON(w, 400, map[string]string{"error": "missing cloud or path"})
 		return
 	}
@@ -1936,7 +2121,13 @@ func mkdirCloudHandler(w http.ResponseWriter, r *http.Request) {
 		remote += ":" // 纯远端名（WebDAV）必须带冒号，否则 rclone 当本地路径
 	}
 	remote = remote + "/" + strings.Trim(req.Path, "/")
-	cmd := exec.Command(binPath("rclone"), "mkdir", remote)
+
+	var cmd *exec.Cmd
+	if tmpArgs != nil {
+		cmd = exec.Command(binPath("rclone"), tmpArgs...)
+	} else {
+		cmd = exec.Command(binPath("rclone"), "mkdir", remote)
+	}
 	cmd.Env = rcloneEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
