@@ -1359,7 +1359,7 @@ onUnmounted(() => {
                 </div>
                 <button class="mc-more" @click.stop="openSheet(t)">⋯</button>
               </div>
-              <div class="mc-row"><span>来源地</span><span>fnos（本地）</span></div>
+              <div class="mc-row"><span>来源地</span><span>fnos（本地） · {{ pathSummary(t) }}</span></div>
               <div class="mc-row"><span>目的地</span><span>{{ repoName(t.repo_id) }} · {{ destPath(repoObj(t.repo_id)) }}</span></div>
               <div class="mc-row"><span>上次备份</span><span>{{ t.last_done_at ? fmtShort(t.last_done_at) : "无记录" }}</span></div>
               <div class="mc-row"><span>下次备份</span><span>{{ t.next_run_at ? fmtNextRun(t.next_run_at) : "无计划" }}</span></div>
