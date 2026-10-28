@@ -408,8 +408,8 @@ async function wizSave() {
     showToast("请完善任务名称、源目录和目标仓库", "bad");
     return;
   }
-  // 加密密码：未填写则自动生成（需求：密码在新建任务时生成）
-  if (!wiz.form.password) genWizPw();
+  // 加密密码：仅新建任务时生成/透传；编辑态不可改，置空由后端复用仓库既有密码
+  if (!wiz.editing && !wiz.form.password) genWizPw();
   wiz.saving = true;
   const body = {
     ...wiz.form,
@@ -1484,12 +1484,15 @@ onUnmounted(() => {
               </div>
               <div class="fld">
                 <span>③ 加密密码</span>
-                <div class="pwrow">
+                <div class="pwrow" v-if="!wiz.editing">
                   <input :type="wiz.form.showPass ? 'text' : 'password'" v-model="wiz.form.password" autocomplete="new-password" placeholder="自动生成，也可手动填写" />
                   <button type="button" class="eye" @click="wiz.form.showPass = !wiz.form.showPass">{{ wiz.form.showPass ? "🙈" : "👁" }}</button>
                   <button type="button" class="btn ghost sm" @click="genWizPw">生成</button>
                 </div>
-                <div class="hint-box">此密码用于加密你的备份数据，请妥善保管；忘记密码将无法恢复数据。</div>
+                <div class="pwrow" v-else>
+                  <input type="password" value="••••••••" disabled readonly />
+                </div>
+                <div class="hint-box">{{ wiz.editing ? "仓库密码只能设置一次，后续不可修改。" : "仓库密码只能设置一次，保存后不可修改，请妥善保管；忘记密码将无法恢复数据。" }}</div>
               </div>
               <div class="flow-line" v-if="destReady && wiz.form.paths.length">
                 <span class="node">fnos 本地</span><i class="lk">──▶</i>
@@ -1662,7 +1665,6 @@ onUnmounted(() => {
             <span>rclone URI</span>
             <input v-model="repoModal.form.uri" class="mono" placeholder="rclone:远端名:路径" />
           </label>
-          <div class="hint-box">保存的是「云盘连接」，具体的备份目录和加密密码在「新建备份任务」时再设置。</div>
         </div>
         <div v-if="repoModal.saving" class="saving-tip">
           <span class="spin"></span><span>{{ repoModal.savingText || "保存中…" }}</span>
