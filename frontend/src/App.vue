@@ -255,6 +255,7 @@ const wiz = reactive({
     id: "", name: "", paths: [], excludes: "", repo_id: "",
     sched_mode: "manual", daily_time: "03:00", interval_hrs: 24, keep_last: 3, enabled: true,
     daily_days: 1, weekly_days: [1], monthly_days: [1],
+    password: "", showPass: false,
   },
 });
 function openWizard(task) {
@@ -277,6 +278,7 @@ function openWizard(task) {
       weekly_days: (task.weekly_days || []).length ? [...task.weekly_days] : [1],
       monthly_days: (task.monthly_days || []).length ? [...task.monthly_days] : [1],
       enabled: task.enabled !== false,
+      password: "", showPass: false,
     });
   } else {
     Object.assign(wiz.form, {
@@ -284,12 +286,23 @@ function openWizard(task) {
       dest_cloud: "", dest_subdir: "",
       sched_mode: "manual", daily_time: "03:00", interval_hrs: 24, keep_last: 3, enabled: true,
       daily_days: 1, weekly_days: [1], monthly_days: [1],
+      password: "", showPass: false,
     });
   }
 }
 const destReady = computed(() => !!(wiz.form.dest_cloud && wiz.form.dest_subdir));
 const wizReady = computed(() => !!(wiz.form.name.trim() && wiz.form.paths.length && (destReady.value || wiz.form.repo_id)));
 function closeWizard() { wiz.show = false; }
+
+// 生成加密密码（新建任务时自动生成强随机密码，用户可手动改）
+function genWizPw() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+  const b = new Uint8Array(20);
+  crypto.getRandomValues(b);
+  let s = "";
+  for (let i = 0; i < b.length; i++) s += chars[b[i] % chars.length];
+  wiz.form.password = s;
+}
 
 function addManualPath() {
   const p = prompt("输入源目录绝对路径，例如 /vol1/1000/相册");
@@ -395,6 +408,8 @@ async function wizSave() {
     showToast("请完善任务名称、源目录和目标仓库", "bad");
     return;
   }
+  // 加密密码：未填写则自动生成（需求：密码在新建任务时生成）
+  if (!wiz.form.password) genWizPw();
   wiz.saving = true;
   const body = {
     ...wiz.form,
@@ -509,7 +524,7 @@ const repoModal = reactive({
   show: false,
   saving: false,
   savingText: "",
-  form: { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other" },
+  form: { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other", showPass: false },
 });
 // WebDAV 连接测试
 const davTest = reactive({ busy: false, ok: null, msg: "" });
@@ -566,7 +581,7 @@ function openRepo(repo) {
       dav_url: repo.dav_url || "", dav_user: repo.dav_user || "", dav_pass: "", dav_vendor: repo.dav_vendor || "other",
     });
   } else {
-    Object.assign(repoModal.form, { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other" });
+    Object.assign(repoModal.form, { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other", showPass: false });
     davTest.ok = null; davTest.msg = "";
   }
 }
@@ -686,9 +701,14 @@ async function confirmMkdir() {
 async function saveRepo() {
   if (repoModal.saving) return;
   const f = repoModal.form;
-  f.uri = f.cloud === "webdav" ? (f.subdir || "").replace(/^\/+|\/+$/g, "") : buildURI();
-  if (!f.name || !f.uri || (!f.password && !f.id)) {
-    showToast("保存失败：仓库名称、云端目录、密码均必填", "bad");
+  // 纯连接：subdir 置空，URI = rclone:<remote>:（无目录）；密码也留空（任务创建时再生成）
+  if (f.cloud === "webdav") {
+    f.subdir = "";
+    f.uri = "";
+    f.password = "";
+  }
+  if (!f.name) {
+    showToast("保存失败：连接名称必填", "bad");
     return;
   }
   if (f.cloud === "webdav" && (!f.dav_url.trim() || !f.dav_user.trim())) {
@@ -696,14 +716,13 @@ async function saveRepo() {
     return;
   }
   repoModal.saving = true;
-  repoModal.savingText = f.id ? "正在保存…" : "正在初始化云端仓库（restic init，可能需十几秒）…";
+  repoModal.savingText = f.id ? "正在保存…" : "正在保存连接…";
   try {
     const r = await api("/api/repos", { method: "POST", body: JSON.stringify(f) });
     if (r.error) { showToast("保存失败：" + r.error, "bad"); return; }
-    showToast("仓库已保存");
+    showToast("连接已保存");
     repoModal.show = false;
     loadAll();
-    // 从「选择云端」里点「新增云端」进来的：保存后回到仓库列表继续选
     if (cloudPick.reopenAfterAdd) {
       cloudPick.reopenAfterAdd = false;
       setTimeout(() => { cloudPick.show = true; }, 260);
@@ -1463,6 +1482,15 @@ onUnmounted(() => {
                   <i class="chev-r">›</i>
                 </button>
               </div>
+              <div class="fld">
+                <span>③ 加密密码</span>
+                <div class="pwrow">
+                  <input :type="wiz.form.showPass ? 'text' : 'password'" v-model="wiz.form.password" autocomplete="new-password" placeholder="自动生成，也可手动填写" />
+                  <button type="button" class="eye" @click="wiz.form.showPass = !wiz.form.showPass">{{ wiz.form.showPass ? "🙈" : "👁" }}</button>
+                  <button type="button" class="btn ghost sm" @click="genWizPw">生成</button>
+                </div>
+                <div class="hint-box">此密码用于加密你的备份数据，请妥善保管；忘记密码将无法恢复数据。</div>
+              </div>
               <div class="flow-line" v-if="destReady && wiz.form.paths.length">
                 <span class="node">fnos 本地</span><i class="lk">──▶</i>
                 <span class="node hi">{{ wiz.form.dest_subdir }}</span>
@@ -1592,17 +1620,13 @@ onUnmounted(() => {
     <div class="mask" v-if="repoModal.show">
       <div class="modal">
         <div class="modal-head">
-          <h3>云盘仓库</h3>
+          <h3>云盘连接</h3>
           <button class="x" @click="repoModal.show = false">✕</button>
         </div>
         <div class="modal-body">
           <label class="fld">
-            <span>仓库类型</span>
-            <BDrop v-model="repoModal.form.cloud" :options="cloudOptions" placeholder="选择云盘" @change="onCloudChange" />
-          </label>
-          <label class="fld">
-            <span>仓库名称</span>
-            <input v-model="repoModal.form.name" placeholder="例如：我的云盘仓库" />
+            <span>连接名称</span>
+            <input v-model="repoModal.form.name" placeholder="例如：我的 115 网盘" />
           </label>
           <template v-if="repoModal.form.cloud === 'webdav'">
             <label class="fld">
@@ -1615,7 +1639,10 @@ onUnmounted(() => {
             </label>
             <label class="fld">
               <span>密码{{ repoModal.form.id ? "（留空保持不变）" : "" }}</span>
-              <input type="password" v-model="repoModal.form.dav_pass" @input="davTest.msg = ''" autocomplete="new-password" placeholder="WebDAV 密码" />
+              <div class="pwrow">
+                <input :type="repoModal.form.showPass ? 'text' : 'password'" v-model="repoModal.form.dav_pass" @input="davTest.msg = ''" autocomplete="new-password" placeholder="WebDAV 密码" />
+                <button type="button" class="eye" @click="repoModal.form.showPass = !repoModal.form.showPass">{{ repoModal.form.showPass ? "🙈" : "👁" }}</button>
+              </div>
             </label>
             <div class="fld">
               <span>连接测试</span>
@@ -1624,34 +1651,18 @@ onUnmounted(() => {
                 <span v-if="davTest.msg" :class="davTest.ok ? 'tst-ok' : 'tst-bad'">{{ davTest.msg }}</span>
               </div>
             </div>
-            <div class="fld">
-              <span>云端目录（可选）</span>
-              <div class="inrow">
-                <input v-model="repoModal.form.subdir" placeholder="默认根目录，可手动输入子目录" />
-                <button v-if="repoModal.form.remote || repoModal.form.dav_url" class="btn ghost sm" @click="openCloudBrowser">浏览</button>
-              </div>
-            </div>
-            <div class="uri-prev mono">rclone:{{ repoModal.form.remote || "<保存时生成远端>" }}:{{ repoModal.form.subdir || "" }}</div>
           </template>
           <template v-else-if="repoModal.form.cloud !== 'other'">
             <div class="fld">
-              <span>云端目录</span>
-              <div class="inrow">
-                <input v-model="repoModal.form.subdir" placeholder="例如：backup" />
-                <button class="btn ghost sm" @click="openCloudBrowser">浏览</button>
-              </div>
+              <span>网盘类型</span>
+              <div class="hint-box">该网盘通过 OpenList 中转连接，无需填写地址账号，直接保存即可。</div>
             </div>
-            <div class="uri-prev mono">{{ buildURI() }}</div>
           </template>
           <label class="fld" v-else>
-            <span>仓库 URI</span>
+            <span>rclone URI</span>
             <input v-model="repoModal.form.uri" class="mono" placeholder="rclone:远端名:路径" />
           </label>
-          <label class="fld">
-            <span>仓库密码{{ repoModal.form.id ? "（留空保持不变）" : "" }}</span>
-            <input type="password" v-model="repoModal.form.password" placeholder="restic 仓库密码" />
-          </label>
-          <div class="hint-box">保存后可点「验证」确认密码与云端连接；restic 会自动创建缺失的仓库目录。</div>
+          <div class="hint-box">保存的是「云盘连接」，具体的备份目录和加密密码在「新建备份任务」时再设置。</div>
         </div>
         <div v-if="repoModal.saving" class="saving-tip">
           <span class="spin"></span><span>{{ repoModal.savingText || "保存中…" }}</span>
@@ -2593,6 +2604,15 @@ html.scroll-locked body {
 .inrow input { flex: 1; }
 .tst-ok { color: #16a34a; font-size: 12.5px; }
 .tst-bad { color: #dc2626; font-size: 12.5px; }
+.pwrow { display: flex; gap: 6px; align-items: center; }
+.pwrow input { flex: 1; }
+.pwrow .eye {
+  flex-shrink: 0; width: 34px; height: 34px; border: none; background: #f1f2f4;
+  border-radius: 9px; cursor: pointer; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; color: #6b7280;
+}
+.pwrow .eye:hover { background: #e7e9ec; }
+.pwrow .btn.sm { flex-shrink: 0; }
 .uri-prev { font-size: 11.5px; color: #9ca3af; background: #f7f8fa; border-radius: 8px; padding: 7px 10px; margin: -4px 0 12px; word-break: break-all; }
 /* 编辑备份来源地（仿飞牛） */
 .mask.top { z-index: 70; }

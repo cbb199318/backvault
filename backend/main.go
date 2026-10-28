@@ -100,6 +100,7 @@ type Task struct {
 	Paths        []string `json:"paths"`
 	Excludes     []string `json:"excludes"`
 	RepoID       string   `json:"repo_id"`
+	Password     string   `json:"password,omitempty"`    // 加密密码（新建任务时生成/填写；实际存到对应 repo，此处仅用于创建时透传与回显掩码）
 	DestCloud    string   `json:"dest_cloud,omitempty"`   // 目的地两步式：tianyi / y115
 	DestSubdir   string   `json:"dest_subdir,omitempty"` // 云端目标目录
 	SchedMode    string   `json:"sched_mode"` // manual | daily | weekly | monthly | interval
@@ -375,10 +376,11 @@ func writeRcloneSection(name string, kvs [][2]string) error {
 	return os.WriteFile(path, []byte(content), 0600)
 }
 
-// findOrCreateRepoLocked：按 云盘+目录 查找仓库，不存在则自动创建（随机密码）。
+// findOrCreateRepoLocked：按 云盘+目录 查找仓库，不存在则自动创建。
 // cloudKey 支持两种：tianyi/y115（ol 中转），或 WebDAV 仓库的远端名 wd-xxxxxxxx。
+// password 为空时自动随机生成（旧逻辑）；非空则用传入的密码（新建任务的密码在任务侧生成）。
 // 调用方需持有 cfgMu。返回（仓库，是否新建，错误）。
-func findOrCreateRepoLocked(cloudKey, subdir string) (*Repo, bool, error) {
+func findOrCreateRepoLocked(cloudKey, subdir, password string) (*Repo, bool, error) {
 	sub := strings.Trim(subdir, "/")
 	if sub == "" {
 		return nil, false, fmt.Errorf("目标目录不能为空")
@@ -408,13 +410,17 @@ func findOrCreateRepoLocked(cloudKey, subdir string) (*Repo, bool, error) {
 			return &cfg.Repos[i], false, nil
 		}
 	}
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	pw := password
+	if pw == "" {
+		b := make([]byte, 16)
+		_, _ = rand.Read(b)
+		pw = hex.EncodeToString(b)
+	}
 	seg := sub
 	if idx := strings.LastIndex(seg, "/"); idx >= 0 {
 		seg = seg[idx+1:]
 	}
-	nr := Repo{ID: "repo-" + randomID(), Name: displayName, URI: uri, Password: hex.EncodeToString(b), Cloud: "webdav", Remote: cloudKey}
+	nr := Repo{ID: "repo-" + randomID(), Name: displayName, URI: uri, Password: pw, Cloud: "webdav", Remote: cloudKey}
 	if davSrc != nil {
 		nr.DavURL, nr.DavUser, nr.DavPass, nr.DavVendor = davSrc.DavURL, davSrc.DavUser, davSrc.DavPass, davSrc.DavVendor
 		nr.Name = davSrc.Name + "·" + seg
@@ -1122,6 +1128,10 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 		now := time.Now()
 		for i := range cp.Tasks {
 			cp.Tasks[i].NextRunAt = nextRunAt(&cfg.Tasks[i], now)
+			// 任务侧密码掩码（实际密码存于对应 repo，任务字段仅作回显占位，不泄露明文）
+			if cp.Tasks[i].Password != "" {
+				cp.Tasks[i].Password = "******"
+			}
 			// 填充云盘授权告警：从 authCache 读该任务仓库的探测结论
 			if rp := findRepo(cp.Tasks[i].RepoID); rp != nil {
 				if rem := olRemote(rp); rem != "" {
@@ -1192,7 +1202,15 @@ func reposHandler(w http.ResponseWriter, r *http.Request) {
 			sub := strings.Trim(nr.URI, "/") // 前端把子目录暂存在 URI 字段
 			nr.URI = "rclone:" + nr.Remote + ":" + sub
 			if nr.Name == "" {
-				nr.Name = "WebDAV·" + sub
+				if sub == "" {
+					nr.Name = "WebDAV 连接" // 纯连接（无目录）：友好默认名
+				} else {
+					nr.Name = "WebDAV·" + sub
+				}
+			}
+			// 纯连接（sub 为空）标记：不参与 restic init / 密码生成，只作为云盘连接载体
+			if sub == "" {
+				nr.Inited = true // 连接本身无需 init，避免 runTask 误触发
 			}
 		}
 		if nr.URI == "" {
@@ -1200,6 +1218,7 @@ func reposHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		isNew := false
+		isConn := strings.HasSuffix(strings.TrimSpace(nr.URI), ":") // URI 以冒号结尾 = 无子目录 = 纯连接
 		cfgMu.Lock()
 		if nr.ID == "" {
 			nr.ID = "repo-" + randomID()
@@ -1209,8 +1228,9 @@ func reposHandler(w http.ResponseWriter, r *http.Request) {
 			*old = nr
 		} else {
 			isNew = true
-			// restic 仓库密码：新建未提供则自动生成（API/Docker 部署友好）
-			if nr.Password == "" {
+			// restic 仓库密码：新建未提供则自动生成（API/Docker 部署友好）；
+			// 纯连接（无目录）不生成密码，密码由后续任务创建时生成
+			if nr.Password == "" && !isConn {
 				b := make([]byte, 16)
 				_, _ = rand.Read(b)
 				nr.Password = hex.EncodeToString(b)
@@ -1224,8 +1244,9 @@ func reposHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// 新仓库自动 restic init（目录冲突/云盘不可写时回滚并报错）
-		// 用带超时的执行，避免云盘 404/500 时 restic 无限退避重试卡死保存请求
-		if isNew {
+		// 用带超时的执行，避免云盘 404/500 时 restic 无限退避重试卡死保存请求。
+		// 纯连接（无目录）跳过 init——它只是云盘连接，仓库在任务创建时才真正初始化。
+		if isNew && !isConn {
 			logPath := filepath.Join(varDir(), "init-"+nr.ID+".log")
 			ires := initRepoTimeout(&nr, logPath, 180*time.Second)
 			if ires.Err != nil {
@@ -1374,7 +1395,7 @@ func tasksHandler(w http.ResponseWriter, r *http.Request) {
 		var newRepo *Repo
 		if nt.DestCloud != "" {
 			cfgMu.Lock()
-			rp, created, ferr := findOrCreateRepoLocked(nt.DestCloud, nt.DestSubdir)
+			rp, created, ferr := findOrCreateRepoLocked(nt.DestCloud, nt.DestSubdir, nt.Password)
 			if ferr != nil {
 				cfgMu.Unlock()
 				writeJSON(w, 400, map[string]string{"error": ferr.Error()})
