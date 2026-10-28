@@ -304,6 +304,32 @@ function genWizPw() {
   wiz.form.password = s;
 }
 
+// 复制仓库密码到剪贴板（编辑态专用：向后端取明文，不落前端内存回显）
+async function copyRepoPw() {
+  const rid = wiz.form.repo_id;
+  if (!rid) { showToast("未关联仓库", "bad"); return; }
+  try {
+    const res = await api("/api/repos/" + rid + "/password");
+    const pw = res && res.password;
+    if (!pw) { showToast("该仓库无密码（纯连接）", "bad"); return; }
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(pw);
+      ok = true;
+    } catch (e) {
+      // 剪贴板 API 不可用（非 https/无权限）时降级
+      const ta = document.createElement("textarea");
+      ta.value = pw; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+      document.body.removeChild(ta);
+    }
+    showToast(ok ? "密码已复制到剪贴板" : "复制失败，请手动记录");
+  } catch (e) {
+    showToast("获取密码失败：" + e.message, "bad");
+  }
+}
+
 function addManualPath() {
   const p = prompt("输入源目录绝对路径，例如 /vol1/1000/相册");
   if (p && p.trim()) {
@@ -1494,6 +1520,10 @@ onUnmounted(() => {
                 </div>
                 <div class="pwrow" v-else>
                   <input type="password" value="••••••••" disabled readonly />
+                  <button type="button" class="btn ghost sm" @click="copyRepoPw">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    复制
+                  </button>
                 </div>
                 <div class="hint-box">{{ wiz.editing ? "仓库密码只能设置一次，后续不可修改。" : "仓库密码只能设置一次，保存后不可修改，请妥善保管；忘记密码将无法恢复数据。" }}</div>
               </div>
