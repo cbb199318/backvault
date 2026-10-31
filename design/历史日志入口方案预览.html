@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>历史 / 日志入口 · 手机端方案预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f2f4f7; color: #1f2937; padding: 34px 20px 90px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 21px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: #8b9098; margin-bottom: 22px; line-height: 1.75; }
+  .sec { margin-bottom: 50px; }
+  .sec-title { font-size: 15.5px; font-weight: 700; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sec-title .tag { font-size: 11px; background: #eef4ff; color: #3370ff; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .sec-title .tag.rec { background: #e7f8ee; color: #16803a; }
+  .sec-title .tag.warn { background: #fef3e2; color: #b45309; }
+  .sec-desc { font-size: 12.5px; color: #9ca3af; margin-bottom: 15px; line-height: 1.85; }
+
+  .req { background: #fff; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(16,24,40,.06); margin-bottom: 22px; }
+  .req h3 { font-size: 13px; font-weight: 700; margin-bottom: 9px; color: #374151; }
+  .req ol, .req ul { margin-left: 18px; font-size: 12.5px; color: #4b5563; line-height: 2.05; }
+  .req .note { margin-top: 11px; font-size: 12px; color: #8b9098; background: #fafbfc; border-left: 3px solid #bfd4ff; padding: 8px 12px; border-radius: 0 6px 6px 0; line-height: 1.8; }
+
+  .cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .cmp th, .cmp td { padding: 11px 14px; text-align: left; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  .cmp th { background: #fafbfc; font-weight: 600; color: #4b5563; font-size: 12px; white-space: nowrap; }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp td.k { font-weight: 600; color: #1f2937; white-space: nowrap; width: 100px; }
+  .yes { color: #16803a; font-weight: 600; }
+  .no { color: #b91c1c; }
+  .mid { color: #b45309; }
+
+  /* ---------- 手机框 ---------- */
+  .phones { display: flex; gap: 26px; flex-wrap: wrap; }
+  .pcol { width: 322px; }
+  .pcap { font-size: 12.5px; font-weight: 700; margin-bottom: 3px; }
+  .pdesc { font-size: 12px; color: #9ca3af; line-height: 1.8; margin-bottom: 11px; min-height: 44px; }
+  .phone {
+    width: 322px; height: 578px; background: #f2f4f7; border-radius: 26px; padding: 8px;
+    box-shadow: 0 6px 24px rgba(16,24,40,.13); position: relative; overflow: hidden;
+    border: 1px solid #e4e7ec;
+  }
+  .screen { background: #f2f4f7; height: 100%; border-radius: 20px; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+  .sbar { height: 24px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-size: 10px; color: #9aa1ab; flex: none; }
+  .sbody { flex: 1; overflow: hidden; padding: 0 12px 8px; }
+  .mhead { display: flex; align-items: center; gap: 8px; padding: 2px 2px 10px; }
+  .mhead h2 { font-size: 19px; font-weight: 700; }
+  .mhead .hact { margin-left: auto; display: flex; gap: 7px; }
+  .iconbtn {
+    width: 32px; height: 32px; border-radius: 9px; background: #fff; border: 1px solid #e8ebf0;
+    display: flex; align-items: center; justify-content: center; color: #4b5563; cursor: pointer;
+  }
+  .iconbtn.on { background: #eef4ff; border-color: #cfe0ff; color: #3370ff; }
+  .pillbtn { background: #fff; border: 1px solid #e8ebf0; border-radius: 9px; padding: 6px 11px; font-size: 12px; color: #4b5563; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+  .pillbtn.on { background: #eef4ff; border-color: #cfe0ff; color: #3370ff; }
+
+  .mcard { background: #fff; border-radius: 12px; padding: 12px 13px; margin-bottom: 9px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  .mcard .row { display: flex; align-items: center; gap: 9px; }
+  .repo-ic { width: 30px; height: 30px; border-radius: 9px; background: #eef4ff; display: flex; align-items: center; justify-content: center; flex: none; }
+  .repo-nm { font-size: 13.5px; font-weight: 600; }
+  .repo-pa { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+  .repo-mt { margin-left: auto; font-size: 11px; color: #9ca3af; text-align: right; }
+  .repo-mt b { display: block; color: #4b5563; font-size: 11.5px; }
+
+  /* 底部导航 */
+  .bnav { height: 54px; background: #fff; border-top: 1px solid #ebedf0; display: flex; align-items: center; flex: none; }
+  .bnav .it { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; color: #9aa1ab; cursor: pointer; padding-top: 5px; }
+  .bnav .it.on { color: #3370ff; font-weight: 600; }
+  .bnav .it svg { width: 21px; height: 21px; }
+
+  /* 历史列表 */
+  .seg { display: flex; gap: 4px; background: #eceef2; border-radius: 9px; padding: 3px; margin-bottom: 11px; }
+  .seg .s { flex: 1; text-align: center; font-size: 12.5px; padding: 6px 0; border-radius: 7px; color: #6b7280; cursor: pointer; font-weight: 600; }
+  .seg .s.on { background: #fff; color: #3370ff; box-shadow: 0 1px 2px rgba(16,24,40,.07); }
+  .dayh { font-size: 11px; color: #9aa1ab; font-weight: 600; padding: 9px 3px 6px; display: flex; align-items: center; gap: 7px; }
+  .dayh .ln { flex: 1; height: 1px; background: #e8ebf0; }
+  .hitem { background: #fff; border-radius: 11px; padding: 10px 12px; margin-bottom: 7px; cursor: pointer; }
+  .hitem .t1 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+  .hitem .t2 { font-size: 11.5px; color: #9aa1ab; margin-top: 4px; display: flex; gap: 9px; flex-wrap: wrap; }
+  .st { font-size: 10px; padding: 1px 6px; border-radius: 5px; font-weight: 700; flex: none; }
+  .st.ok { background: #e7f8ee; color: #16803a; }
+  .st.bad { background: #fdeaea; color: #b91c1c; }
+  .st.run { background: #eef4ff; color: #3370ff; }
+  .arrow { margin-left: auto; color: #c9ced8; font-size: 14px; }
+  .hexp { border-top: 1px solid #f3f4f6; margin-top: 9px; padding-top: 9px; font-size: 11.5px; color: #6b7280; line-height: 1.95; display: none; }
+  .hitem.open .hexp { display: block; }
+  .hexp .kv { display: flex; gap: 8px; }
+  .hexp .kv b { color: #374151; font-weight: 600; width: 52px; flex: none; }
+  .tl { margin-top: 8px; padding-left: 4px; }
+  .tl .n { display: flex; gap: 8px; font-size: 11px; color: #6b7280; padding: 2px 0; }
+  .tl .n i { font-style: normal; color: #b6bcc7; font-variant-numeric: tabular-nums; }
+
+  .recbar { display: flex; gap: 8px; align-items: center; background: #fff; border-radius: 11px; padding: 10px 12px; margin-bottom: 9px; cursor: pointer; }
+  .recbar .tx { font-size: 12.5px; font-weight: 600; }
+  .recbar .ts { font-size: 11px; color: #9aa1ab; margin-top: 2px; }
+  .recbar .more { margin-left: auto; font-size: 11.5px; color: #3370ff; font-weight: 600; }
+
+  .hl { outline: 2px dashed #f59e0b; outline-offset: 2px; border-radius: 9px; }
+
+  /* ---------- 桌面模拟 ---------- */
+  .desk { background: #fff; border-radius: 13px; overflow: hidden; box-shadow: 0 2px 14px rgba(16,24,40,.1); display: flex; height: 352px; border: 1px solid #e9ecf1; }
+  .dsb { width: 168px; flex: none; border-right: 1px solid #eef0f3; padding: 14px 10px; }
+  .dsb .br { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 0 8px 16px; }
+  .dsb .br span { width: 24px; height: 24px; border-radius: 7px; background: #eef4ff; display: inline-block; }
+  .dsb .it { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #4b5563; padding: 8px 10px; border-radius: 8px; margin-bottom: 3px; }
+  .dsb .it.on { background: #eef4ff; color: #3370ff; font-weight: 600; }
+  .dsb .it i { width: 14px; height: 14px; border-radius: 4px; border: 1.6px solid #9aa1ab; display: inline-block; flex: none; }
+  .dsb .it.on i { border-color: #3370ff; border-radius: 50%; }
+  .dmain { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .dmain .dt { font-size: 16px; font-weight: 700; padding: 14px 16px 10px; }
+  .dcols { flex: 1; display: flex; min-height: 0; }
+  .dlist { width: 300px; flex: none; border-right: 1px solid #f1f3f6; padding: 0 12px 12px; overflow: hidden; }
+  .ddet { flex: 1; padding: 0 16px 12px; min-width: 0; }
+  .ddet .dh { font-size: 13.5px; font-weight: 700; margin-bottom: 9px; }
+  .ddet .dr { font-size: 12px; color: #6b7280; line-height: 2.1; display: flex; gap: 10px; }
+  .ddet .dr b { color: #9aa1ab; font-weight: 500; width: 46px; flex: none; }
+  .ddet .tlb { margin-top: 12px; border-top: 1px solid #f3f4f6; padding-top: 10px; }
+
+  .note-line { font-size: 11.5px; color: #b45309; background: #fef3e2; border-radius: 7px; padding: 7px 10px; margin-top: 9px; line-height: 1.7; }
+
+  .grid4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .g4 { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .g4 h4 { font-size: 12.5px; margin-bottom: 7px; color: #374151; }
+  .g4 p { font-size: 12px; color: #6b7280; line-height: 1.85; }
+  .g4 code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; background: #f5f6f8; padding: 1px 5px; border-radius: 4px; color: #4b5563; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>历史 / 日志入口 · 手机端方案</h1>
+  <div class="sub">现在「还原记录」按钮只在电脑端的快照页页头，手机上完全看不到；备份历史更是只有进单个任务的日志弹窗才有。下面四个方案解决入口问题，页面里的导航、分段、列表都能点。</div>
+
+  <div class="req">
+    <h3>先说清楚「历史」里能放什么</h3>
+    <ul>
+      <li><b>备份历史</b>：每个任务的运行日志都在 NAS 上（<code>logs/&lt;任务ID&gt;/时间.log</code>），能解析出状态、文件数、大小、用时和关键节点。restic 快照本身也是天然的一条备份记录。</li>
+      <li><b>还原历史</b>：已存在 <code>config.json</code> 的 <code>restores</code> 里（保留最近 30 条），含来源快照、写回路径、状态、耗时。</li>
+      <li>所以「历史」= 两个分段：<b>备份</b> / <b>还原</b>，按天分组，点一条展开时间轴。</li>
+    </ul>
+    <div class="note">现在缺的只是一个统一入口 + 一个聚合接口。数据都是现成的，不用改存储结构。</div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">四个入口方案对比</div>
+    <div class="sec-desc">手机端底部现在只有「备份 / 快照」两项，加第三项不会挤；页头空间也够放一个图标按钮。</div>
+    <table class="cmp">
+      <tr>
+        <th>方案</th><th>入口位置</th><th>优点</th><th>缺点</th><th>改动量</th>
+      </tr>
+      <tr>
+        <td class="k">A · 底部第三项</td>
+        <td>底部导航加「历史」</td>
+        <td class="yes">一级入口，任何页面一步可达；和备份、快照平级，符合直觉</td>
+        <td class="no">底部从两项变三项；桌面左侧导航也要同步加一项</td>
+        <td class="mid">中</td>
+      </tr>
+      <tr>
+        <td class="k">B · 页头图标</td>
+        <td>快照页页头右侧时钟图标</td>
+        <td class="yes">不动导航结构，改动最小；不占首屏</td>
+        <td class="mid">只在快照页能进；图标含义要猜，新用户不容易发现</td>
+        <td class="yes">小</td>
+      </tr>
+      <tr>
+        <td class="k">C · 最近活动卡</td>
+        <td>快照页顶部一条「最近活动」卡</td>
+        <td class="yes">不用点就能看到最近发生了什么，失败一眼看见</td>
+        <td class="no">占首屏；仍然要再点一次才进完整列表</td>
+        <td class="mid">中</td>
+      </tr>
+      <tr>
+        <td class="k">D · 快照页顶部分段</td>
+        <td>快照页顶部「仓库 / 历史」两个分段</td>
+        <td class="yes">不加导航项，位置显眼</td>
+        <td class="no">「历史」被塞进快照页，语义上不太对；备份页仍然看不到</td>
+        <td class="yes">小</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">方案 A · 底部导航加「历史」<span class="tag rec">推荐</span></div>
+    <div class="sec-desc">三个 tab：备份 / 快照 / 历史。历史页顶部再分「备份 / 还原」。桌面端左侧导航同步加第三项，逻辑完全一致。</div>
+    <div class="phones">
+      <div class="pcol">
+        <div class="pcap">① 入口在底部</div>
+        <div class="pdesc">底部三项均分，图标 + 文字，「历史」用时钟图标。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>快照</h2><div class="hact"><div class="iconbtn">⟳</div></div></div>
+            <div class="mcard"><div class="row">
+              <div class="repo-ic"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg></div>
+              <div><div class="repo-nm">天翼云盘</div><div class="repo-pa">/encbackup/tianyi</div></div>
+              <div class="repo-mt"><b>8 个快照</b>10-30 14:44</div>
+            </div></div>
+            <div class="mcard"><div class="row">
+              <div class="repo-ic"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg></div>
+              <div><div class="repo-nm">115 网盘</div><div class="repo-pa">/encbackup/115</div></div>
+              <div class="repo-mt"><b>1 个快照</b>10-29 09:12</div>
+            </div></div>
+            <div class="note-line">底部多了「历史」一项，红框示意入口位置。</div>
+          </div>
+          <div class="bnav">
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+            <div class="it hl" id="a-tab"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7v5l3.2 2M21 12a9 9 0 1 1-2.6-6.4"/></svg><span>历史</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="pcol">
+        <div class="pcap">② 历史页 · 备份</div>
+        <div class="pdesc">顶部分段「备份 / 还原」，按天分组。点一条展开文件数、大小、用时和关键节点。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>历史</h2></div>
+            <div class="seg" id="a-seg">
+              <div class="s on" data-k="bak">备份</div>
+              <div class="s" data-k="rst">还原</div>
+            </div>
+            <div id="a-list">
+              <div class="dayh">今天 · 10-31<div class="ln"></div></div>
+              <div class="hitem">
+                <div class="t1"><span class="st ok">成功</span>相册备份<span class="arrow">›</span></div>
+                <div class="t2"><span>07:30</span><span>44.9 万文件</span><span>128.6 GB</span><span>用时 21 分</span></div>
+                <div class="hexp">
+                  <div class="kv"><b>仓库</b><span>天翼云盘</span></div>
+                  <div class="kv"><b>快照</b><span class="mono">e9edfd57</span></div>
+                  <div class="tl">
+                    <div class="n"><i>07:30</i>开始备份 · /vol1/1000/相册</div>
+                    <div class="n"><i>07:36</i>已扫描 12.8 万文件，去重率 62%</div>
+                    <div class="n"><i>07:51</i>完成 · 新增 3,204 / 修改 812</div>
+                  </div>
+                </div>
+              </div>
+              <div class="hitem">
+                <div class="t1"><span class="st bad">失败</span>资料备份<span class="arrow">›</span></div>
+                <div class="t2"><span>03:00</span><span>云盘授权过期</span></div>
+                <div class="hexp">
+                  <div class="kv"><b>仓库</b><span>115 网盘</span></div>
+                  <div class="tl"><div class="n"><i>03:00</i>开始备份</div><div class="n"><i>03:00</i>失败：401 Unauthorized</div></div>
+                </div>
+              </div>
+              <div class="dayh">昨天 · 10-30<div class="ln"></div></div>
+              <div class="hitem">
+                <div class="t1"><span class="st ok">成功</span>相册备份<span class="arrow">›</span></div>
+                <div class="t2"><span>07:30</span><span>44.8 万文件</span><span>128.2 GB</span><span>用时 19 分</span></div>
+                <div class="hexp"><div class="kv"><b>快照</b><span class="mono">51d1b90e</span></div></div>
+              </div>
+            </div>
+            <div id="a-rst" style="display:none">
+              <div class="dayh">今天 · 10-31<div class="ln"></div></div>
+              <div class="hitem">
+                <div class="t1"><span class="st ok">完成</span>还原「2016前」<span class="arrow">›</span></div>
+                <div class="t2"><span>19:12</span><span>2,846 文件</span><span>12.4 GB</span><span>用时 4 分</span></div>
+                <div class="hexp">
+                  <div class="kv"><b>来源</b><span>天翼云盘 · 快照 8f3a2b1c</span></div>
+                  <div class="kv"><b>写回</b><span class="mono">/vol1/1000/相册/2016前</span></div>
+                  <div class="kv"><b>冲突</b><span>覆盖已变更的文件</span></div>
+                </div>
+              </div>
+              <div class="hitem">
+                <div class="t1"><span class="st run">进行中</span>还原「DJI Device」<span class="arrow">›</span></div>
+                <div class="t2"><span>19:41</span><span>已还原 62%</span></div>
+                <div class="hexp"><div class="kv"><b>写回</b><span class="mono">/vol1/1000/相册/DJI Device</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="bnav">
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7v5l3.2 2M21 12a9 9 0 1 1-2.6-6.4"/></svg><span>历史</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="pcol" style="width:100%;margin-top:4px">
+        <div class="pcap">③ 桌面端同步：左侧导航加「历史」，左边时间轴、右边详情</div>
+        <div class="pdesc">桌面不需要底部导航，左侧从两项变三项。历史页左右分栏，和手机端是同一份数据、同一套接口。</div>
+        <div class="desk">
+          <div class="dsb">
+            <div class="br"><span></span>加密备份</div>
+            <div class="it"><i></i>备份</div>
+            <div class="it"><i style="background:#9aa1ab;border-color:#9aa1ab;border-radius:4px"></i>快照</div>
+            <div class="it on"><i></i>历史</div>
+          </div>
+          <div class="dmain">
+            <div class="dt">历史</div>
+            <div style="padding:0 16px 10px"><div class="seg" style="margin-bottom:0;max-width:260px"><div class="s on">备份</div><div class="s">还原</div></div></div>
+            <div class="dcols">
+              <div class="dlist">
+                <div class="dayh">今天 · 10-31<div class="ln"></div></div>
+                <div class="hitem" style="padding:8px 10px"><div class="t1" style="font-size:12.5px"><span class="st ok">成功</span>相册备份</div><div class="t2" style="font-size:11px"><span>07:30</span><span>44.9 万文件</span><span>21 分</span></div></div>
+                <div class="hitem" style="padding:8px 10px"><div class="t1" style="font-size:12.5px"><span class="st bad">失败</span>资料备份</div><div class="t2" style="font-size:11px"><span>03:00</span><span>云盘授权过期</span></div></div>
+                <div class="dayh">昨天 · 10-30<div class="ln"></div></div>
+                <div class="hitem" style="padding:8px 10px"><div class="t1" style="font-size:12.5px"><span class="st ok">成功</span>相册备份</div><div class="t2" style="font-size:11px"><span>07:30</span><span>19 分</span></div></div>
+              </div>
+              <div class="ddet">
+                <div class="dh">相册备份 · 10-31 07:30</div>
+                <div class="dr"><b>状态</b><span style="color:#16803a;font-weight:600">成功</span></div>
+                <div class="dr"><b>仓库</b>天翼云盘</div>
+                <div class="dr"><b>快照</b><span class="mono">e9edfd57</span></div>
+                <div class="dr"><b>结果</b>44.9 万文件 · 128.6 GB · 用时 21 分</div>
+                <div class="tlb">
+                  <div class="dr"><b>07:30</b>开始备份 · /vol1/1000/相册</div>
+                  <div class="dr"><b>07:36</b>已扫描 12.8 万文件，去重率 62%</div>
+                  <div class="dr"><b>07:51</b>完成 · 新增 3,204 / 修改 812</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">方案 B · 快照页页头加图标按钮<span class="tag warn">最省事</span></div>
+    <div class="sec-desc">底部导航不动，快照页页头右侧放一个时钟图标，点开全屏抽屉。和现在的「还原记录」按钮是同一个位置，只是从文字按钮换成图标，并升级成「历史」。</div>
+    <div class="phones">
+      <div class="pcol">
+        <div class="pcap">① 页头入口</div>
+        <div class="pdesc">「刷新」旁边加一个时钟图标，点击弹出历史。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>快照</h2><div class="hact">
+              <div class="iconbtn hl"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7.2v5l3.1 1.9M21 12a9 9 0 1 1-2.6-6.4"/></svg></div>
+              <div class="iconbtn">⟳</div>
+            </div></div>
+            <div class="mcard"><div class="row">
+              <div class="repo-ic"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg></div>
+              <div><div class="repo-nm">天翼云盘</div><div class="repo-pa">/encbackup/tianyi</div></div>
+              <div class="repo-mt"><b>8 个快照</b>10-30 14:44</div>
+            </div></div>
+            <div class="mcard"><div class="row">
+              <div class="repo-ic"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg></div>
+              <div><div class="repo-nm">115 网盘</div><div class="repo-pa">/encbackup/115</div></div>
+              <div class="repo-mt"><b>1 个快照</b>10-29 09:12</div>
+            </div></div>
+            <div class="note-line">图标只有时钟一个含义，新用户不一定会点。</div>
+          </div>
+          <div class="bnav">
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="pcol">
+        <div class="pcap">② 弹出的历史抽屉</div>
+        <div class="pdesc">从底部升起的全屏抽屉，顶部拖拽条 + 标题 + 关闭，下面同 A 的列表。</div>
+        <div class="phone"><div class="screen" style="background:#fff">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div style="flex:1;overflow:hidden;padding:0 12px 10px">
+            <div style="width:34px;height:4px;background:#e0e3e9;border-radius:3px;margin:2px auto 12px"></div>
+            <div class="mhead"><h2 style="font-size:17px">历史</h2><div class="hact"><div class="iconbtn" style="width:28px;height:28px">✕</div></div></div>
+            <div class="seg"><div class="s on">备份</div><div class="s">还原</div></div>
+            <div class="dayh">今天 · 10-31<div class="ln"></div></div>
+            <div class="hitem" style="box-shadow:0 0 0 1px #f0f1f4"><div class="t1"><span class="st ok">成功</span>相册备份<span class="arrow">›</span></div><div class="t2"><span>07:30</span><span>44.9 万文件</span><span>21 分</span></div></div>
+            <div class="hitem" style="box-shadow:0 0 0 1px #f0f1f4"><div class="t1"><span class="st bad">失败</span>资料备份<span class="arrow">›</span></div><div class="t2"><span>03:00</span><span>云盘授权过期</span></div></div>
+            <div class="dayh">昨天 · 10-30<div class="ln"></div></div>
+            <div class="hitem" style="box-shadow:0 0 0 1px #f0f1f4"><div class="t1"><span class="st ok">成功</span>相册备份<span class="arrow">›</span></div><div class="t2"><span>07:30</span><span>19 分</span></div></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="pcol">
+        <div class="pcap">③ 另一个思路：备份页页头也放</div>
+        <div class="pdesc">如果选 B，建议备份页页头也放同一个图标，两处入口一致，避免「只有快照页能看历史」的困惑。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>备份</h2><div class="hact"><div class="iconbtn hl"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7.2v5l3.1 1.9M21 12a9 9 0 1 1-2.6-6.4"/></svg></div></div></div>
+            <div class="mcard">
+              <div class="row"><div class="repo-nm">相册备份</div><div class="repo-mt"><b>07:30 成功</b>明天 07:30</div></div>
+              <div style="height:1px;background:#f3f4f6;margin:9px 0"></div>
+              <div class="t2" style="font-size:11.5px;color:#9aa1ab;display:flex;gap:9px"><span>44.9 万文件</span><span>128.6 GB</span><span>21 分</span></div>
+            </div>
+            <div class="mcard">
+              <div class="row"><div class="repo-nm">资料备份</div><div class="repo-mt"><b style="color:#b91c1c">03:00 失败</b>明天 03:00</div></div>
+              <div style="height:1px;background:#f3f4f6;margin:9px 0"></div>
+              <div class="t2" style="font-size:11.5px;color:#b91c1c;display:flex;gap:9px"><span>云盘授权过期，点这里重新授权</span></div>
+            </div>
+          </div>
+          <div class="bnav">
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">方案 C · 快照页顶部「最近活动」卡</div>
+    <div class="sec-desc">不做独立页面，先给一条最近活动摘要，失败的一眼能看见，点「全部」再进完整历史。可以和 A 叠加使用。</div>
+    <div class="phones">
+      <div class="pcol">
+        <div class="pcap">① 首屏摘要卡</div>
+        <div class="pdesc">放在仓库列表上方，最多 2 条，只显示最新的备份和还原。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>快照</h2><div class="hact"><div class="iconbtn">⟳</div></div></div>
+            <div class="recbar hl">
+              <span class="st ok">成功</span>
+              <div><div class="tx">相册备份</div><div class="ts">今天 07:30 · 44.9 万文件 · 21 分</div></div>
+              <span class="more">全部 ›</span>
+            </div>
+            <div class="recbar">
+              <span class="st bad">失败</span>
+              <div><div class="tx">资料备份</div><div class="ts">今天 03:00 · 云盘授权过期</div></div>
+            </div>
+            <div class="mcard" style="margin-top:12px"><div class="row">
+              <div class="repo-ic"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg></div>
+              <div><div class="repo-nm">天翼云盘</div><div class="repo-pa">/encbackup/tianyi</div></div>
+              <div class="repo-mt"><b>8 个快照</b>10-30 14:44</div>
+            </div></div>
+            <div class="note-line">仓库列表被往下推了一条，首屏能看到的仓库变少。</div>
+          </div>
+          <div class="bnav">
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="pcol">
+        <div class="pcap">② 点「全部」进历史</div>
+        <div class="pdesc">进的是 A 的历史页，同一个页面，只是入口不同。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>历史</h2></div>
+            <div class="seg"><div class="s on">备份</div><div class="s">还原</div></div>
+            <div class="dayh">今天 · 10-31<div class="ln"></div></div>
+            <div class="hitem"><div class="t1"><span class="st ok">成功</span>相册备份<span class="arrow">›</span></div><div class="t2"><span>07:30</span><span>21 分</span></div></div>
+            <div class="hitem"><div class="t1"><span class="st bad">失败</span>资料备份<span class="arrow">›</span></div><div class="t2"><span>03:00</span><span>云盘授权过期</span></div></div>
+            <div class="dayh">昨天 · 10-30<div class="ln"></div></div>
+            <div class="hitem"><div class="t1"><span class="st ok">成功</span>相册备份<span class="arrow">›</span></div><div class="t2"><span>07:30</span><span>19 分</span></div></div>
+          </div>
+          <div class="bnav">
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="pcol">
+        <div class="pcap">③ 空态</div>
+        <div class="pdesc">还没跑过备份时，历史页给一句引导，不要空白。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>历史</h2></div>
+            <div class="seg"><div class="s on">备份</div><div class="s">还原</div></div>
+            <div style="text-align:center;padding:70px 20px;color:#9aa1ab">
+              <div style="font-size:30px;margin-bottom:10px">🕘</div>
+              <div style="font-size:13px;font-weight:600;color:#6b7280">还没有历史记录</div>
+              <div style="font-size:11.5px;line-height:1.8;margin-top:6px">跑一次备份或还原，这里就会出现记录</div>
+            </div>
+          </div>
+          <div class="bnav">
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7v5l3.2 2M21 12a9 9 0 1 1-2.6-6.4"/></svg><span>历史</span></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">方案 D · 快照页顶部分段「仓库 / 历史」</div>
+    <div class="sec-desc">不加导航项，把历史并进快照页。位置显眼，但语义上历史不只是快照的事，备份页看不到。</div>
+    <div class="phones">
+      <div class="pcol">
+        <div class="pcap">① 顶部分段</div>
+        <div class="pdesc">标题下面一行「仓库 / 历史」，切换整页内容。</div>
+        <div class="phone"><div class="screen">
+          <div class="sbar"><span>19:47</span><span>▮▮▮ ⌁</span></div>
+          <div class="sbody">
+            <div class="mhead"><h2>快照</h2><div class="hact"><div class="iconbtn">⟳</div></div></div>
+            <div class="seg hl"><div class="s on">仓库</div><div class="s">历史</div></div>
+            <div class="mcard"><div class="row">
+              <div class="repo-ic"><svg viewBox="0 0 24 24" width="17" height="17"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg></div>
+              <div><div class="repo-nm">天翼云盘</div><div class="repo-pa">/encbackup/tianyi</div></div>
+              <div class="repo-mt"><b>8 个快照</b>10-30 14:44</div>
+            </div></div>
+            <div class="note-line">切到「历史」后，还要再分备份 / 还原，两层分段容易绕。</div>
+          </div>
+          <div class="bnav">
+            <div class="it"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg><span>备份</span></div>
+            <div class="it on"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg><span>快照</span></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">实现要点</div>
+    <div class="grid4">
+      <div class="g4">
+        <h4>一个聚合接口</h4>
+        <p>新增 <code>GET /api/history?limit=60</code>，后端合并两类数据：备份来自各任务日志目录（文件名带时间，解析出状态/文件数/大小/用时），还原来自 <code>config.json</code> 的 <code>restores</code>。一次请求返回，按时间倒序。</p>
+      </div>
+      <div class="g4">
+        <h4>备份记录复用现成解析</h4>
+        <p>现在单任务日志弹窗里已经有 <code>parseLogSummary</code>，能出状态、文件数、大小、关键节点。历史列表直接复用同一份解析结果，点开就是时间轴，不用另写一套。</p>
+      </div>
+      <div class="g4">
+        <h4>桌面端一起改</h4>
+        <p>桌面左侧导航现在是「备份 / 快照」两项，加第三项「历史」，页面结构和小屏一致：列表在左，详情在右。原来的「还原记录」按钮可以撤掉。</p>
+      </div>
+      <div class="g4">
+        <h4>性能与保留</h4>
+        <p>日志按任务分目录，只读文件名和摘要，不读全文；列表默认 60 条，按天分组。日志超过 90 天的在列表里折叠成「更早」。不新增任何落盘结构。</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // 方案 A 的备份/还原分段切换
+  var seg = document.getElementById('a-seg');
+  if (seg) {
+    seg.addEventListener('click', function (e) {
+      var s = e.target.closest('.s');
+      if (!s) return;
+      [].forEach.call(seg.querySelectorAll('.s'), function (x) { x.classList.remove('on'); });
+      s.classList.add('on');
+      var k = s.getAttribute('data-k');
+      document.getElementById('a-list').style.display = k === 'bak' ? 'block' : 'none';
+      document.getElementById('a-rst').style.display = k === 'rst' ? 'block' : 'none';
+    });
+  }
+  // 点条目展开详情
+  document.addEventListener('click', function (e) {
+    var it = e.target.closest('.hitem');
+    if (it && !e.target.closest('.hexp')) it.classList.toggle('open');
+  });
+  // 方案 A 底部 tab 与历史页联动（示意）
+  var tab = document.getElementById('a-tab');
+  if (tab) tab.addEventListener('click', function () { tab.classList.add('on'); });
+</script>
+</body>
+</html>

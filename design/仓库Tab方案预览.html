@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仓库 Tab · 快照查看方案预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f2f4f7; color: #1f2937; padding: 34px 20px 70px;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+  h1 { font-size: 21px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: #8b9098; margin-bottom: 26px; line-height: 1.7; }
+  .sec { margin-bottom: 46px; }
+  .sec-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .sec-title .tag { font-size: 11px; background: #eef4ff; color: #3370ff; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .sec-title .tag.rec { background: #e7f8ee; color: #16803a; }
+  .sec-desc { font-size: 12.5px; color: #9ca3af; margin-bottom: 16px; line-height: 1.7; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+
+  /* ---------- 对比表 ---------- */
+  .cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .cmp th, .cmp td { padding: 11px 14px; text-align: left; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  .cmp th { background: #fafbfc; font-weight: 600; color: #4b5563; font-size: 12px; }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp td.k { font-weight: 600; color: #1f2937; white-space: nowrap; }
+  .yes { color: #16803a; font-weight: 600; }
+  .no { color: #9ca3af; }
+
+  /* ---------- 桌面模拟窗 ---------- */
+  .win { display: flex; background: #f2f4f7; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(16,24,40,.09); margin-bottom: 16px; min-height: 430px; }
+  .sidebar { width: 158px; flex: none; background: #fff; border-right: 1px solid #ebedf0; padding: 14px 9px; }
+  .sb-brand { display: flex; align-items: center; gap: 8px; padding: 2px 8px 14px; font-weight: 600; font-size: 13px; }
+  .sb-logo { width: 26px; height: 26px; border-radius: 7px; background: #eef4ff; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .sb-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; font-size: 13px; color: #4b5563; margin-bottom: 2px; }
+  .sb-item.on { background: #eef4ff; color: #3370ff; font-weight: 500; }
+  .sb-item .ic { width: 15px; height: 15px; flex: none; }
+  .sb-foot { margin-top: 40px; padding: 0 10px; font-size: 10.5px; color: #b0b7c3; line-height: 1.9; }
+  .main { flex: 1; min-width: 0; padding: 20px 24px; }
+  .dhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .dhead h2 { font-size: 17px; font-weight: 600; }
+  .btn { font-size: 12.5px; padding: 7px 14px; border-radius: 8px; border: none; background: #f3f4f6; color: #374151; font-family: inherit; cursor: pointer; }
+  .btn.primary { background: #3370ff; color: #fff; }
+  .btn.sm { padding: 5px 11px; font-size: 12px; border-radius: 7px; }
+  .btn.link { background: transparent; color: #3370ff; padding: 4px 6px; font-weight: 600; }
+
+  /* ---------- 仓库卡 ---------- */
+  .repo-card { display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(16,24,40,.05); margin-bottom: 11px; }
+  .repo-card.act { outline: 2px solid #bfd4ff; outline-offset: -1px; }
+  .rc-icon { width: 40px; height: 40px; flex: none; border-radius: 10px; background: #eef4ff; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+  .rc-body { flex: 1; min-width: 0; }
+  .rc-name { font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .rc-path { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, Menlo, monospace; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rc-meta { display: flex; gap: 16px; margin-top: 9px; flex-wrap: wrap; }
+  .rc-meta .m { font-size: 11.5px; color: #8b9098; }
+  .rc-meta .m b { color: #1f2937; font-size: 13px; font-weight: 600; margin-right: 3px; }
+  .rc-act { flex: none; display: flex; align-items: center; gap: 6px; }
+  .pill { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+  .pill.ok { background: #e7f8ec; color: #16803a; }
+  .pill.warn { background: #fef3e2; color: #b45309; }
+  .pill.gray { background: #f3f4f6; color: #9ca3af; }
+
+  /* ---------- 快照表 ---------- */
+  .crumb { font-size: 12px; color: #9ca3af; margin-bottom: 10px; }
+  .crumb b { color: #4b5563; font-weight: 600; }
+  .sum-bar { display: flex; gap: 22px; background: #fff; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(16,24,40,.05); flex-wrap: wrap; }
+  .sum-bar .s { font-size: 11.5px; color: #8b9098; }
+  .sum-bar .s b { display: block; font-size: 15px; color: #1f2937; font-weight: 600; margin-top: 2px; }
+  .grp { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,24,40,.05); margin-bottom: 14px; overflow: hidden; }
+  .grp-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #f3f4f6; }
+  .grp-head .gn { font-size: 13.5px; font-weight: 600; }
+  .grp-head .gp { font-size: 11.5px; color: #9ca3af; font-family: ui-monospace, Menlo, monospace; }
+  .grp-head .gc { margin-left: auto; font-size: 11.5px; color: #8b9098; }
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .tbl th { text-align: left; font-weight: 500; color: #9ca3af; font-size: 11.5px; padding: 9px 16px; background: #fcfcfd; border-bottom: 1px solid #f3f4f6; white-space: nowrap; }
+  .tbl td { padding: 11px 16px; border-bottom: 1px solid #f6f7f9; color: #374151; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: #f9fbff; }
+  .tbl .t { font-weight: 600; color: #1f2937; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .tbl .dim { color: #9ca3af; }
+  .tbl .lock { color: #6b7280; }
+  .tbl .acts { text-align: right; white-space: nowrap; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .pager { display: flex; align-items: center; gap: 6px; padding: 12px 16px; border-top: 1px solid #f3f4f6; font-size: 12px; color: #8b9098; }
+  .pg-btn { width: 28px; height: 28px; border-radius: 7px; border: 1px solid #e5e7eb; background: #fff; color: #6b7280; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .pg-btn.on { background: #3370ff; border-color: #3370ff; color: #fff; font-weight: 600; }
+  .search { display: flex; align-items: center; gap: 8px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 11px; font-size: 12.5px; color: #b0b7c3; background: #fff; }
+  .search input { border: none; outline: none; font-family: inherit; font-size: 12.5px; flex: 1; color: #1f2937; background: transparent; }
+
+  /* ---------- chips ---------- */
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; }
+  .chip { font-size: 12px; padding: 6px 13px; border-radius: 20px; background: #fff; border: 1px solid #e5e7eb; color: #4b5563; display: flex; align-items: center; gap: 6px; }
+  .chip.on { background: #3370ff; border-color: #3370ff; color: #fff; font-weight: 500; }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  /* ---------- 手机 ---------- */
+  .phones { display: flex; gap: 22px; flex-wrap: wrap; }
+  .phone { width: 336px; flex: none; background: #f2f4f7; border-radius: 26px; overflow: hidden; box-shadow: 0 6px 22px rgba(16,24,40,.14); border: 6px solid #fff; display: flex; flex-direction: column; height: 620px; }
+  .ph-head { padding: 14px 16px 10px; font-size: 15px; font-weight: 600; background: #f2f4f7; }
+  .ph-body { flex: 1; overflow: hidden; padding: 0 12px; }
+  .ph-tab { display: flex; background: #fff; border-top: 1px solid #ebedf0; padding: 7px 0 9px; }
+  .ph-tab .it { flex: 1; text-align: center; font-size: 10.5px; color: #9ca3af; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .ph-tab .it.on { color: #3370ff; font-weight: 600; }
+  .ph-tab .it .i { font-size: 16px; line-height: 1; }
+  .m-repo { background: #fff; border-radius: 12px; padding: 13px 14px; margin-bottom: 9px; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+  .m-repo .top { display: flex; align-items: center; gap: 10px; }
+  .m-repo .nm { font-size: 13.5px; font-weight: 600; flex: 1; }
+  .m-repo .rows { margin-top: 9px; border-top: 1px solid #f5f6f8; padding-top: 8px; }
+  .m-repo .row { display: flex; justify-content: space-between; font-size: 11.5px; padding: 2.5px 0; }
+  .m-repo .row span:first-child { color: #9ca3af; }
+  .m-snap { background: #fff; border-radius: 12px; padding: 12px 13px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+  .m-snap .l1 { display: flex; align-items: center; gap: 8px; }
+  .m-snap .tt { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .m-snap .l2 { font-size: 11px; color: #9ca3af; margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .m-snap .go { margin-left: auto; font-size: 11.5px; color: #3370ff; font-weight: 600; }
+
+  /* 抽屉（方案 C 手机） */
+  .drawer-mask { position: relative; height: 100%; }
+  .drawer { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 20px rgba(16,24,40,.14); padding: 12px 14px 14px; max-height: 88%; }
+  .drawer .bar { width: 34px; height: 4px; background: #e5e7eb; border-radius: 3px; margin: 0 auto 10px; }
+  .drawer h4 { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+  .drawer .dsub { font-size: 11.5px; color: #9ca3af; margin-bottom: 11px; }
+
+  .note { font-size: 12px; color: #6b7280; line-height: 1.85; background: #fff; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+  .note b { color: #1f2937; }
+  .note .li { display: flex; gap: 8px; margin-top: 7px; }
+  .note .li i { color: #3370ff; font-style: normal; font-weight: 700; flex: none; }
+  .pros { display: flex; gap: 14px; margin: 10px 0 16px; flex-wrap: wrap; }
+  .pros > div { flex: 1; min-width: 230px; font-size: 12px; line-height: 1.85; padding: 12px 14px; border-radius: 10px; }
+  .pros .good { background: #f2fbf5; color: #166534; }
+  .pros .bad { background: #fef7f2; color: #9a3412; }
+  .pros h5 { font-size: 12px; margin-bottom: 5px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>仓库 Tab · 快照查看功能</h1>
+  <p class="sub">
+    在底部导航（桌面为左侧栏）新增「仓库」入口，按仓库维度查看云端已有的快照。<br>
+    下面三套方案共用同一套数据接口，差别只在信息组织方式。示例数据取自你 NAS 上真实的两条任务（相册资料→天翼、115）。
+  </p>
+
+  <table class="cmp" style="margin-bottom:40px">
+    <tr>
+      <th style="width:120px">对比项</th>
+      <th>方案 A · 分层（仓库 → 任务 → 快照）</th>
+      <th>方案 B · 扁平（仓库内全量时间线）</th>
+      <th>方案 C · 双栏（左仓库 / 右快照）</th>
+    </tr>
+    <tr>
+      <td class="k">信息结构</td>
+      <td>三层：仓库卡 → 任务分组表 → 快照行</td>
+      <td>两层：仓库 chip → 全量快照列表（任务用色标区分）</td>
+      <td>两层：左侧仓库列表常驻，右侧直接是快照表</td>
+    </tr>
+    <tr>
+      <td class="k">最接近你给的参考图</td>
+      <td class="yes">是（分组表 + 分页 + 操作列）</td>
+      <td class="no">否（改成时间线）</td>
+      <td class="yes">是（表结构一致）</td>
+    </tr>
+    <tr>
+      <td class="k">「一条快照属于谁」</td>
+      <td>分组标题直接表达，零认知成本</td>
+      <td>每行带彩色任务标，需扫视</td>
+      <td>列形式呈现，可排序/筛选</td>
+    </tr>
+    <tr>
+      <td class="k">任务多时（>5）</td>
+      <td>页面变长，需折叠分组</td>
+      <td class="yes">不受影响，一屏看完</td>
+      <td>需要任务筛选器</td>
+    </tr>
+    <tr>
+      <td class="k">手机端</td>
+      <td class="yes">卡片式，天然适配</td>
+      <td class="yes">列表式，最省空间</td>
+      <td>需退化为「卡片 + 抽屉」</td>
+    </tr>
+    <tr>
+      <td class="k">实现成本</td>
+      <td>低</td>
+      <td>低</td>
+      <td>中（桌面双栏 + 手机抽屉两套布局）</td>
+    </tr>
+    <tr>
+      <td class="k">建议</td>
+      <td class="yes">主推</td>
+      <td>可作为 A 的「时间线视图」开关</td>
+      <td>仓库数量多时再考虑</td>
+    </tr>
+  </table>
+
+  <!-- ==================== 方案 A ==================== -->
+  <div class="sec">
+    <div class="sec-title">方案 A · 仓库 → 任务 → 快照（分层）<span class="tag rec">推荐</span></div>
+    <p class="sec-desc">
+      第一层是仓库卡片，点进去是仓库详情：顶部汇总条 + 按备份任务分组的快照表。分组标题即「这是谁备的」，不用额外加列。
+    </p>
+
+    <!-- A-1 仓库列表（桌面） -->
+    <div class="win">
+      <div class="sidebar">
+        <div class="sb-brand"><span class="sb-logo">🛡</span>加密备份</div>
+        <div class="sb-item"><span class="ic">📁</span>备份</div>
+        <div class="sb-item"><span class="ic">↺</span>还原</div>
+        <div class="sb-item on"><span class="ic">🗄</span>仓库</div>
+        <div class="sb-foot">restic 0.18.0<br>rclone 1.70.1</div>
+      </div>
+      <div class="main">
+        <div class="dhead">
+          <h2>仓库</h2>
+          <button class="btn">↻ 刷新全部</button>
+        </div>
+
+        <div class="repo-card act">
+          <div class="rc-icon">☁️</div>
+          <div class="rc-body">
+            <div class="rc-name">天翼云盘 · 家庭备份 <span class="pill ok">8 个快照</span></div>
+            <div class="rc-path">/dav/jarvis-backup</div>
+            <div class="rc-meta">
+              <span class="m"><b>439.5 GB</b>占用</span>
+              <span class="m"><b>2</b>个任务共用</span>
+              <span class="m"><b>10-31 02:00</b>最近快照</span>
+              <span class="m"><b>10-01 → 10-31</b>时间跨度</span>
+            </div>
+          </div>
+          <div class="rc-act">
+            <button class="btn primary sm">查看快照 ›</button>
+          </div>
+        </div>
+
+        <div class="repo-card">
+          <div class="rc-icon">📦</div>
+          <div class="rc-body">
+            <div class="rc-name">115 网盘 <span class="pill gray">0 个快照</span></div>
+            <div class="rc-path">/115/encbackup</div>
+            <div class="rc-meta">
+              <span class="m"><b>—</b>占用</span>
+              <span class="m"><b>1</b>个任务共用</span>
+              <span class="m"><b>—</b>最近快照</span>
+            </div>
+          </div>
+          <div class="rc-act">
+            <button class="btn sm">查看快照 ›</button>
+          </div>
+        </div>
+
+        <div class="note" style="margin-top:14px">
+          <b>卡片上直接回答四个问题</b>：这个仓库有多大、存了几个快照、被哪些任务共用、最后一次是什么时候。
+        </div>
+      </div>
+    </div>
+
+    <!-- A-2 仓库详情（桌面） -->
+    <div class="win">
+      <div class="sidebar">
+        <div class="sb-brand"><span class="sb-logo">🛡</span>加密备份</div>
+        <div class="sb-item"><span class="ic">📁</span>备份</div>
+        <div class="sb-item"><span class="ic">↺</span>还原</div>
+        <div class="sb-item on"><span class="ic">🗄</span>仓库</div>
+        <div class="sb-foot">restic 0.18.0<br>rclone 1.70.1</div>
+      </div>
+      <div class="main">
+        <div class="crumb">仓库 / <b>天翼云盘 · 家庭备份</b></div>
+        <div class="dhead">
+          <h2 style="font-size:16px">快照列表</h2>
+          <div style="display:flex;gap:8px">
+            <div class="search" style="width:180px"><span>🔍</span><input placeholder="搜索任务或快照 ID"></div>
+            <button class="btn sm">↻ 刷新缓存</button>
+          </div>
+        </div>
+
+        <div class="sum-bar">
+          <div class="s">快照总数<b>8 个</b></div>
+          <div class="s">占用空间<b>439.5 GB</b></div>
+          <div class="s">时间跨度<b>10-01 ~ 10-31</b></div>
+          <div class="s">共用任务<b>2 个</b></div>
+          <div class="s">缓存时间<b>今天 14:52</b></div>
+        </div>
+
+        <div class="grp">
+          <div class="grp-head">
+            <span class="pill ok">✓ 正常</span>
+            <span class="gn">相册资料 → 天翼</span>
+            <span class="gp">/vol1/1000/Photos</span>
+            <span class="gc">5 个快照</span>
+          </div>
+          <table class="tbl">
+            <tr>
+              <th style="width:150px">快照时间</th><th style="width:100px">描述</th><th style="width:70px">保护</th>
+              <th>根目录范围</th><th style="width:150px">文件 / 大小</th><th style="width:110px"></th>
+            </tr>
+            <tr>
+              <td class="t">10-31 02:00:00</td><td class="dim">自动</td><td class="lock">—</td>
+              <td>文件夹 12 个</td><td class="mono dim">12,847 · 48.2 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-01 02:00:00</td><td class="dim">自动</td><td class="lock">—</td>
+              <td>文件夹 12 个</td><td class="mono dim">12,801 · 48.1 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">09-01 02:00:00</td><td class="dim">自动</td><td class="lock">—</td>
+              <td>文件夹 13 个</td><td class="mono dim">12,650 · 47.8 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">08-01 02:00:00</td><td class="dim">自动</td><td class="lock">—</td>
+              <td>文件夹 12 个</td><td class="mono dim">12,402 · 46.9 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">2025-09-01 22:05:58</td><td>手动生成</td><td class="lock">🔒</td>
+              <td>文件夹 8 个</td><td class="mono dim">9,120 · 31.4 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="grp">
+          <div class="grp-head">
+            <span class="pill ok">✓ 正常</span>
+            <span class="gn">文档 → 天翼</span>
+            <span class="gp">/vol1/1000/Documents</span>
+            <span class="gc">3 个快照</span>
+          </div>
+          <table class="tbl">
+            <tr>
+              <th style="width:150px">快照时间</th><th style="width:100px">描述</th><th style="width:70px">保护</th>
+              <th>根目录范围</th><th style="width:150px">文件 / 大小</th><th style="width:110px"></th>
+            </tr>
+            <tr>
+              <td class="t">10-30 03:00:00</td><td class="dim">自动</td><td class="lock">—</td>
+              <td>文件夹 4 个</td><td class="mono dim">3,204 · 2.1 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-23 03:00:00</td><td class="dim">自动</td><td class="lock">—</td>
+              <td>文件夹 4 个</td><td class="mono dim">3,188 · 2.1 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-16 03:00:00</td><td>手动生成</td><td class="lock">🔒</td>
+              <td>文件夹 4 个</td><td class="mono dim">3,150 · 2.0 GB</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="note">
+          <b>「保护」列替代参考图里的「锁定」</b>：restic 本身没有快照锁，这里表示「已被手动标记为保护，不会被保留策略自动清理」。
+          点一下可以切换，等价于给快照打个本地标签。不需要的话这列可以整列去掉。
+        </div>
+      </div>
+    </div>
+
+    <!-- A 手机 -->
+    <div class="phones">
+      <div class="phone">
+        <div class="ph-head">仓库</div>
+        <div class="ph-body">
+          <div class="m-repo">
+            <div class="top">
+              <div class="rc-icon" style="width:34px;height:34px;font-size:16px">☁️</div>
+              <div class="nm">天翼云盘 · 家庭备份</div>
+              <span class="pill ok">8</span>
+            </div>
+            <div class="rows">
+              <div class="row"><span>云端路径</span><span class="mono">/dav/jarvis-backup</span></div>
+              <div class="row"><span>占用 / 任务</span><span>439.5 GB · 2 个任务</span></div>
+              <div class="row"><span>最近快照</span><span>10-31 02:00</span></div>
+            </div>
+          </div>
+          <div class="m-repo">
+            <div class="top">
+              <div class="rc-icon" style="width:34px;height:34px;font-size:16px">📦</div>
+              <div class="nm">115 网盘</div>
+              <span class="pill gray">0</span>
+            </div>
+            <div class="rows">
+              <div class="row"><span>云端路径</span><span class="mono">/115/encbackup</span></div>
+              <div class="row"><span>最近快照</span><span>暂无</span></div>
+            </div>
+          </div>
+          <div class="note" style="font-size:11.5px">点卡片进入仓库详情，快照按任务分组折叠，默认展开最近有快照的那组。</div>
+        </div>
+        <div class="ph-tab">
+          <div class="it"><span class="i">📁</span>备份</div>
+          <div class="it"><span class="i">↺</span>还原</div>
+          <div class="it on"><span class="i">🗄</span>仓库</div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="ph-head" style="display:flex;align-items:center;gap:8px">
+          <span style="color:#9ca3af;font-size:16px">‹</span> 天翼云盘
+        </div>
+        <div class="ph-body">
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <div class="chip on">相册资料 5</div>
+            <div class="chip">文档 3</div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">10-31 02:00</span><span class="pill ok">自动</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span>12,847 文件</span><span>48.2 GB</span><span>文件夹 12 个</span></div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">10-01 02:00</span><span class="pill ok">自动</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span>12,801 文件</span><span>48.1 GB</span><span>文件夹 12 个</span></div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">09-01 02:00</span><span class="pill ok">自动</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span>12,650 文件</span><span>47.8 GB</span><span>文件夹 13 个</span></div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">2025-09-01 22:05</span><span class="pill warn">🔒 手动</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span>9,120 文件</span><span>31.4 GB</span><span>文件夹 8 个</span></div>
+          </div>
+        </div>
+        <div class="ph-tab">
+          <div class="it"><span class="i">📁</span>备份</div>
+          <div class="it"><span class="i">↺</span>还原</div>
+          <div class="it on"><span class="i">🗄</span>仓库</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 方案 B ==================== -->
+  <div class="sec">
+    <div class="sec-title">方案 B · 仓库内全量时间线（扁平）</div>
+    <p class="sec-desc">
+      顶部用 chip 切仓库和任务，下面一条按时间倒序的全量快照流。回答的是「这个仓库最近都发生了什么」，而不是「某条任务备了什么」。
+    </p>
+
+    <div class="win">
+      <div class="sidebar">
+        <div class="sb-brand"><span class="sb-logo">🛡</span>加密备份</div>
+        <div class="sb-item"><span class="ic">📁</span>备份</div>
+        <div class="sb-item"><span class="ic">↺</span>还原</div>
+        <div class="sb-item on"><span class="ic">🗄</span>仓库</div>
+        <div class="sb-foot">restic 0.18.0<br>rclone 1.70.1</div>
+      </div>
+      <div class="main">
+        <div class="dhead">
+          <h2>仓库</h2>
+          <div class="search" style="width:190px"><span>🔍</span><input placeholder="搜索快照 ID / 任务"></div>
+        </div>
+
+        <div class="chips" style="margin-bottom:10px">
+          <div class="chip on">☁️ 天翼云盘 <span style="opacity:.75">8</span></div>
+          <div class="chip">📦 115 网盘 <span style="opacity:.75">0</span></div>
+        </div>
+        <div class="chips" style="margin-bottom:14px">
+          <div class="chip on">全部任务</div>
+          <div class="chip"><span class="dot" style="background:#3370ff"></span>相册资料 5</div>
+          <div class="chip"><span class="dot" style="background:#22c55e"></span>文档 3</div>
+        </div>
+
+        <div class="grp">
+          <table class="tbl">
+            <tr>
+              <th style="width:140px">快照时间</th><th>来源任务</th><th style="width:150px">文件 / 大小</th>
+              <th style="width:90px">保护</th><th style="width:110px"></th>
+            </tr>
+            <tr>
+              <td class="t">10-31 02:00</td>
+              <td><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3370ff;margin-right:7px"></span>相册资料 → 天翼</td>
+              <td class="mono dim">12,847 · 48.2 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-30 03:00</td>
+              <td><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:7px"></span>文档 → 天翼</td>
+              <td class="mono dim">3,204 · 2.1 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-23 03:00</td>
+              <td><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:7px"></span>文档 → 天翼</td>
+              <td class="mono dim">3,188 · 2.1 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-16 03:00</td>
+              <td><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:7px"></span>文档 → 天翼</td>
+              <td class="mono dim">3,150 · 2.0 GB</td><td class="lock">🔒</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-01 02:00</td>
+              <td><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3370ff;margin-right:7px"></span>相册资料 → 天翼</td>
+              <td class="mono dim">12,801 · 48.1 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">09-01 02:00</td>
+              <td><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3370ff;margin-right:7px"></span>相册资料 → 天翼</td>
+              <td class="mono dim">12,650 · 47.8 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+            <tr>
+              <td class="t">2025-09-01 22:05</td>
+              <td><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3370ff;margin-right:7px"></span>相册资料 → 天翼</td>
+              <td class="mono dim">9,120 · 31.4 GB</td><td class="lock">🔒</td>
+              <td class="acts"><button class="btn link">浏览</button><button class="btn link">还原</button></td>
+            </tr>
+          </table>
+          <div class="pager">
+            <button class="pg-btn">‹</button><button class="pg-btn on">1</button><button class="pg-btn">2</button><button class="pg-btn">›</button>
+            <span style="margin-left:10px">共 8 条 · 每页 10 条</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phones">
+      <div class="phone">
+        <div class="ph-head">仓库</div>
+        <div class="ph-body">
+          <div class="chips" style="margin-bottom:9px">
+            <div class="chip on">☁️ 天翼 8</div>
+            <div class="chip">📦 115 0</div>
+          </div>
+          <div class="chips" style="margin-bottom:10px">
+            <div class="chip on">全部</div>
+            <div class="chip">相册 5</div>
+            <div class="chip">文档 3</div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">10-31 02:00</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span style="color:#3370ff">● 相册资料</span><span>12,847 文件</span><span>48.2 GB</span></div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">10-30 03:00</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span style="color:#22c55e">● 文档</span><span>3,204 文件</span><span>2.1 GB</span></div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">10-23 03:00</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span style="color:#22c55e">● 文档</span><span>3,188 文件</span><span>2.1 GB</span></div>
+          </div>
+          <div class="m-snap">
+            <div class="l1"><span class="tt">10-01 02:00</span><span class="go">浏览 ›</span></div>
+            <div class="l2"><span style="color:#3370ff">● 相册资料</span><span>12,801 文件</span><span>48.1 GB</span></div>
+          </div>
+        </div>
+        <div class="ph-tab">
+          <div class="it"><span class="i">📁</span>备份</div>
+          <div class="it"><span class="i">↺</span>还原</div>
+          <div class="it on"><span class="i">🗄</span>仓库</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 方案 C ==================== -->
+  <div class="sec">
+    <div class="sec-title">方案 C · 桌面双栏 / 手机抽屉</div>
+    <p class="sec-desc">
+      桌面左侧常驻仓库列表（窄栏），右侧直接显示选中仓库的快照表，切仓库不用来回跳页。手机端退化为「仓库卡片 + 底部抽屉」，也就是你给的参考图那种弹层形态。
+    </p>
+
+    <div class="win" style="min-height:400px">
+      <div class="sidebar">
+        <div class="sb-brand"><span class="sb-logo">🛡</span>加密备份</div>
+        <div class="sb-item"><span class="ic">📁</span>备份</div>
+        <div class="sb-item"><span class="ic">↺</span>还原</div>
+        <div class="sb-item on"><span class="ic">🗄</span>仓库</div>
+        <div class="sb-foot">restic 0.18.0<br>rclone 1.70.1</div>
+      </div>
+      <div style="width:186px;flex:none;background:#fafbfc;border-right:1px solid #ebedf0;padding:14px 10px">
+        <div style="font-size:11.5px;color:#9ca3af;padding:0 8px 8px;font-weight:600">仓库（2）</div>
+        <div style="background:#fff;border-radius:9px;padding:10px 11px;margin-bottom:7px;box-shadow:0 1px 2px rgba(16,24,40,.07);border-left:3px solid #3370ff">
+          <div style="font-size:12.5px;font-weight:600">☁️ 天翼云盘</div>
+          <div style="font-size:10.5px;color:#9ca3af;margin-top:3px">8 快照 · 439.5 GB</div>
+        </div>
+        <div style="background:transparent;border-radius:9px;padding:10px 11px">
+          <div style="font-size:12.5px;font-weight:600;color:#6b7280">📦 115 网盘</div>
+          <div style="font-size:10.5px;color:#b0b7c3;margin-top:3px">暂无快照</div>
+        </div>
+      </div>
+      <div class="main">
+        <div class="dhead">
+          <h2 style="font-size:16px">天翼云盘 · 快照</h2>
+          <div style="display:flex;gap:8px">
+            <div class="search" style="width:150px"><span>🔍</span><input placeholder="搜索"></div>
+            <button class="btn sm">↻</button>
+          </div>
+        </div>
+        <div class="chips" style="margin-bottom:12px">
+          <div class="chip on">全部 8</div>
+          <div class="chip">相册资料 5</div>
+          <div class="chip">文档 3</div>
+        </div>
+        <div class="grp">
+          <table class="tbl">
+            <tr>
+              <th style="width:130px">快照时间</th><th>来源任务</th><th style="width:120px">文件 / 大小</th>
+              <th style="width:70px">保护</th><th style="width:100px"></th>
+            </tr>
+            <tr>
+              <td class="t">10-31 02:00</td>
+              <td><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3370ff;margin-right:7px"></span>相册资料</td>
+              <td class="mono dim">12,847 · 48.2 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-30 03:00</td>
+              <td><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:7px"></span>文档</td>
+              <td class="mono dim">3,204 · 2.1 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-23 03:00</td>
+              <td><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:7px"></span>文档</td>
+              <td class="mono dim">3,188 · 2.1 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button></td>
+            </tr>
+            <tr>
+              <td class="t">10-01 02:00</td>
+              <td><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3370ff;margin-right:7px"></span>相册资料</td>
+              <td class="mono dim">12,801 · 48.1 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button></td>
+            </tr>
+            <tr>
+              <td class="t">09-01 02:00</td>
+              <td><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3370ff;margin-right:7px"></span>相册资料</td>
+              <td class="mono dim">12,650 · 47.8 GB</td><td class="lock">—</td>
+              <td class="acts"><button class="btn link">浏览</button></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="phones">
+      <div class="phone">
+        <div class="ph-head">仓库</div>
+        <div class="ph-body" style="position:relative">
+          <div class="m-repo" style="opacity:.45">
+            <div class="top">
+              <div class="rc-icon" style="width:34px;height:34px;font-size:16px">☁️</div>
+              <div class="nm">天翼云盘 · 家庭备份</div>
+            </div>
+          </div>
+          <div class="m-repo" style="opacity:.45">
+            <div class="top">
+              <div class="rc-icon" style="width:34px;height:34px;font-size:16px">📦</div>
+              <div class="nm">115 网盘</div>
+            </div>
+          </div>
+          <div class="drawer-mask">
+            <div class="drawer">
+              <div class="bar"></div>
+              <h4>快照列表</h4>
+              <div class="dsub">天翼云盘 · 8 个快照 · 439.5 GB</div>
+              <div class="chips" style="margin-bottom:9px">
+                <div class="chip on">全部 8</div><div class="chip">相册 5</div><div class="chip">文档 3</div>
+              </div>
+              <div style="border:1px solid #f0f1f4;border-radius:9px;overflow:hidden">
+                <table class="tbl" style="font-size:11.5px">
+                  <tr><th style="padding:7px 10px">时间</th><th style="padding:7px 10px">任务</th><th style="padding:7px 10px"></th></tr>
+                  <tr>
+                    <td class="t" style="padding:8px 10px;font-size:11.5px">10-31 02:00</td>
+                    <td style="padding:8px 10px"><span style="color:#3370ff">● 相册</span></td>
+                    <td class="acts" style="padding:8px 10px"><button class="btn link" style="font-size:11.5px">浏览</button></td>
+                  </tr>
+                  <tr>
+                    <td class="t" style="padding:8px 10px;font-size:11.5px">10-30 03:00</td>
+                    <td style="padding:8px 10px"><span style="color:#22c55e">● 文档</span></td>
+                    <td class="acts" style="padding:8px 10px"><button class="btn link" style="font-size:11.5px">浏览</button></td>
+                  </tr>
+                  <tr>
+                    <td class="t" style="padding:8px 10px;font-size:11.5px">10-23 03:00</td>
+                    <td style="padding:8px 10px"><span style="color:#22c55e">● 文档</span></td>
+                    <td class="acts" style="padding:8px 10px"><button class="btn link" style="font-size:11.5px">浏览</button></td>
+                  </tr>
+                  <tr>
+                    <td class="t" style="padding:8px 10px;font-size:11.5px">10-01 02:00</td>
+                    <td style="padding:8px 10px"><span style="color:#3370ff">● 相册</span></td>
+                    <td class="acts" style="padding:8px 10px"><button class="btn link" style="font-size:11.5px">浏览</button></td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ph-tab">
+          <div class="it"><span class="i">📁</span>备份</div>
+          <div class="it"><span class="i">↺</span>还原</div>
+          <div class="it on"><span class="i">🗄</span>仓库</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 共性实现 ==================== -->
+  <div class="sec">
+    <div class="sec-title">三套方案共用的实现要点</div>
+    <p class="sec-desc">不管选哪个，底层是同一套东西，所以换方案只影响前端，返工成本很低。</p>
+
+    <div class="note">
+      <div class="li"><i>1</i><span><b>新增接口</b> <span class="mono">GET /api/repos/:id/snapshots</span>：返回该仓库全量快照 + 每条快照归属的任务 id/名称。复用现有的 <span class="mono">snapCache</span> 缓存（10 分钟），加 <span class="mono">?refresh=1</span> 强制实时查。</span></div>
+      <div class="li"><i>2</i><span><b>归属判定要改</b>：现在 <span class="mono">restic backup</span> 没打 tag，快照和任务的关联只能靠源路径前缀匹配，两个任务路径重叠时会串。建议备份时加 <span class="mono">--tag task:&lt;id&gt;</span>，读取时 tag 优先、paths 兜底，历史快照不受影响。</span></div>
+      <div class="li"><i>3</i><span><b>「保护」标记</b>：restic 没有快照锁。若要做，就在本地 config 里维护一个 <span class="mono">protected_snapshots</span> 数组（repo_id + short_id），保留策略清理时跳过。不做就把这列删掉，只留任务和文件数。</span></div>
+      <div class="li"><i>4</i><span><b>浏览</b>：直接复用现有还原向导的文件浏览（<span class="mono">/api/tasks/:id/files?snapshot=&amp;dir=</span>），点「浏览」跳到只读文件树，不进入还原流程。</span></div>
+      <div class="li"><i>5</i><span><b>还原</b>：点「还原」直接打开还原向导并预选这条快照，跳过前两步。</span></div>
+      <div class="li"><i>6</i><span><b>性能</b>：快照列表必须读缓存，不能每次实时 <span class="mono">restic snapshots</span>——天翼那 8 个快照实时查要十几秒。首次进仓库页用缓存，手动点刷新才实时查。</span></div>
+      <div class="li"><i>7</i><span><b>入口</b>：桌面左侧栏加第三项「仓库」，手机底部导航变三项。备份页的 FAB 在仓库页隐藏（没有「新建仓库」这个动作）。</span></div>
+    </div>
+  </div>
+
+  <div class="note" style="background:#fffdf5;border:1px solid #fde9b8">
+    <b>我的建议</b>：选 <b>方案 A</b>。它跟你给的参考图结构一致（表 + 分页 + 操作列），分组标题天然表达了「这条快照是谁备的」，
+    手机端也不用另做一套布局。如果你更关心「最近这个仓库发生了什么」，可以之后在 A 的详情页加一个「时间线 / 分组」视图开关，把 B 吸收进来。
+  </div>
+
+</div>
+</body>
+</html>

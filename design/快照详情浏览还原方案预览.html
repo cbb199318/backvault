@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>快照详情 · 目录浏览与还原 方案预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f2f4f7; color: #1f2937; padding: 34px 20px 90px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 21px; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: #8b9098; margin-bottom: 22px; line-height: 1.75; }
+  .sec { margin-bottom: 54px; }
+  .sec-title { font-size: 15.5px; font-weight: 700; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sec-title .tag { font-size: 11px; background: #eef4ff; color: #3370ff; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .sec-title .tag.rec { background: #e7f8ee; color: #16803a; }
+  .sec-title .tag.warn { background: #fef3e2; color: #b45309; }
+  .sec-desc { font-size: 12.5px; color: #9ca3af; margin-bottom: 15px; line-height: 1.85; }
+
+  /* ---------- 需求卡 ---------- */
+  .req { background: #fff; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(16,24,40,.06); margin-bottom: 24px; }
+  .req h3 { font-size: 13px; font-weight: 700; margin-bottom: 9px; color: #374151; }
+  .req ol { margin-left: 18px; font-size: 12.5px; color: #4b5563; line-height: 2.05; }
+  .req .note { margin-top: 11px; font-size: 12px; color: #8b9098; background: #fafbfc; border-left: 3px solid #bfd4ff; padding: 8px 12px; border-radius: 0 6px 6px 0; line-height: 1.75; }
+
+  /* ---------- 对比表 ---------- */
+  .cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .cmp th, .cmp td { padding: 11px 14px; text-align: left; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  .cmp th { background: #fafbfc; font-weight: 600; color: #4b5563; font-size: 12px; white-space: nowrap; }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp td.k { font-weight: 600; color: #1f2937; white-space: nowrap; width: 104px; }
+  .yes { color: #16803a; font-weight: 600; }
+  .no { color: #b91c1c; }
+  .mid { color: #b45309; }
+
+  /* ---------- 模拟窗 ---------- */
+  .win { display: flex; background: #f2f4f7; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(16,24,40,.09); }
+  .sidebar { width: 156px; flex: none; background: #fff; border-right: 1px solid #ebedf0; padding: 14px 9px; }
+  .sb-brand { display: flex; align-items: center; gap: 8px; padding: 2px 8px 14px; font-weight: 600; font-size: 13px; }
+  .sb-logo { width: 26px; height: 26px; border-radius: 7px; background: #eef4ff; display: flex; align-items: center; justify-content: center; }
+  .sb-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: #4b5563; margin-bottom: 3px; }
+  .sb-item.on { background: #eef4ff; color: #3370ff; font-weight: 600; }
+  .sb-foot { margin-top: 40px; padding: 0 10px; font-size: 10.5px; color: #c2c7d0; line-height: 1.7; }
+  .content { flex: 1; min-width: 0; padding: 16px 18px 18px; }
+
+  .chead { display: flex; align-items: center; margin-bottom: 12px; }
+  .chead h2 { font-size: 17px; font-weight: 700; }
+  .crumb { font-size: 12.5px; color: #9ca3af; display: flex; align-items: center; gap: 6px; }
+  .crumb b { color: #4b5563; font-weight: 500; }
+  .crumb .sp { color: #d5d9e0; }
+
+  /* 顶部按钮 */
+  .btn { border: none; border-radius: 8px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
+  .btn.primary { background: #3370ff; color: #fff; }
+  .btn.primary:hover { background: #2a63e8; }
+  .btn.primary:disabled { background: #c8d8ff; cursor: not-allowed; }
+  .btn.ghost { background: #fff; color: #4b5563; border: 1px solid #e5e8ee; }
+  .btn.ghost:hover { border-color: #c9d4e8; }
+  .btn.sm { padding: 5px 11px; font-size: 12px; border-radius: 7px; }
+  .tryhint { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #b45309; background: #fef3e2; padding: 2px 9px; border-radius: 20px; font-weight: 600; vertical-align: 2px; margin-left: 6px; }
+
+  /* 信息卡 */
+  .card { background: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 11px; }
+  .card.tight { padding: 12px 16px; }
+  .dtop { display: flex; align-items: flex-start; gap: 14px; }
+  .dtime { font-size: 20px; font-weight: 700; letter-spacing: -.2px; }
+  .dmeta { font-size: 12px; color: #9ca3af; margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .badge { font-size: 11px; background: #eef4ff; color: #3370ff; padding: 2px 9px; border-radius: 6px; font-weight: 600; }
+  .acts { margin-left: auto; display: flex; gap: 8px; flex: none; }
+  .kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; padding-top: 13px; border-top: 1px solid #f3f4f6; }
+  .kv .k { font-size: 11px; color: #9ca3af; margin-bottom: 5px; }
+  .kv .v { font-size: 13.5px; font-weight: 600; color: #1f2937; }
+  .diffbar { display: flex; align-items: center; gap: 12px; font-size: 12.5px; margin-top: 12px; padding-top: 11px; border-top: 1px solid #f3f4f6; }
+  .diffbar .add { color: #16803a; font-weight: 600; }
+  .diffbar .mod { color: #b45309; font-weight: 600; }
+  .diffbar .del { color: #b91c1c; font-weight: 600; }
+  .diffbar .tot { margin-left: auto; color: #9ca3af; font-size: 11.5px; }
+
+  /* 树 */
+  .treehead { display: flex; align-items: center; gap: 10px; padding: 0 2px 9px; }
+  .treehead h3 { font-size: 13px; font-weight: 700; }
+  .treehead .cnt { font-size: 11.5px; color: #9ca3af; }
+  .treehead .r { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .link { font-size: 12px; color: #3370ff; cursor: pointer; }
+  .link:hover { text-decoration: underline; }
+  .treerow { display: flex; align-items: center; gap: 7px; padding: 6px 6px 6px 4px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+  .treerow:hover { background: #f7f9fc; }
+  .treerow.on { background: #f0f6ff; }
+  .caret { width: 14px; flex: none; text-align: center; color: #b6bcc7; font-size: 10px; transition: transform .13s; }
+  .caret.open { transform: rotate(90deg); }
+  .caret.leaf { visibility: hidden; }
+  .fic { width: 17px; height: 14px; flex: none; }
+  .tname { color: #1f2937; font-weight: 500; }
+  .tname.sel { color: #3370ff; font-weight: 600; }
+  .tmeta { font-size: 11px; color: #b6bcc7; margin-left: 2px; }
+  .cbx { width: 17px; height: 17px; border: 1.6px solid #ccd3de; border-radius: 5px; flex: none; background: #fff; cursor: pointer; margin-left: auto; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10.5px; font-weight: 700; }
+  .cbx:hover { border-color: #3370ff; }
+  .cbx.on { background: #3370ff; border-color: #3370ff; }
+  .cbx.half { background: #3370ff; border-color: #3370ff; }
+  .cbx.half::after { content: ""; width: 8px; height: 2px; background: #fff; border-radius: 1px; }
+  .cbx.half span { display: none; }
+  .kids { overflow: hidden; }
+
+  /* 已选条 */
+  .selbar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #f5f8ff; border: 1px solid #dbe6ff; border-radius: 9px; font-size: 12.5px; margin-bottom: 10px; flex-wrap: wrap; }
+  .selbar b { color: #3370ff; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: #fff; border: 1px solid #e2e8f5; border-radius: 6px; padding: 2px 8px; font-size: 11.5px; color: #4b5563; font-family: ui-monospace, Menlo, monospace; }
+  .chip i { font-style: normal; color: #b6bcc7; cursor: pointer; }
+
+  /* 双栏（方案 B） */
+  .cols { display: flex; gap: 12px; }
+  .left { width: 246px; flex: none; background: #fff; border-radius: 12px; padding: 11px 8px; max-height: 330px; overflow: auto; }
+  .right { flex: 1; min-width: 0; background: #fff; border-radius: 12px; padding: 12px 14px; max-height: 330px; overflow: auto; }
+  .lrow { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border-radius: 6px; font-size: 12.5px; color: #4b5563; cursor: pointer; }
+  .lrow:hover { background: #f7f9fc; }
+  .lrow.on { background: #eef4ff; color: #3370ff; font-weight: 600; }
+  .lrow .cbx { width: 15px; height: 15px; font-size: 9.5px; border-radius: 4px; }
+
+  /* 面包屑（方案 C） */
+  .bc { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 9px 12px; background: #fff; border-radius: 10px; margin-bottom: 10px; color: #9ca3af; }
+  .bc a { color: #3370ff; cursor: pointer; text-decoration: none; }
+  .bc .cur { color: #1f2937; font-weight: 600; }
+  .bc .selpill { margin-left: auto; background: #e8f0ff; color: #3370ff; border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; }
+
+  .footbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #fff; border-radius: 10px; margin-top: 10px; font-size: 12.5px; color: #6b7280; }
+  .footbar .spacer { flex: 1; }
+
+  /* 优缺点 */
+  .pros { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 13px; }
+  .pros > div { background: #fff; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.85; color: #4b5563; }
+  .pros h4 { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  .pros .good h4 { color: #16803a; }
+  .pros .bad h4 { color: #b45309; }
+  .pros ul { margin-left: 15px; }
+
+  /* 还原设置 */
+  .rst { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .steps { display: flex; align-items: center; gap: 0; margin-bottom: 18px; }
+  .step { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 62px; }
+  .dot { width: 24px; height: 24px; border-radius: 50%; background: #eef0f3; color: #9ca3af; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .dot.on { background: #3370ff; color: #fff; }
+  .dot.done { background: #e7f8ee; color: #16803a; }
+  .step span { font-size: 11.5px; color: #9ca3af; }
+  .step.on span { color: #3370ff; font-weight: 600; }
+  .line { width: 44px; height: 1px; background: #e8ebf0; margin-bottom: 20px; }
+  .seg { display: inline-flex; background: #f2f4f7; border-radius: 8px; padding: 3px; max-width: 300px; }
+  .seg button { border: none; background: none; padding: 7px 20px; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: inherit; color: #6b7280; }
+  .seg button.on { background: #fff; color: #3370ff; font-weight: 600; box-shadow: 0 1px 3px rgba(16,24,40,.1); }
+  .conf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; max-width: 640px; }
+  .conf > div { border: 1.5px solid #e8ebf0; border-radius: 9px; padding: 11px 13px; cursor: pointer; }
+  .conf > div.on { border-color: #3370ff; background: #f5f8ff; }
+  .conf b { display: block; font-size: 12.5px; margin-bottom: 4px; }
+  .conf small { font-size: 11px; color: #9ca3af; line-height: 1.5; }
+
+  /* 实现要点 */
+  .grid4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .grid4 > div { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .grid4 h4 { font-size: 12.5px; font-weight: 700; margin-bottom: 7px; color: #374151; }
+  .grid4 p { font-size: 12px; color: #6b7280; line-height: 1.85; }
+  .grid4 code { background: #f5f6f8; padding: 1px 5px; border-radius: 4px; font-size: 11px; font-family: ui-monospace, Menlo, monospace; color: #3370ff; }
+
+  /* 列表按钮改造 */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #fff; border-radius: 12px; overflow: hidden; }
+  .tbl th, .tbl td { padding: 9px 12px; text-align: left; border-bottom: 1px solid #f3f4f6; }
+  .tbl th { background: #fafbfc; font-size: 11.5px; color: #9ca3af; font-weight: 500; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl .mono { color: #9ca3af; font-size: 12px; }
+  .tbl .go { color: #3370ff; font-weight: 600; cursor: pointer; text-align: right; }
+  .tbl .go:hover { text-decoration: underline; }
+  .tbl .old { color: #b6bcc7; text-decoration: line-through; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>快照详情 · 目录浏览 + 多选还原</h1>
+  <p class="sub">快照列表的「详情」改成「浏览」；进入后上半屏是这份快照的信息，下半屏是可直接浏览、多选的目录树，选好点右上角「还原」进入还原设置。下面是三种布局方案，都可以点。</p>
+
+  <div class="req">
+    <h3>这次要解决的</h3>
+    <ol>
+      <li>快照列表行尾按钮「详情」→「浏览」</li>
+      <li>详情页上半屏：时间、主机、文件数、总大小、距上一快照、与上一份的差异、任务徽标</li>
+      <li>详情页下半屏：目录树，能进入子目录、返回上级，可多选目录与子目录</li>
+      <li>右上角「还原」按钮，带上已选项进入还原设置（目的地 → 冲突 → 确认）</li>
+    </ol>
+    <div class="note">
+      共同点：三种方案的信息区完全一致，差别只在「目录树怎么摆」。选择规则也一致 —— 勾选目录等于勾选整棵子树，父目录显示半选态，已选只记最上层路径，不会出现「选了相册又选相册/2024」这种冗余。
+    </div>
+  </div>
+
+  <table class="cmp">
+    <tr>
+      <th style="width:104px"></th>
+      <th>方案 A · 内联展开树</th>
+      <th>方案 B · 左树右列表</th>
+      <th>方案 C · 逐层下钻</th>
+    </tr>
+    <tr>
+      <td class="k">整体感觉</td>
+      <td>一条树到底，全部层级同屏</td>
+      <td>像 Finder / 资源管理器</td>
+      <td>像现在的文件选择弹窗</td>
+    </tr>
+    <tr>
+      <td class="k">看清全貌</td>
+      <td class="yes">一眼看到所有目录</td>
+      <td class="mid">只能看当前路径的兄弟</td>
+      <td class="no">要一层层点进去</td>
+    </tr>
+    <tr>
+      <td class="k">深目录效率</td>
+      <td class="mid">要一直展开、滚动</td>
+      <td class="yes">左树点一下直达</td>
+      <td class="mid">面包屑可跳级</td>
+    </tr>
+    <tr>
+      <td class="k">多选体验</td>
+      <td class="yes">同屏勾选，最直观</td>
+      <td class="yes">左树勾选，右侧看内容</td>
+      <td class="mid">要来回翻才勾得全</td>
+    </tr>
+    <tr>
+      <td class="k">手机适配</td>
+      <td class="yes">缩进压缩即可</td>
+      <td class="no">双栏要退化成两层</td>
+      <td class="yes">天然单栏</td>
+    </tr>
+    <tr>
+      <td class="k">改造量</td>
+      <td class="yes">中（复用现有选择逻辑）</td>
+      <td class="no">大（两套列表 + 联动）</td>
+      <td class="yes">小（弹窗搬进页面）</td>
+    </tr>
+  </table>
+
+  <!-- ==================== 方案 A ==================== -->
+  <div class="sec" style="margin-top:34px;">
+    <div class="sec-title">方案 A · 内联展开树 <span class="tag rec">推荐</span><span class="tryhint">可以点：展开箭头 / 勾选框</span></div>
+    <div class="sec-desc">信息卡下面直接是一棵树，根目录就是快照的源路径。点箭头展开子目录，点方框勾选。这是「目录树」这个说法最本分的做法，也最符合你截图里画的那两块区域。</div>
+
+    <div class="win">
+      <div class="sidebar">
+        <div class="sb-brand"><div class="sb-logo">🛡</div>加密备份</div>
+        <div class="sb-item">📁 备份</div>
+        <div class="sb-item on">🗂 快照</div>
+        <div class="sb-foot">restic 0.18.0<br>rclone v1.75.2</div>
+      </div>
+      <div class="content">
+        <div class="chead">
+          <div class="crumb"><a style="color:#3370ff;cursor:pointer">‹ 快照</a><span class="sp">/</span><b>天翼云盘</b><span class="sp">/</span><b>10-30 14:44</b></div>
+        </div>
+
+        <div class="card">
+          <div class="dtop">
+            <div style="flex:1;min-width:0">
+              <div class="dtime">2026-10-30 14:44:59</div>
+              <div class="dmeta">
+                <span>周五</span>
+                <span class="mono">e9edfd57</span>
+                <span class="badge">相册资料→天翼（迁移自 Backrest）</span>
+              </div>
+            </div>
+            <div class="acts">
+              <button class="btn ghost">差异对比</button>
+              <button class="btn primary" id="a-restore" disabled>还原</button>
+            </div>
+          </div>
+          <div class="kv">
+            <div><div class="k">主机</div><div class="v">fnos</div></div>
+            <div><div class="k">文件数</div><div class="v">449,267</div></div>
+            <div><div class="k">总大小</div><div class="v">318.4 GB</div></div>
+            <div><div class="k">距上一快照</div><div class="v">6 小时 41 分</div></div>
+          </div>
+          <div class="diffbar">
+            <span class="add">+10 新增</span><span class="mod">~38 修改</span><span class="del">-0 删除</span>
+            <span class="tot">共 48 个文件变动</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="treehead">
+            <h3>备份内容</h3><span class="cnt">2 个源目录</span>
+            <div class="r"><span class="link" id="a-all">全选</span><span class="link" id="a-none">清空</span></div>
+          </div>
+          <div id="a-tree"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros">
+      <div class="good"><h4>好在</h4><ul>
+        <li>一屏看清整个备份结构，勾哪块一目了然</li>
+        <li>「勾目录 = 勾整棵子树」，符合直觉，不用先点进去</li>
+        <li>手机端缩进压到 12px 就能用，不用另做一套</li>
+      </ul></div>
+      <div class="bad"><h4>要注意</h4><ul>
+        <li>几十万文件的目录树要懒加载：只展开到用户点开的层级，默认全收起</li>
+        <li>树很宽时（相册/DJI Device/...）要限制缩进，超过 4 层用「…」折叠</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ==================== 方案 B ==================== -->
+  <div class="sec">
+    <div class="sec-title">方案 B · 左树右列表 <span class="tag">像资源管理器</span><span class="tryhint">可以点：左树切目录 / 勾选</span></div>
+    <div class="sec-desc">左边是只含目录的窄树，负责跳转和勾选；右边是当前目录下的内容。信息区做成紧凑的一行，把高度让给下面的双栏。</div>
+
+    <div class="win">
+      <div class="sidebar">
+        <div class="sb-brand"><div class="sb-logo">🛡</div>加密备份</div>
+        <div class="sb-item">📁 备份</div>
+        <div class="sb-item on">🗂 快照</div>
+        <div class="sb-foot">restic 0.18.0<br>rclone v1.75.2</div>
+      </div>
+      <div class="content">
+        <div class="card tight">
+          <div class="dtop" style="align-items:center">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                <span style="font-size:16px;font-weight:700">2026-10-30 14:44:59</span>
+                <span class="mono" style="font-size:11.5px;color:#9ca3af">e9edfd57</span>
+                <span class="badge">相册资料→天翼</span>
+              </div>
+              <div style="font-size:11.5px;color:#9ca3af;margin-top:4px">fnos · 449,267 文件 · 318.4 GB · 距上一快照 6 小时 41 分 · <span style="color:#16803a">+10</span> <span style="color:#b45309">~38</span> <span style="color:#b91c1c">-0</span></div>
+            </div>
+            <div class="acts">
+              <button class="btn primary" id="b-restore">还原此快照</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="selbar" id="b-selbar" style="display:none">
+          <span>已选 <b id="b-cnt">0</b> 项：</span><span id="b-chips"></span>
+        </div>
+
+        <div class="cols">
+          <div class="left" id="b-tree"></div>
+          <div class="right">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:12px;color:#9ca3af" id="b-cur">/vol1/1000/相册</span>
+              <span class="link" style="margin-left:auto" id="b-pickdir">选择整个目录</span>
+            </div>
+            <div id="b-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros">
+      <div class="good"><h4>好在</h4><ul>
+        <li>左树一点直达任意层级，深目录不用一层层展开</li>
+        <li>右边能看清「这个目录里到底有什么」，判断要不要整个还原</li>
+      </ul></div>
+      <div class="bad"><h4>要注意</h4><ul>
+        <li>两套列表要联动，实现和调试成本最高</li>
+        <li>手机上没有双栏，得退化成一屏一层，等于退化成方案 C</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ==================== 方案 C ==================== -->
+  <div class="sec">
+    <div class="sec-title">方案 C · 逐层下钻 <span class="tag">改动最小</span><span class="tryhint">可以点：进入目录 / 勾选</span></div>
+    <div class="sec-desc">就是把现在还原向导里的文件选择弹窗搬进详情页：面包屑 + 一层列表，底部固定「已选 N 项」。用户已经熟悉这个交互，改动量最小。</div>
+
+    <div class="win">
+      <div class="sidebar">
+        <div class="sb-brand"><div class="sb-logo">🛡</div>加密备份</div>
+        <div class="sb-item">📁 备份</div>
+        <div class="sb-item on">🗂 快照</div>
+        <div class="sb-foot">restic 0.18.0<br>rclone v1.75.2</div>
+      </div>
+      <div class="content">
+        <div class="card tight">
+          <div class="dtop" style="align-items:center">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                <span style="font-size:16px;font-weight:700">2026-10-30 14:44:59</span>
+                <span class="mono" style="font-size:11.5px;color:#9ca3af">e9edfd57</span>
+                <span class="badge">相册资料→天翼</span>
+              </div>
+              <div style="font-size:11.5px;color:#9ca3af;margin-top:4px">fnos · 449,267 文件 · 318.4 GB · 距上一快照 6 小时 41 分</div>
+            </div>
+            <div class="acts">
+              <button class="btn primary" id="c-restore">还原此快照</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bc">
+          <a id="c-root">📦 快照根</a>
+          <span id="c-crumb"></span>
+          <span class="selpill" id="c-pill" style="display:none">已选 <span id="c-pilln">0</span> 项</span>
+        </div>
+
+        <div class="card" style="margin-bottom:0">
+          <div id="c-list"></div>
+        </div>
+
+        <div class="footbar">
+          <span id="c-tip">点目录名进入子目录；勾选右侧方框可只还原这个目录</span>
+          <span class="spacer"></span>
+          <button class="btn ghost sm" id="c-whole">还原整份快照</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros">
+      <div class="good"><h4>好在</h4><ul>
+        <li>交互和现有弹窗一致，用户零学习成本</li>
+        <li>单栏，手机端几乎不用改样式</li>
+        <li>改动量最小，最快能上</li>
+      </ul></div>
+      <div class="bad"><h4>要注意</h4><ul>
+        <li>「详情页」变成翻目录，看不到快照全貌</li>
+        <li>要勾分散在不同分支的目录，得反复进出</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ==================== 还原设置 ==================== -->
+  <div class="sec">
+    <div class="sec-title">选完之后 · 还原设置（三个方案共用）</div>
+    <div class="sec-desc">点右上角「还原」跳到这一步，已选项作为摘要带过来，不再让用户重选。三步：目的地 → 冲突处理 → 确认执行。</div>
+
+    <div class="rst">
+      <div class="steps">
+        <div class="step on"><div class="dot on">1</div><span>目的地</span></div>
+        <div class="line"></div>
+        <div class="step"><div class="dot">2</div><span>冲突处理</span></div>
+        <div class="line"></div>
+        <div class="step"><div class="dot">3</div><span>确认</span></div>
+      </div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">还原到哪里</div>
+      <div class="seg"><button class="on">原位置</button><button>新路径</button></div>
+      <div style="font-size:12px;color:#9ca3af;margin-top:10px;line-height:1.8">
+        将写回原路径：<span class="mono">/vol1/1000/相册/2016前</span>、<span class="mono">/vol1/1000/资料/工作资料</span>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;margin:22px 0 10px">遇到同名文件</div>
+      <div class="conf">
+        <div class="on"><b>仅覆盖有变化</b><small>内容没变的文件不重写，最快</small></div>
+        <div><b>全部覆盖</b><small>按快照里的版本整份写回</small></div>
+        <div><b>跳过已存在</b><small>只补缺失的文件，不动现有</small></div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-top:22px;padding-top:16px;border-top:1px solid #f3f4f6">
+        <span style="font-size:12px;color:#6b7280">📁 快照 <span class="mono">e9edfd57</span> · 已选 <b style="color:#3370ff">2</b> 项 ──▶ ⌖ 原位置</span>
+        <span style="flex:1"></span>
+        <button class="btn ghost">上一步</button>
+        <button class="btn primary">开始还原</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 列表按钮 ==================== -->
+  <div class="sec">
+    <div class="sec-title">顺带一提 · 快照列表行尾按钮</div>
+    <div class="sec-desc">「详情」改成「浏览」之后，整行点击也进同一个页面，按钮只是把动作说清楚。</div>
+    <table class="tbl">
+      <tr><th style="width:130px">时间</th><th style="width:130px">描述</th><th>根目录范围</th><th style="width:110px">文件 / 大小</th><th style="width:70px"></th></tr>
+      <tr><td>10-30 14:44</td><td style="color:#9ca3af">自动</td><td class="mono">/vol1/1000/相册 等 2 项</td><td class="mono">—</td><td class="go">浏览</td></tr>
+      <tr><td>10-30 08:03</td><td style="color:#9ca3af">自动</td><td class="mono">/vol1/1000/相册 等 2 项</td><td class="mono">—</td><td class="go">浏览</td></tr>
+      <tr><td>10-30 03:00</td><td style="color:#9ca3af">自动</td><td class="mono">/vol1/1000/相册 等 2 项</td><td class="mono">—</td><td class="go">浏览</td></tr>
+    </table>
+  </div>
+
+  <!-- ==================== 实现要点 ==================== -->
+  <div class="sec">
+    <div class="sec-title">实现要点</div>
+    <div class="grid4">
+      <div>
+        <h4>目录树数据</h4>
+        <p>沿用现有的 <code>/api/tasks/:id/files?snapshot=&amp;dir=</code>，一次取一层。方案 A 展开某个节点时才拉它的子项，不预加载整棵树。</p>
+      </div>
+      <div>
+        <h4>清单缓存</h4>
+        <p>整份文件清单已经落盘缓存在 <code>cache/ls-*.json.gz</code>，首次约 1 分钟并显示进度，之后秒开。目录树直接吃这份缓存，不再打云盘。</p>
+      </div>
+      <div>
+        <h4>多选语义</h4>
+        <p>已选只存最上层路径；勾父目录自动覆盖子路径，父目录显示半选。和现在还原弹窗里的 <code>isPicked / isHalf / togglePick</code> 完全一致，可以直接复用。</p>
+      </div>
+      <div>
+        <h4>还原入口</h4>
+        <p>右上按钮带 <code>?includes=</code> 进入还原页，跳过「选任务 / 选快照 / 选文件」三步，直接从「目的地」开始。未选中时按钮文案退回「还原此快照」。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- 数据 ---------------- */
+const TREE = [
+  { name: "/vol1/1000/相册", path: "/vol1/1000/相册", type: "dir", n: "412,880 个文件", children: [
+    { name: "2016前", path: "/vol1/1000/相册/2016前", type: "dir", n: "18,204 个文件", children: [
+      { name: "大学", path: "/vol1/1000/相册/2016前/大学", type: "dir", n: "9,120 个文件", children: [] },
+      { name: "高中", path: "/vol1/1000/相册/2016前/高中", type: "dir", n: "7,884 个文件", children: [] }
+    ]},
+    { name: "2024", path: "/vol1/1000/相册/2024", type: "dir", n: "36,551 个文件", children: [
+      { name: "01月", path: "/vol1/1000/相册/2024/01月", type: "dir", n: "2,104 个文件", children: [] },
+      { name: "02月", path: "/vol1/1000/相册/2024/02月", type: "dir", n: "1,880 个文件", children: [] }
+    ]},
+    { name: "DJI Device", path: "/vol1/1000/相册/DJI Device", type: "dir", n: "3,266 个文件", children: [] },
+    { name: "MobileBackup", path: "/vol1/1000/相册/MobileBackup", type: "dir", n: "12,038 个文件", children: [] }
+  ]},
+  { name: "/vol1/1000/资料", path: "/vol1/1000/资料", type: "dir", n: "36,387 个文件", children: [
+    { name: "wechatData", path: "/vol1/1000/资料/wechatData", type: "dir", n: "20,116 个文件", children: [] },
+    { name: "个人资料", path: "/vol1/1000/资料/个人资料", type: "dir", n: "4,902 个文件", children: [] },
+    { name: "工作资料", path: "/vol1/1000/资料/工作资料", type: "dir", n: "11,369 个文件", children: [] }
+  ]}
+];
+
+const FOLDER = '<svg class="fic" viewBox="0 0 40 32"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>';
+
+function walk(nodes, fn, depth) {
+  depth = depth || 0;
+  for (const n of nodes) { fn(n, depth); if (n.children) walk(n.children, fn, depth + 1); }
+}
+function allPaths(nodes) { const out = []; walk(nodes, n => out.push(n.path)); return out; }
+function findNode(nodes, p) { let r = null; walk(nodes, n => { if (n.path === p) r = n; }); return r; }
+
+/* 选择集：只存最上层路径 */
+function makeSel() {
+  const sel = new Set();
+  return {
+    sel,
+    picked(p) { if (sel.has(p)) return true; for (const a of sel) if (p.startsWith(a + "/")) return true; return false; },
+    half(p) { if (this.picked(p)) return false; for (const x of sel) if (x.startsWith(p + "/")) return true; return false; },
+    toggle(p) {
+      if (sel.has(p)) { sel.delete(p); return; }
+      for (const a of [...sel]) if (p.startsWith(a + "/")) sel.delete(a);
+      sel.add(p);
+      for (const x of [...sel]) if (x !== p && x.startsWith(p + "/")) sel.delete(x);
+    },
+    clear() { sel.clear(); },
+    count() { return sel.size; },
+    list() { return [...sel]; }
+  };
+}
+
+/* ---------------- 方案 A ---------------- */
+(function () {
+  const S = makeSel();
+  const open = new Set(["/vol1/1000/相册", "/vol1/1000/资料"]);
+  const box = document.getElementById("a-tree");
+  const btn = document.getElementById("a-restore");
+
+  function render() {
+    let html = "";
+    function row(nodes, depth) {
+      for (const n of nodes) {
+        const has = n.children && n.children.length;
+        const isOpen = open.has(n.path);
+        const picked = S.picked(n.path), half = S.half(n.path);
+        html += `<div class="treerow ${picked ? "on" : ""}" data-p="${n.path}" style="padding-left:${6 + depth * 18}px">
+          <span class="caret ${has ? (isOpen ? "open" : "") : "leaf"}" data-toggle="${has ? n.path : ""}">▶</span>
+          ${FOLDER}
+          <span class="tname ${picked ? "sel" : ""}">${n.name}</span>
+          <span class="tmeta">${n.n || ""}</span>
+          <span class="cbx ${picked ? "on" : half ? "half" : ""}" data-cbx="${n.path}"><span>✓</span></span>
+        </div>`;
+        if (has && isOpen) row(n.children, depth + 1);
+      }
+    }
+    row(TREE, 0);
+    box.innerHTML = html;
+    const n = S.count();
+    btn.textContent = n ? `还原（${n} 项）` : "还原此快照";
+    btn.disabled = false;
+  }
+  box.addEventListener("click", e => {
+    const tg = e.target.closest("[data-toggle]");
+    if (tg && tg.dataset.toggle) {
+      const p = tg.dataset.toggle;
+      open.has(p) ? open.delete(p) : open.add(p);
+      render(); return;
+    }
+    const cb = e.target.closest("[data-cbx]");
+    if (cb) { S.toggle(cb.dataset.cbx); render(); return; }
+    const tr = e.target.closest(".treerow");
+    if (tr) {
+      const p = tr.dataset.p;
+      if (open.has(p)) open.delete(p); else open.add(p);
+      render();
+    }
+  });
+  document.getElementById("a-all").onclick = () => { S.clear(); TREE.forEach(t => S.toggle(t.path)); render(); };
+  document.getElementById("a-none").onclick = () => { S.clear(); render(); };
+  render();
+})();
+
+/* ---------------- 方案 B ---------------- */
+(function () {
+  const S = makeSel();
+  const open = new Set(["/vol1/1000/相册", "/vol1/1000/资料"]);
+  let cur = "/vol1/1000/相册";
+  const tree = document.getElementById("b-tree");
+  const list = document.getElementById("b-list");
+  const bar = document.getElementById("b-selbar");
+  const btn = document.getElementById("b-restore");
+
+  function renderTree() {
+    let html = "";
+    function row(nodes, depth) {
+      for (const n of nodes) {
+        const has = n.children && n.children.length;
+        const isOpen = open.has(n.path);
+        const picked = S.picked(n.path), half = S.half(n.path);
+        html += `<div class="lrow ${cur === n.path ? "on" : ""}" data-p="${n.path}" style="padding-left:${6 + depth * 13}px">
+          <span class="caret ${has ? (isOpen ? "open" : "") : "leaf"}" data-toggle="${has ? n.path : ""}" style="width:11px;font-size:9px">▶</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.name}</span>
+          <span class="cbx ${picked ? "on" : half ? "half" : ""}" data-cbx="${n.path}"><span>✓</span></span>
+        </div>`;
+        if (has && isOpen) row(n.children, depth + 1);
+      }
+    }
+    row(TREE, 0);
+    tree.innerHTML = html;
+  }
+  function renderList() {
+    const node = findNode(TREE, cur);
+    document.getElementById("b-cur").textContent = cur;
+    if (!node || !node.children || !node.children.length) {
+      list.innerHTML = `<div style="padding:26px;text-align:center;font-size:12.5px;color:#b6bcc7">这个目录下没有子目录</div>`;
+      return;
+    }
+    list.innerHTML = node.children.map(c => {
+      const picked = S.picked(c.path), half = S.half(c.path);
+      return `<div class="treerow" data-enter="${c.path}">
+        ${FOLDER}<span class="tname ${picked ? "sel" : ""}">${c.name}</span>
+        <span class="tmeta">${c.n || ""}</span>
+        <span class="cbx ${picked ? "on" : half ? "half" : ""}" data-cbx="${c.path}"><span>✓</span></span>
+      </div>`;
+    }).join("");
+  }
+  function renderBar() {
+    const n = S.count();
+    bar.style.display = n ? "flex" : "none";
+    document.getElementById("b-cnt").textContent = n;
+    document.getElementById("b-chips").innerHTML = S.list().map(p =>
+      `<span class="chip">${p.split("/").pop()}<i data-del="${p}">×</i></span>`).join(" ");
+    btn.textContent = n ? `还原（${n} 项）` : "还原此快照";
+  }
+  function render() { renderTree(); renderList(); renderBar(); }
+
+  document.addEventListener("click", e => {
+    const cb = e.target.closest("#b-tree [data-cbx], #b-list [data-cbx]");
+    if (cb) { e.stopPropagation(); S.toggle(cb.dataset.cbx); render(); return; }
+    const tg = e.target.closest("#b-tree [data-toggle]");
+    if (tg && tg.dataset.toggle) {
+      const p = tg.dataset.toggle;
+      open.has(p) ? open.delete(p) : open.add(p);
+      renderTree(); return;
+    }
+    const lr = e.target.closest("#b-tree .lrow");
+    if (lr) { cur = lr.dataset.p; if (!open.has(cur)) open.add(cur); render(); return; }
+    const en = e.target.closest("#b-list [data-enter]");
+    if (en) { cur = en.dataset.enter; open.add(cur); render(); return; }
+    const del = e.target.closest("[data-del]");
+    if (del) { S.sel.delete(del.dataset.del); render(); }
+  });
+  document.getElementById("b-pickdir").onclick = () => { if (!S.picked(cur)) S.toggle(cur); render(); };
+  render();
+})();
+
+/* ---------------- 方案 C ---------------- */
+(function () {
+  const S = makeSel();
+  let cur = "";
+  const list = document.getElementById("c-list");
+  const btn = document.getElementById("c-restore");
+
+  function crumbOf(dir) {
+    const root = TREE.find(r => dir === r.path || dir.startsWith(r.path + "/"));
+    const out = [];
+    if (!root) return out;
+    out.push({ label: root.name.split("/").pop(), path: root.path });
+    let acc = root.path;
+    for (const seg of dir.slice(root.path.length).split("/").filter(Boolean)) {
+      acc += "/" + seg;
+      out.push({ label: seg, path: acc });
+    }
+    return out;
+  }
+  function render() {
+    const cr = crumbOf(cur);
+    document.getElementById("c-crumb").innerHTML = cr.map(c => `<span class="sp">/</span><a data-go="${c.path}">${c.label}</a>`).join("");
+    const node = cur ? findNode(TREE, cur) : null;
+    const items = cur ? (node && node.children || []) : TREE;
+    let html = "";
+    if (cur) {
+      const up = TREE.some(r => r.path === cur) ? "" : cur.split("/").slice(0, -1).join("/");
+      html += `<div class="treerow" data-go="${up}"><span style="width:14px;text-align:center;color:#b6bcc7">↩</span><span class="tname" style="color:#6b7280">返回上一级</span></div>`;
+    }
+    html += items.map(c => {
+      const picked = S.picked(c.path), half = S.half(c.path);
+      return `<div class="treerow" data-enter="${c.path}">
+        ${FOLDER}<span class="tname ${picked ? "sel" : ""}">${c.name}</span>
+        <span class="tmeta">${c.n || ""}</span>
+        <span style="flex:1"></span>
+        <span style="color:#c4cad4;font-size:17px;margin-right:8px">›</span>
+        <span class="cbx ${picked ? "on" : half ? "half" : ""}" data-cbx="${c.path}"><span>✓</span></span>
+      </div>`;
+    }).join("");
+    list.innerHTML = html;
+    const n = S.count();
+    document.getElementById("c-pill").style.display = n ? "inline-block" : "none";
+    document.getElementById("c-pilln").textContent = n;
+    btn.textContent = n ? `还原（${n} 项）` : "还原此快照";
+  }
+  list.addEventListener("click", e => {
+    const cb = e.target.closest("[data-cbx]");
+    if (cb) { e.stopPropagation(); S.toggle(cb.dataset.cbx); render(); return; }
+    const en = e.target.closest("[data-enter]");
+    if (en) { cur = en.dataset.enter; render(); return; }
+    const go = e.target.closest("[data-go]");
+    if (go) { cur = go.dataset.go; render(); }
+  });
+  document.getElementById("c-crumb").addEventListener("click", e => {
+    const a = e.target.closest("[data-go]");
+    if (a) { cur = a.dataset.go; render(); }
+  });
+  document.getElementById("c-root").onclick = () => { cur = ""; render(); };
+  document.getElementById("c-whole").onclick = () => { S.clear(); TREE.forEach(t => S.toggle(t.path)); render(); };
+  render();
+})();
+</script>
+</body>
+</html>
