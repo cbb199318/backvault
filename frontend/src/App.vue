@@ -9,7 +9,7 @@ import TPick from "./TPick.vue";
 // ---------------------------------------------------------------------------
 // API 前缀：网关下页面路径为 /app/encbackup/，直连/开发时为 /，从地址栏自动推导
 const API = ref(location.pathname.replace(/\/index\.html$/, "").replace(/\/+$/, ""));
-const nav = ref("tasks"); // tasks | repos | restore
+const nav = ref("tasks"); // tasks | snap | hist
 const toast = reactive({ show: false, msg: "", type: "ok" });
 
 function showToast(msg, type = "ok") {
@@ -868,11 +868,432 @@ function sumChipTxt(s) {
 }
 
 // ---------------------------------------------------------------------------
+// 快照 Tab：仓库列表（可展开）→ 快照详情 → 还原
+// ---------------------------------------------------------------------------
+const snapView = ref("list");   // list | detail | restore
+const snapCur = ref(null);      // 当前查看的快照
+const snapCurRepo = ref(null);  // 当前快照所属仓库
+const snapDiff = ref(null);     // 与上一条快照的差异
+const snapDiffLoading = ref(false);
+const snapGap = ref("—");       // 与上一条快照的时间间隔
+
+const rp = reactive({
+  list: [],            // 仓库摘要（/api/repos/summary，只读本地缓存）
+  loading: false,
+  open: {},            // repoId -> 是否展开
+  byRepo: {},          // repoId -> { snaps, tasks, cachedAt, totalBytes, latestTime, loading, loaded }
+});
+
+const TASK_COLORS = ["#3370ff", "#22c55e", "#f59e0b", "#a855f7", "#ef4444", "#06b6d4"];
+// 任务色按 id 哈希取，不依赖列表顺序，避免展开不同仓库时颜色跳变
+function taskColor(id) {
+  if (!id || id === "__orphan") return "#9aa1ab";
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return TASK_COLORS[h % TASK_COLORS.length];
+}
+
+// 取（必要时初始化）某仓库的快照缓存
+function repoBox(id) {
+  if (!rp.byRepo[id]) {
+    rp.byRepo[id] = { snaps: [], tasks: [], cachedAt: "", totalBytes: 0, latestTime: "", loading: false, loaded: false };
+  }
+  return rp.byRepo[id];
+}
+
+async function loadRepoSummary() {
+  rp.loading = true;
+  try {
+    const r = await api("/api/repos/summary");
+    rp.list = r.repos || [];
+  } catch (e) { showToast(e.message, "bad"); }
+  rp.loading = false;
+}
+
+// 展开 / 收起仓库；首次展开时才拉快照
+async function toggleRepo(repo) {
+  const id = repo.id;
+  const willOpen = rp.open[id] !== true;
+  rp.open[id] = willOpen;
+  if (willOpen && !repoBox(id).loaded) await loadRepoSnaps(repo);
+}
+
+async function loadRepoSnaps(repo, refresh) {
+  const box = repoBox(repo.id);
+  box.loading = true;
+  try {
+    const r = await api(`/api/repos/${repo.id}/snapshots${refresh ? "?refresh=1" : ""}`);
+    box.snaps = r.snapshots || [];
+    box.tasks = r.tasks || [];
+    box.cachedAt = r.cached_at || "";
+    box.totalBytes = r.total_bytes || 0;
+    box.latestTime = r.latest_time || "";
+    box.loaded = true;
+  } catch (e) { showToast(e.message, "bad"); }
+  box.loading = false;
+}
+
+// "2026-10-31T02:00:00+08:00" → "10-31 02:00"（跨年补上年份）
+function fmtSnapTime(t) {
+  if (!t) return "-";
+  const y = t.slice(0, 4);
+  const nowY = String(new Date().getFullYear());
+  return y === nowY ? t.slice(5, 16).replace("T", " ") : t.slice(0, 16).replace("T", " ");
+}
+function snapFiles(s) {
+  const n = s.summary ? s.summary.total_files : null;
+  return n == null || n === 0 ? "—" : Number(n).toLocaleString();
+}
+function snapBytes(s) {
+  const b = s.summary ? s.summary.total_bytes : null;
+  return b == null || b === 0 ? "—" : fmtBytes(b);
+}
+function snapFs(s, withUnit) {
+  const f = snapFiles(s);
+  const b = snapBytes(s);
+  if (f === "—" && b === "—") return "—";
+  return withUnit ? f + " 文件 · " + b : f + " · " + b;
+}
+function snapTagLabel(s) {
+  const t = (s.tags || []).filter((x) => !x.startsWith("task:"));
+  if (!t.length) return "自动";
+  return t.length > 1 ? t[0] + " +" + (t.length - 1) : t[0];
+}
+
+const WEEK_CN = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+function weekdayOf(t) {
+  if (!t) return "";
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? "" : WEEK_CN[d.getDay()];
+}
+// 两条快照的时间差 → "11 小时 44 分" / "3 天 2 小时"
+function gapText(cur, prev) {
+  if (!cur || !prev) return "—";
+  const a = new Date(cur).getTime();
+  const b = new Date(prev).getTime();
+  if (isNaN(a) || isNaN(b) || a <= b) return "—";
+  let m = Math.floor((a - b) / 60000);
+  const d = Math.floor(m / 1440); m -= d * 1440;
+  const h = Math.floor(m / 60); m -= h * 60;
+  if (d) return `${d} 天 ${h} 小时`;
+  if (h) return `${h} 小时 ${m} 分`;
+  return `${m} 分`;
+}
+
+// 某仓库下按任务分组（未关联任务的单独一组）
+function repoGroupsOf(repoId) {
+  const box = rp.byRepo[repoId];
+  if (!box) return [];
+  const groups = box.tasks.map((t) => ({
+    id: t.id,
+    name: t.name,
+    paths: t.paths || [],
+    snaps: box.snaps.filter((s) => s.task_id === t.id),
+  }));
+  const orphan = box.snaps.filter((s) => !s.task_id);
+  if (orphan.length) groups.push({ id: "__orphan", name: "未关联任务", paths: [], snaps: orphan });
+  return groups.filter((g) => g.snaps.length);
+}
+
+// 打开快照详情
+async function openSnapDetail(s, repo) {
+  snapCur.value = s;
+  snapCurRepo.value = repo;
+  snapView.value = "detail";
+  snapDiff.value = null;
+  sdStopPoll();
+  sdReset();
+  sdLoadRoot();
+  const box = rp.byRepo[repo.id];
+  const list = box ? box.snaps : [];
+  const i = list.findIndex((x) => x.id === s.id);
+  const prev = i >= 0 ? list[i + 1] : null;
+  snapGap.value = prev ? gapText(s.time, prev.time) : "最早一份";
+  if (!s.task_id || !prev) return;
+  snapDiffLoading.value = true;
+  try {
+    const d = await api(`/api/tasks/${s.task_id}/snapdiff?cur=${s.short_id || s.id}&prev=${prev.short_id || prev.id}`);
+    snapDiff.value = d && !d.error ? d : null;
+  } catch { snapDiff.value = null; }
+  snapDiffLoading.value = false;
+}
+
+function backToSnapList() {
+  snapView.value = "list";
+  snapCur.value = null;
+  snapCurRepo.value = null;
+  snapDiff.value = null;
+  snapGap.value = "—";
+  sdStopPoll();
+  sdReset();
+}
+
+// ---------------------------------------------------------------------------
+// 快照详情 · 目录树（桌面：内联展开树 / 手机：逐层下钻）
+// ---------------------------------------------------------------------------
+const isNarrow = ref(typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches);
+if (typeof window !== "undefined") {
+  const mq = window.matchMedia("(max-width: 768px)");
+  const onMq = (e) => { isNarrow.value = e.matches; };
+  if (mq.addEventListener) mq.addEventListener("change", onMq);
+  else if (mq.addListener) mq.addListener(onMq);
+}
+
+const sd = reactive({
+  roots: [],        // 根目录路径
+  nodes: {},        // path -> { name, path, is_dir, children:[], loaded, loading }
+  open: {},         // path -> 是否展开
+  cur: "",          // 手机端当前目录（"" = 快照根）
+  sel: [],          // 选中的最上层路径
+  building: false,  // 后台还在读整份清单
+  parsed: 0,
+  elapsed: 0,
+  err: "",
+});
+let sdTimer = null;
+function sdStopPoll() {
+  if (sdTimer) { clearTimeout(sdTimer); sdTimer = null; }
+}
+function sdReset() {
+  sd.roots = []; sd.nodes = {}; sd.open = {}; sd.cur = ""; sd.sel = [];
+  sd.building = false; sd.parsed = 0; sd.elapsed = 0; sd.err = "";
+}
+function sdEnsure(path, it) {
+  if (!sd.nodes[path]) {
+    sd.nodes[path] = {
+      name: (it && it.name) || path.split("/").pop() || path,
+      path,
+      is_dir: it ? it.is_dir !== false : true,
+      size: (it && it.size) || 0,
+      children: [],
+      loaded: false,
+      loading: false,
+    };
+  }
+  return sd.nodes[path];
+}
+async function sdFetch(dir, limit) {
+  const s = snapCur.value;
+  const sid = s.short_id || s.id;
+  const lim = limit ? `&limit=${limit}` : "";
+  return await api(`/api/tasks/${s.task_id}/files?snapshot=${encodeURIComponent(sid)}&dir=${encodeURIComponent(dir)}${lim}`);
+}
+// 进入详情页：先用快照元数据把根目录画出来，同时触发后台读清单
+async function sdLoadRoot() {
+  sdStopPoll();
+  const s = snapCur.value;
+  if (!s) return;
+  if (!s.task_id) { sd.err = "这条快照没有关联备份任务，无法浏览目录"; return; }
+  sd.err = "";
+  sd.roots = (s.paths || []).slice();
+  sd.roots.forEach((p) => sdEnsure(p));
+  if (isNarrow.value && !sd.cur) sd.cur = "";
+  try {
+    const r = await sdFetch("");
+    sd.parsed = r.parsed || 0;
+    sd.elapsed = r.elapsed || 0;
+    if (r.loading) {
+      sd.building = true;
+      sdTimer = setTimeout(sdLoadRoot, 2000);
+      return;
+    }
+    sd.building = false;
+    if (r.error) { sd.err = r.error; return; }
+    for (const it of r.items || []) if (it.is_dir) sdEnsure(it.path, it);
+    // 快照元数据里没带 paths 时，用接口返回的根目录兜底
+    if (!sd.roots.length) {
+      const fromItems = (r.items || []).filter((it) => it.is_dir).map((it) => it.path);
+      const list = fromItems.length ? fromItems : (r.roots || []);
+      if (list.length) { sd.roots = list.slice(); list.forEach((p) => sdEnsure(p)); }
+    }
+  } catch (e) {
+    sd.building = false;
+    sd.err = e.message;
+  }
+}
+// 拉某个目录的内容（目录 + 文件，文件最多 300 个，避免一次铺太多）
+async function sdLoadDir(path) {
+  const n = sdEnsure(path);
+  if (n.loading) return;
+  n.loading = true;
+  try {
+    const r = await sdFetch(path, 300);
+    if (r.loading) {
+      n.loading = false;
+      sd.building = true;
+      sd.parsed = r.parsed || 0;
+      sd.elapsed = r.elapsed || 0;
+      sdStopPoll();
+      sdTimer = setTimeout(() => sdLoadDir(path), 2000);
+      return;
+    }
+    n.loading = false;
+    sd.building = false;
+    if (r.error) { sd.err = r.error; return; }
+    const kids = [];
+    for (const it of r.items || []) {
+      sdEnsure(it.path, it);
+      kids.push(it.path);
+    }
+    n.children = kids;
+    n.total = r.dir_total || kids.length;
+    n.truncated = !!r.truncated;
+    n.loaded = true;
+  } catch (e) {
+    n.loading = false;
+    sd.err = e.message;
+  }
+}
+function sdToggleOpen(path) {
+  const n = sdEnsure(path);
+  if (sd.open[path]) { sd.open[path] = false; return; }
+  sd.open[path] = true;
+  if (!n.loaded) sdLoadDir(path);
+}
+// 选中语义：只记最上层路径，勾父目录自动覆盖子路径
+function sdPicked(p) {
+  if (sd.sel.includes(p)) return true;
+  return sd.sel.some((a) => p.startsWith(a + "/"));
+}
+function sdHalf(p) {
+  if (sdPicked(p)) return false;
+  return sd.sel.some((x) => x.startsWith(p + "/"));
+}
+function sdToggle(p) {
+  const at = sd.sel.indexOf(p);
+  if (at >= 0) { sd.sel.splice(at, 1); return; }
+  for (let i = sd.sel.length - 1; i >= 0; i--) {
+    if (p.startsWith(sd.sel[i] + "/")) sd.sel.splice(i, 1);
+  }
+  sd.sel.push(p);
+  for (let i = sd.sel.length - 1; i >= 0; i--) {
+    if (sd.sel[i] !== p && sd.sel[i].startsWith(p + "/")) sd.sel.splice(i, 1);
+  }
+}
+function sdSelectAll() {
+  sd.sel = (snapCur.value && snapCur.value.paths ? snapCur.value.paths : []).slice();
+}
+// 手机：面包屑行尾的勾选框 = 选中当前整个目录（在快照根时 = 整份快照）
+const sdCurAll = computed(() => {
+  if (sd.cur) return sdPicked(sd.cur);
+  return sd.roots.length > 0 && sd.roots.every((p) => sdPicked(p));
+});
+const sdCurPart = computed(() => {
+  if (sd.cur) return sdHalf(sd.cur);
+  return !sdCurAll.value && sd.roots.some((p) => sdPicked(p) || sdHalf(p));
+});
+function sdToggleCur() {
+  if (sd.cur) { sdToggle(sd.cur); return; }
+  if (sdCurAll.value) { sd.sel = []; return; }
+  sdSelectAll();
+}
+// 桌面：按展开状态拍平成一维列表，避免递归组件
+const sdFlat = computed(() => {
+  const out = [];
+  const walk = (paths, depth) => {
+    for (const p of paths) {
+      const n = sd.nodes[p];
+      if (!n) continue;
+      const open = !!sd.open[p];
+      const hasKids = !!n.is_dir && (!n.loaded || (n.children && n.children.length > 0));
+      out.push({ ...n, depth, open, hasKids });
+      if (open && n.children && n.children.length) walk(n.children, depth + 1);
+    }
+  };
+  walk(sd.roots, 0);
+  return out;
+});
+// 手机：当前目录下的子目录
+const sdItems = computed(() => {
+  if (!sd.cur) return sd.roots.map((p) => sd.nodes[p]).filter(Boolean);
+  const n = sd.nodes[sd.cur];
+  if (!n || !n.children) return [];
+  return n.children.map((p) => sd.nodes[p]).filter(Boolean);
+});
+const sdCurNode = computed(() => (sd.cur ? sd.nodes[sd.cur] : null));
+const sdCrumb = computed(() => {
+  const dir = sd.cur;
+  if (!dir) return [];
+  const root = sd.roots.find((r) => dir === r || dir.startsWith(r + "/")) || "";
+  const out = [];
+  if (root) {
+    out.push({ label: root.split("/").pop() || root, path: root });
+    let acc = root;
+    for (const seg of dir.slice(root.length).split("/").filter(Boolean)) {
+      acc += "/" + seg;
+      out.push({ label: seg, path: acc });
+    }
+  }
+  return out;
+});
+function sdEnter(path) {
+  sd.cur = path;
+  const n = sdEnsure(path);
+  if (!n.loaded) sdLoadDir(path);
+}
+function sdUp() {
+  if (!sd.cur) return;
+  if (sd.roots.includes(sd.cur)) { sd.cur = ""; return; }
+  const up = sd.cur.split("/").slice(0, -1).join("/");
+  sd.cur = up && sd.roots.some((r) => up.startsWith(r + "/")) ? up : "";
+}
+function sdRestoreLabel() {
+  return sd.sel.length ? `还原（${sd.sel.length} 项）` : "还原此快照";
+}
+// 带着已选目录进还原向导，直接从「目的地」开始
+async function sdRestore() {
+  const s = snapCur.value;
+  if (!s) return;
+  if (!s.task_id) { showToast("这条快照没有关联任务，无法还原", "bad"); return; }
+  const t = cfg.tasks.find((x) => x.id === s.task_id);
+  if (!t) { showToast("关联的备份任务已被删除", "bad"); return; }
+  const inc = (sd.sel.length ? sd.sel : (s.paths || [])).slice();
+  openRestoreWizard();
+  rst.fromSnap = true;
+  rst.task = t;
+  await loadRestoreSnaps(t);
+  rst.cur = rst.snaps.find((x) => x.id === s.id) || s;
+  rst.includes = inc.map((p) => ({ path: p, name: p.split("/").pop() || p, is_dir: true }));
+  rstStep.value = 3;
+  snapView.value = "restore";
+}
+
+// 详情页「浏览文件」：直接打开快照文件浏览器（只读浏览）
+function browseSnapFiles() {
+  const s = snapCur.value;
+  if (!s) return;
+  if (!s.task_id) { showToast("这条快照没有关联任务，无法浏览文件", "bad"); return; }
+  const t = cfg.tasks.find((x) => x.id === s.task_id);
+  if (!t) { showToast("关联的备份任务已被删除", "bad"); return; }
+  rst.task = t;
+  rst.cur = s;
+  rst.includes = [];
+  openRstPick();
+}
+
+// 从快照详情进入还原：跳过「选任务」「选快照」，直接从选文件开始
+async function restoreFromSnap() {
+  const s = snapCur.value;
+  if (!s) return;
+  if (!s.task_id) { showToast("这条快照没有关联任务，无法还原", "bad"); return; }
+  const t = cfg.tasks.find((x) => x.id === s.task_id);
+  if (!t) { showToast("关联的备份任务已被删除", "bad"); return; }
+  openRestoreWizard();
+  rst.fromSnap = true;
+  rst.task = t;
+  await loadRestoreSnaps(t);
+  rst.cur = rst.snaps.find((x) => x.id === s.id) || s;
+  rstStep.value = 2;
+  snapView.value = "restore";
+}
+
+// ---------------------------------------------------------------------------
 // 还原功能：快照时间线 + 文件选择 + 目的地/冲突策略 + 还原历史
 // ---------------------------------------------------------------------------
 
 const rst = reactive({
-  show: false, task: null, busy: false,
+  task: null, busy: false,
+  fromSnap: false,           // true = 从快照详情进入，跳过前两步
   snaps: [], snapsLoading: false,
   cur: null,                 // 选中的快照
   diffs: {},                 // sid -> {added, changed, removed} 或 {none:true}
@@ -887,8 +1308,17 @@ const rstPick = reactive({
   show: false, dir: "", q: "", items: [], loading: false,
   sel: [],                   // 选中路径数组
   crumb: [],
+  building: false,           // 正在后台读取整份快照清单
+  parsed: 0,                 // 已解析条目数
+  elapsed: 0,                // 已耗时（秒）
+  err: "",
+  meta: {},                  // path -> item，跨目录记住名称与类型
 });
-// 还原向导步骤游标（方案A线性向导）：0=选任务 1=快照 2=文件 3=目的地 4=冲突
+let pickTimer = null;
+function stopPickPoll() {
+  if (pickTimer) { clearTimeout(pickTimer); pickTimer = null; }
+}
+// 还原向导步骤游标：0=选任务 1=快照 2=文件 3=目的地 4=冲突
 const rstStep = ref(0);
 const rstSteps = [
   { id: "task", label: "选任务", title: "选择备份任务", hint: "选择要还原哪个备份任务的数据" },
@@ -897,18 +1327,21 @@ const rstSteps = [
   { id: "dest", label: "目的地", title: "还原到哪里", hint: "写回原位置或指定新路径" },
   { id: "conf", label: "冲突", title: "遇到同名文件", hint: "已有同名文件时的处理方式" },
 ];
+// 从快照详情进入时，前两步已在浏览中完成，步骤条只展示后三步
+const rstOffset = computed(() => (rst.fromSnap ? 2 : 0));
+const rstVisibleSteps = computed(() => rstSteps.slice(rstOffset.value));
+const rstCanPrev = computed(() => rstStep.value > rstOffset.value);
 const tb = reactive({ show: false, path: "", dirs: [], user_root: "", loading: false });
 const restores = ref([]);
 let rstTimer = null;
 
 // 「新建还原」入口：直接打开还原向导（第 0 步 = 选任务）
-const rpick = reactive({ show: false });
 function openRpick() { openRestoreWizard(); }
-function rpickGo(t) { selectTask(t); }
 
 // 打开还原向导（从第 0 步「选任务」开始）
 function openRestoreWizard() {
   rst.task = null;
+  rst.fromSnap = false;
   rst.cur = null;
   rst.snaps = [];
   rst.diffs = {};
@@ -918,7 +1351,6 @@ function openRestoreWizard() {
   rst.conflict = "if-changed";
   rst.includes = [];
   rstStep.value = 0;
-  rst.show = true;
 }
 // 第 0 步：选中任务后进入第 1 步，并加载该任务的快照
 function selectTask(t) {
@@ -931,7 +1363,7 @@ function rstNext() {
   if (rstStep.value < 4 && rstStepReady(rstStep.value)) rstStep.value++;
 }
 function rstPrev() {
-  if (rstStep.value > 0) rstStep.value--;
+  if (rstStep.value > rstOffset.value) rstStep.value--;
 }
 // 当前步骤是否满足「下一步」条件
 function rstStepReady(i) {
@@ -941,10 +1373,19 @@ function rstStepReady(i) {
   if (i === 3) return rst.dest === "original" || (rst.target || "").startsWith("/");
   return true; // 冲突策略总有默认值
 }
-// 用于任务卡片「还原」按钮：已知道任务，直接进第 1 步（快照）
-function openRestore(t) {
-  openRestoreWizard();
-  selectTask(t);
+// 任务卡片「还原」按钮：切到快照页，定位到该任务所在仓库，打开最新快照详情
+async function openRestore(t) {
+  nav.value = "snap";
+  snapView.value = "list";
+  if (!rp.list.length) await loadRepoSummary();
+  const repo = rp.list.find((r) => r.id === t.repo_id);
+  if (!repo) { showToast("找不到这个任务对应的仓库", "bad"); return; }
+  rp.open[repo.id] = true;
+  const box = repoBox(repo.id);
+  if (!box.loaded) await loadRepoSnaps(repo);
+  const s = box.snaps.find((x) => x.task_id === t.id);
+  if (!s) { showToast("这个任务还没有快照，先跑一次备份", "bad"); return; }
+  await openSnapDetail(s, repo);
 }
 async function loadRestoreSnaps(t, refresh) {
   rst.snapsLoading = true;
@@ -991,20 +1432,93 @@ function openRstPick() {
   rstPick.q = "";
   rstPick.crumb = [];
   rstPick.sel = rst.includes.map((x) => x.path);
+  rstPick.meta = {};
+  for (const x of rst.includes) rstPick.meta[x.path] = x;
   loadRstDir("");
 }
 async function loadRstDir(dir) {
   if (!rst.cur) return;
+  stopPickPoll();
   rstPick.loading = true;
+  rstPick.err = "";
   try {
     const sid = rst.cur.short_id || rst.cur.id;
     const r = await api(`/api/tasks/${rst.task.id}/files?snapshot=${encodeURIComponent(sid)}&dir=${encodeURIComponent(dir)}`);
-    rstPick.items = r.items || [];
     rstPick.dir = dir;
-    rstPick.crumb = dir ? dir.split("/").filter(Boolean) : [];
+    rstPick.crumb = buildPickCrumb(dir);
     rstPick.q = "";
-  } catch (e) { showToast(e.message, "bad"); }
+    rstPick.parsed = r.parsed || 0;
+    rstPick.elapsed = r.elapsed || 0;
+    rstPick.building = !!r.loading;
+    rstPick.items = r.items || [];
+    for (const it of rstPick.items) rstPick.meta[it.path] = it;
+    if (r.error) {
+      rstPick.err = r.error;
+      rstPick.building = false;
+      // 目录在快照里不存在（比如从某个源目录往上走到了 /vol1/1000）→ 回到快照根
+      if (dir && /不存在/.test(r.error)) { loadRstDir(pickUpDir()); return; }
+    }
     rstPick.loading = false;
+    // 首次读取大快照清单要跑一会儿，轮询直到就绪
+    if (rstPick.building) {
+      pickTimer = setTimeout(() => loadRstDir(dir), 2000);
+    }
+  } catch (e) {
+    rstPick.loading = false;
+    rstPick.building = false;
+    showToast(e.message, "bad");
+  }
+}
+// 面包屑按「快照源目录」切分，避免出现 /vol1/1000 这种不属于快照的层级
+function buildPickCrumb(dir) {
+  const roots = (rst.cur && rst.cur.paths) || [];
+  const root = roots.find((r) => dir === r || dir.startsWith(r + "/")) || "";
+  const out = [];
+  if (root) {
+    out.push({ label: root.split("/").pop() || root, path: root });
+    let acc = root;
+    for (const seg of dir.slice(root.length).split("/").filter(Boolean)) {
+      acc += "/" + seg;
+      out.push({ label: seg, path: acc });
+    }
+  } else {
+    let acc = "";
+    for (const seg of dir.split("/").filter(Boolean)) {
+      acc += "/" + seg;
+      out.push({ label: seg, path: acc });
+    }
+  }
+  return out;
+}
+// 上一级：已经在某个源目录上时回到「快照根」
+function pickUpDir() {
+  const d = rstPick.dir;
+  if (!d) return "";
+  const roots = (rst.cur && rst.cur.paths) || [];
+  if (roots.includes(d)) return "";
+  const up = d.split("/").slice(0, -1).join("/");
+  return up && !roots.some((r) => up.startsWith(r + "/")) && !roots.includes(up) ? "" : up;
+}
+function closeRstPick() {
+  stopPickPoll();
+  rstPick.show = false;
+  rstPick.building = false;
+}
+// 把「当前所在目录」整体加入选择
+function pickCurDir() {
+  const d = rstPick.dir;
+  if (!d) return;
+  if (!rstPick.sel.includes(d)) {
+    for (let i = rstPick.sel.length - 1; i >= 0; i--) {
+      if (rstPick.sel[i].startsWith(d + "/")) rstPick.sel.splice(i, 1);
+    }
+    rstPick.sel.push(d);
+  }
+}
+// 选中整份快照（即快照的所有源目录）
+function pickWholeSnap() {
+  const roots = rst.cur && rst.cur.paths ? rst.cur.paths : [];
+  rstPick.sel = roots.slice();
 }
 function isPicked(p) { return rstPick.sel.includes(p); }
 function isHalf(p) { return !isPicked(p) && rstPick.sel.some((x) => p.startsWith(x + "/")); }
@@ -1026,12 +1540,13 @@ function togglePick(it) {
   }
 }
 function confirmRstPick() {
-  rst.includes = rstPick.sel.map((p) => ({ path: p, name: p.split("/").pop(), is_dir: !p.split("/").pop().includes(".") || false }));
-  // is_dir 仅供展示：以选择器 items 为准
-  const map = {};
-  for (const it of rstPick.items) map[it.path] = it;
-  rst.includes = rstPick.sel.map((p) => map[p] ? { path: p, name: map[p].name, is_dir: map[p].is_dir } : { path: p, name: p.split("/").pop(), is_dir: false });
-  rstPick.show = false;
+  rst.includes = rstPick.sel.map((p) => {
+    const m = rstPick.meta[p];
+    return m
+      ? { path: p, name: m.name, is_dir: !!m.is_dir }
+      : { path: p, name: p.split("/").pop() || p, is_dir: true };
+  });
+  closeRstPick();
 }
 function removeInclude(x) {
   const at = rst.includes.indexOf(x);
@@ -1078,9 +1593,9 @@ async function doRestore() {
         conflict: rst.conflict,
       }),
     });
-    showToast("还原已开始，可在「还原」页查看进度");
-    rst.show = false;
-    if (nav.value === "restore") loadRestores();
+    showToast("还原已开始，可在「还原记录」里看进度");
+    snapView.value = "detail";
+    loadRestores();
   } catch (e) { showToast(e.message, "bad"); }
   rst.busy = false;
 }
@@ -1096,6 +1611,8 @@ async function loadRestores() {
 }
 // 是否有运行中的还原（决定是否需要高频轮询）
 const hasRunningRestore = () => restores.value.some((j) => j.status === "running");
+// 快照页顶部进度条用
+const runningRestores = computed(() => restores.value.filter((j) => j.status === "running"));
 async function stopRestore(j) {
   try {
     await api(`/api/restores/${j.id}/stop`, { method: "POST" });
@@ -1140,7 +1657,7 @@ const anyModal = computed(() =>
   !!(
     sheet.show || wiz.show || srcEdit.show || browser.show || cloudPick.show ||
     repoModal.show || cloudBrowser.show || mkdirDlg.show || rmDlg.show ||
-    logModal.show || rst.show || rstPick.show || tb.show || rpick.show
+    logModal.show || rstPick.show || tb.show
   )
 );
 let lockedY = 0;
@@ -1182,11 +1699,15 @@ watch(anyModal, (on) => (on ? lockBody() : unlockBody()));
 // ---------------------------------------------------------------------------
 // 生命周期
 // ---------------------------------------------------------------------------
-// 切到还原页时立即加载（首次或存在运行中还原才真正请求，否则用缓存）
+// 切到快照页时：按需拉仓库摘要（只读本地缓存，很快）+ 还原记录
 watch(nav, (n) => {
-  if (n === "restore") {
-    if (!restoresLoaded || hasRunningRestore()) loadRestores();
+  if (n === "hist") {
+    if (!hist.loaded) loadHistory();
+    return;
   }
+  if (n !== "snap") return;
+  if (!rp.list.length) loadRepoSummary();
+  if (!restoresLoaded || hasRunningRestore()) loadRestores();
 });
 
 // 还原进度轮询：仅当存在「运行中」还原时才高频刷新，避免无意义请求
@@ -1205,13 +1726,235 @@ function ensureRstTimer() {
 }
 watch(restores, ensureRstTimer);
 
+// ---------------------------------------------------------------------------
+// 历史：备份（任务日志）+ 还原（config.restores）
+// ---------------------------------------------------------------------------
+const hist = reactive({
+  loading: false,
+  loaded: false,
+  items: [],     // 后端按时间倒序返回
+  tab: "bak",    // bak | rst
+  cur: null,     // 当前选中（桌面右侧详情 / 手机就地展开）
+});
+
+let histPending = null;   // 正在进行的请求：下拉刷新时复用它，避免重复请求也避免空转
+function loadHistory(force) {
+  if (histPending) return histPending;
+  hist.loading = true;
+  histPending = (async () => {
+    try {
+      const r = await api("/api/history?limit=80");
+      hist.items = r.items || [];
+      hist.loaded = true;
+      if (!isNarrow.value && (force || !hist.cur)) {
+        const list = hist.tab === "bak" ? histBackups.value : histRestores.value;
+        hist.cur = list[0] || null;
+      }
+    } catch (e) {
+      showToast(e.message || "读取历史失败", "bad");
+    } finally {
+      hist.loading = false;
+      histPending = null;
+    }
+  })();
+  return histPending;
+}
+
+const histBackups = computed(() => hist.items.filter((x) => x.kind === "backup"));
+const histRestores = computed(() => hist.items.filter((x) => x.kind === "restore"));
+const histList = computed(() => (hist.tab === "bak" ? histBackups.value : histRestores.value));
+
+// 切换分段时，右侧详情跟着换到该分段的第一条
+watch(
+  () => hist.tab,
+  () => {
+    const l = hist.tab === "bak" ? histBackups.value : histRestores.value;
+    hist.cur = isNarrow.value ? null : l[0] || null;
+  }
+);
+
+const histGroups = computed(() => {
+  const out = [];
+  const map = {};
+  for (const it of histList.value) {
+    const key = (it.time || "").slice(0, 10) || "unknown";
+    if (!map[key]) {
+      map[key] = { key, label: histDayLabel(key), items: [] };
+      out.push(map[key]);
+    }
+    map[key].items.push(it);
+  }
+  return out;
+});
+
+function histDayLabel(key) {
+  if (key === "unknown") return "时间未知";
+  const pad = (n) => String(n).padStart(2, "0");
+  const now = new Date();
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (key === fmt(now)) return "今天 · " + key.slice(5);
+  if (key === fmt(new Date(now.getTime() - 86400000))) return "昨天 · " + key.slice(5);
+  const d = new Date(key + "T00:00:00");
+  const wk = isNaN(d.getTime()) ? "" : " " + WEEK_CN[d.getDay()];
+  return key.slice(5) + wk;
+}
+function hhmm(t) {
+  return t && t.length >= 16 ? t.slice(11, 16) : "—";
+}
+function histSel(it) {
+  return !!(hist.cur && hist.cur.kind === it.kind && hist.cur.id === it.id);
+}
+function pickHist(it) {
+  if (isNarrow.value && histSel(it)) { hist.cur = null; return; }
+  hist.cur = it;
+}
+function histStatusCls(s) {
+  if (s === "success") return "ok";
+  if (s === "failed") return "bad";
+  if (s === "running") return "run";
+  return "gray";
+}
+function histStatusTxt(it) {
+  const s = it.status;
+  if (s === "success") return it.kind === "restore" ? "完成" : "成功";
+  if (s === "failed") return "失败";
+  if (s === "running") return it.kind === "restore" ? "进行中" : "备份中";
+  if (s === "stopped") return "已停止";
+  return "—";
+}
+function histTitle(it) {
+  if (it.kind === "backup") return it.task_name || "备份";
+  const inc = it.includes || [];
+  const seg = (inc[0] || "").split("/").filter(Boolean).pop();
+  if (seg) return `还原「${seg}」` + (inc.length > 1 ? ` 等 ${inc.length} 项` : "");
+  return it.task_name ? `还原 · ${it.task_name}` : "还原";
+}
+// compact = 手机就地展开时，标题和摘要行已经在上面，不再重复
+function histKVs(it, compact) {
+  const out = [];
+  if (it.kind === "backup") {
+    if (it.task_name && !compact) out.push({ k: "任务", v: it.task_name });
+    if (it.file) out.push({ k: "日志", v: it.file });
+    if (it.one_line && !compact) out.push({ k: "结果", v: it.one_line });
+  } else {
+    if (it.task_name) out.push({ k: "任务", v: it.task_name });
+    out.push({ k: "来源", v: it.snapshot ? "快照 " + String(it.snapshot).slice(0, 8) : "—" });
+    out.push({ k: "写回", v: it.dest === "original" ? "原位置" : it.target || "新路径" });
+    out.push({ k: "冲突", v: histConflictTxt(it.conflict) });
+    if ((it.includes || []).length) {
+      out.push({ k: "范围", v: it.includes.join("\n") });
+    }
+    if (it.one_line && !compact) out.push({ k: "结果", v: it.one_line });
+    if (it.message && it.status !== "success" && it.message !== it.one_line) out.push({ k: "说明", v: it.message });
+  }
+  return out;
+}
+function histConflictTxt(c) {
+  const m = { always: "覆盖全部", "if-changed": "仅覆盖有变化", never: "跳过已存在", rename: "保留两者" };
+  return m[c] || c || "—";
+}
+function openHistLog(it) {
+  const t = cfg.tasks.find((x) => x.id === it.task_id);
+  if (!t) { showToast("这个任务已经不在了", "bad"); return; }
+  openLogs(t).then(() => {
+    if (it.file) { logModal.file = it.file; loadLog(); }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 手机下拉刷新（备份 / 快照 / 历史 三个页签通用）
+// ---------------------------------------------------------------------------
+const ptr = reactive({ dist: 0, refreshing: false, dragging: false });
+let ptrStartY = 0;
+let ptrTracking = false;
+const PTR_TRIGGER = 52;
+
+// 内容跟随位移（比下拉距离慢，克制一些）；松手用带回弹的缓动
+const ptrStyle = computed(() => {
+  if (!ptr.dist) return {};
+  return {
+    transform: "translateY(" + (ptr.dist * 0.62).toFixed(1) + "px)",
+    transition: ptr.dragging ? "none" : "transform .34s cubic-bezier(.34,1.4,.64,1)",
+  };
+});
+// 顶部细条填充比例
+const ptrPct = computed(() => Math.min(100, (ptr.dist / PTR_TRIGGER) * 100));
+// 文字提示淡入
+const ptrTxOpacity = computed(() => Math.min(1, ptr.dist / 26));
+function ptrTop() {
+  return window.scrollY || document.documentElement.scrollTop || 0;
+}
+async function refreshCurrent() {
+  if (nav.value === "hist") {
+    await loadHistory(true);
+    return;
+  }
+  if (nav.value === "snap") {
+    await Promise.all([loadRepoSummary(), loadRestores()]);
+    if (snapView.value === "detail" && snapCur.value && snapCurRepo.value) {
+      await openSnapDetail(snapCur.value, snapCurRepo.value);
+    }
+    return;
+  }
+  await loadAll();
+}
+function ptrOnStart(e) {
+  if (!isNarrow.value || ptr.refreshing) return;
+  if (anyModal.value) return;
+  // 还原配置页有自己的底部操作条，不做下拉刷新，避免操作条跟着位移
+  if (nav.value === "snap" && snapView.value === "restore") return;
+  if (e.touches.length !== 1) return;
+  if (ptrTop() > 0) return;
+  ptrStartY = e.touches[0].clientY;
+  ptrTracking = true;
+  ptr.dragging = true;
+}
+function ptrOnMove(e) {
+  if (!ptrTracking || ptr.refreshing) return;
+  const dy = e.touches[0].clientY - ptrStartY;
+  if (dy <= 0) {
+    ptr.dist = 0;
+    return;
+  }
+  if (ptrTop() > 0) {
+    ptrTracking = false;
+    ptr.dist = 0;
+    return;
+  }
+  // 阻尼：手指移动 1px，指示器走 0.45px，最多 92px
+  ptr.dist = Math.min(92, dy * 0.45);
+  if (ptr.dist > 4 && e.cancelable) e.preventDefault();
+}
+async function ptrOnEnd() {
+  if (!ptrTracking) return;
+  ptrTracking = false;
+  ptr.dragging = false;
+  if (ptr.dist >= PTR_TRIGGER) {
+    ptr.refreshing = true;
+    ptr.dist = PTR_TRIGGER;
+    try {
+      await refreshCurrent();
+    } catch (e) { /* 静默，错误已在各自逻辑里提示 */ }
+    ptr.refreshing = false;
+  }
+  ptr.dist = 0;
+}
+
 onMounted(() => {
   loadAll();
+  window.addEventListener("touchstart", ptrOnStart, { passive: true });
+  window.addEventListener("touchmove", ptrOnMove, { passive: false });
+  window.addEventListener("touchend", ptrOnEnd, { passive: true });
+  window.addEventListener("touchcancel", ptrOnEnd, { passive: true });
 });
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
   if (logTimer) clearInterval(logTimer);
   if (rstTimer) clearInterval(rstTimer);
+  window.removeEventListener("touchstart", ptrOnStart);
+  window.removeEventListener("touchmove", ptrOnMove);
+  window.removeEventListener("touchend", ptrOnEnd);
+  window.removeEventListener("touchcancel", ptrOnEnd);
   // 保险：组件销毁时解除滚动锁，避免 body 卡在 fixed
   unlockBody();
 });
@@ -1226,9 +1969,13 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M4 5.5A2.5 2.5 0 0 1 6.5 3h3.67a2 2 0 0 1 1.41.59l1.42 1.41H19.5A2.5 2.5 0 0 1 22 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 4 17.5v-12Z"/></svg>
           备份
         </button>
-        <button class="sb-item" :class="{ on: nav === 'restore' }" @click="nav = 'restore'">
-          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8Z"/></svg>
-          还原
+        <button class="sb-item" :class="{ on: nav === 'snap' }" @click="nav = 'snap'">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg>
+          快照
+        </button>
+        <button class="sb-item" :class="{ on: nav === 'hist' }" @click="nav = 'hist'">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7.2v5l3.1 1.9M20.6 12a8.6 8.6 0 1 1-2.5-6.1"/></svg>
+          历史
         </button>
       </nav>
       <div class="sb-foot" v-if="status">
@@ -1237,7 +1984,7 @@ onUnmounted(() => {
       </div>
     </aside>
 
-    <div class="main">
+    <div class="main" :style="ptrStyle">
 
       <main class="content">
         <!-- ==================== 备份任务（仿飞牛原生） ==================== -->
@@ -1411,40 +2158,488 @@ onUnmounted(() => {
 
         <!-- ==================== 云盘仓库管理已并入：创建任务向导「① 选择云端」下拉（👁 密码 / ✕ 移除） ==================== -->
 
-        <!-- ==================== 还原历史 ======================== -->
-        <template v-else>
-          <div class="dhead">
-            <h1>还原</h1>
-            <div class="dhead-acts">
-              <button class="btn ghost" @click="loadRestores">刷新</button>
-              <button class="btn primary" @click="openRpick">＋ 新建还原</button>
+        <!-- ==================== 快照：仓库列表 → 快照详情 → 还原 ==================== -->
+        <template v-else-if="nav === 'snap'">
+
+          <!-- ---------- 视图 1：仓库列表（点开展示快照） ---------- -->
+          <template v-if="snapView === 'list'">
+            <div class="dhead">
+              <h1>快照</h1>
+              <div class="dhead-acts">
+                <button class="btn ghost" :disabled="rp.loading" @click="loadRepoSummary">
+                  {{ rp.loading ? "读取中…" : "刷新" }}
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="rst-list" v-if="restores.length">
-            <div class="rst-card" v-for="j in restores" :key="j.id">
-              <div class="rst-top">
-                <span class="rst-name">{{ j.task_name }}</span>
-                <span class="rst-pill" :class="rstStatusCls(j)">
-                  <template v-if="j.status === 'running'"><i class="mini-spin"></i></template>{{ rstStatusText(j) }}
+
+            <!-- 正在进行的还原 -->
+            <div class="sn-run" v-for="j in runningRestores" :key="'run' + j.id">
+              <i class="mini-spin"></i>
+              <span class="sn-run-t">正在还原 · {{ j.task_name }}</span>
+              <div class="sn-run-bar"><i :style="{ width: (j.pct || 0) + '%' }"></i></div>
+              <span class="sn-run-p">{{ Math.floor(j.pct || 0) }}%</span>
+            </div>
+
+            <div class="sn-list" v-if="rp.list.length">
+              <div class="sn-repo" v-for="r in rp.list" :key="r.id" :class="{ open: rp.open[r.id] }">
+                <div class="sn-head" @click="toggleRepo(r)">
+                  <div class="sn-ic">
+                    <svg viewBox="0 0 24 24" width="21" height="21"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg>
+                  </div>
+                  <div class="sn-body">
+                    <div class="sn-name">
+                      {{ r.name }}
+                      <span class="sn-pill" :class="r.count ? 'ok' : 'gray'">{{ r.count ? r.count + " 个快照" : "无快照" }}</span>
+                    </div>
+                    <div class="sn-path mono">{{ r.uri || r.cloud || "" }}</div>
+                    <div class="sn-meta">
+                      <span><b>{{ r.task_count }}</b>个任务</span>
+                      <span>最近快照 <b>{{ r.latest_time ? fmtSnapTime(r.latest_time) : "—" }}</b></span>
+                    </div>
+                  </div>
+                  <div class="sn-chev">
+                    <svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>
+                  </div>
+                </div>
+
+                <div class="sn-drop" v-if="rp.open[r.id]">
+                  <div class="sn-loading" v-if="repoBox(r.id).loading && !repoBox(r.id).snaps.length">
+                    <i class="mini-spin"></i> 正在读取快照…
+                  </div>
+
+                  <template v-else-if="repoBox(r.id).snaps.length">
+                    <div class="sn-grp" v-for="g in repoGroupsOf(r.id)" :key="g.id">
+                      <div class="sn-grp-h">
+                        <span class="sn-dot" :style="{ background: taskColor(g.id) }"></span>
+                        <span class="sn-gn">{{ g.name }}</span>
+                        <span class="sn-gp mono" v-if="g.paths.length">{{ g.paths[0] }}</span>
+                        <span class="sn-gc">{{ g.snaps.length }} 个快照</span>
+                      </div>
+                      <table class="sn-tbl">
+                        <thead>
+                          <tr>
+                            <th style="width:118px">时间</th>
+                            <th style="width:146px">描述</th>
+                            <th>根目录范围</th>
+                            <th style="width:152px">文件 / 大小</th>
+                            <th style="width:64px"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="s in g.snaps" :key="s.id" @click="openSnapDetail(s, r)">
+                            <td class="t">{{ fmtSnapTime(s.time) }}</td>
+                            <td class="dim ellip-sm" :title="(s.tags || []).join('、')">{{ snapTagLabel(s) }}</td>
+                            <td class="mono dim ellip" :title="(s.paths || []).join('\n')">
+                              {{ (s.paths || [])[0] || "-" }}<template v-if="(s.paths || []).length > 1"> 等 {{ s.paths.length }} 项</template>
+                            </td>
+                            <td class="mono dim nowrap">{{ snapFs(s) }}</td>
+                            <td class="acts"><span class="sn-link">浏览</span></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div class="sn-mlist">
+                      <div class="sn-mgrp" v-for="g in repoGroupsOf(r.id)" :key="'m' + g.id">
+                        <div class="sn-mgrp-t">
+                          <span class="sn-dot" :style="{ background: taskColor(g.id) }"></span>
+                          <span class="sn-gn">{{ g.name }}</span>
+                          <em>{{ g.snaps.length }}</em>
+                        </div>
+                        <div class="sn-mcard" v-for="s in g.snaps" :key="'ms' + s.id" @click="openSnapDetail(s, r)">
+                          <div class="sn-mtop">
+                            <b>{{ fmtSnapTime(s.time) }}</b>
+                            <span class="sn-mgo">浏览 ›</span>
+                          </div>
+                          <div class="sn-msub" v-if="snapFs(s, true) !== '—'">{{ snapFs(s, true) }}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="sn-foot">
+                      <span v-if="repoBox(r.id).cachedAt">缓存于 {{ repoBox(r.id).cachedAt.slice(5, 16) }}</span>
+                      <button class="btn ghost sm" :disabled="repoBox(r.id).loading" @click.stop="loadRepoSnaps(r, true)">
+                        {{ repoBox(r.id).loading ? "查询中…" : "↻ 刷新快照" }}
+                      </button>
+                    </div>
+                  </template>
+
+                  <div class="sn-empty" v-else>这个仓库还没有快照，跑一次备份就会产生第一个</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="empty" v-else>
+              <div class="empty-icon">🗄</div>
+              <p>还没有云端仓库</p>
+              <p class="hint">在「备份」页创建任务时会同时建立加密仓库</p>
+            </div>
+          </template>
+
+          <!-- ---------- 视图 2：快照详情 ---------- -->
+          <template v-else-if="snapView === 'detail'">
+            <div class="sd-bar">
+              <button class="sd-back" @click="backToSnapList">‹ 快照</button>
+              <span class="sd-sep">/</span>
+              <span class="sd-crumb">{{ snapCurRepo ? snapCurRepo.name : "" }}</span>
+              <span class="sd-sep">/</span>
+              <b class="sd-crumb">{{ snapCur ? fmtSnapTime(snapCur.time) : "" }}</b>
+            </div>
+
+            <div class="sd-card">
+              <div class="sd-top">
+                <div class="sd-l">
+                  <div class="sd-time">{{ snapCur ? (snapCur.time || "").slice(0, 19).replace("T", " ") : "" }}</div>
+                  <div class="sd-sub">
+                    <span>{{ snapCur ? weekdayOf(snapCur.time) : "" }}</span>
+                    <span class="sd-id mono">{{ snapCur ? (snapCur.short_id || snapCur.id || "").slice(0, 8) : "" }}</span>
+                    <span class="sn-pill blue" v-if="snapCur && snapCur.task_name">{{ snapCur.task_name }}</span>
+                  </div>
+                </div>
+                <div class="sd-acts">
+                  <button class="btn primary" :disabled="!snapCur || !snapCur.task_id" @click="sdRestore">{{ sdRestoreLabel() }}</button>
+                </div>
+              </div>
+
+              <div class="sd-kv">
+                <div><span>主机</span><b>{{ (snapCur && snapCur.hostname) || "—" }}</b></div>
+                <div><span>文件数</span><b>{{ snapCur ? snapFiles(snapCur) : "—" }}</b></div>
+                <div><span>总大小</span><b>{{ snapCur ? snapBytes(snapCur) : "—" }}</b></div>
+                <div><span>距上一快照</span><b>{{ snapGap }}</b></div>
+              </div>
+            </div>
+
+            <div class="sd-panel">
+              <div class="sd-ph">与上一快照的差异</div>
+              <div class="sd-diff" v-if="snapDiff">
+                <span class="add">+ {{ snapDiff.added || 0 }} 新增</span>
+                <span class="mod">~ {{ snapDiff.changed || 0 }} 修改</span>
+                <span class="del">− {{ snapDiff.removed || 0 }} 删除</span>
+                <span class="tot">共 {{ (snapDiff.added || 0) + (snapDiff.changed || 0) + (snapDiff.removed || 0) }} 个文件变动</span>
+              </div>
+              <div class="sd-diff" v-else>
+                <span class="tot">{{ snapDiffLoading ? "正在对比…" : "这是最早的一条快照，没有可对比的上一条" }}</span>
+              </div>
+            </div>
+
+            <!-- 备份内容：桌面端内联展开树（方案 A） -->
+            <div class="sd-panel sd-tree" v-if="!isNarrow">
+              <div class="sd-ph">
+                备份内容 <span class="cnt">{{ sd.roots.length }} 个源目录</span>
+                <span class="sd-tree-acts">
+                  <a @click="sdSelectAll">全选</a>
+                  <a @click="sd.sel = []">清空</a>
                 </span>
               </div>
-              <div class="rst-rows">
-                <div class="rst-row"><span class="k">快照</span><span class="v">{{ (j.snapshot || "").slice(0, 8) || "–" }}</span></div>
-                <div class="rst-row"><span class="k">目标</span><span class="v">{{ j.dest === "original" ? "⌖ 原位置" : "➝ " + (j.target || "") }}</span></div>
-                <div class="rst-row" v-if="j.started_at"><span class="k">时间</span><span class="v">{{ j.started_at }}</span></div>
-                <div class="rst-row" v-if="j.status !== 'running'"><span class="k">结果</span><span class="v">{{ rstResultText(j) }}</span></div>
+
+              <div class="sd-build" v-if="sd.building">
+                <i class="mini-spin"></i>
+                <div>
+                  <b>正在读取这份快照的完整目录清单</b>
+                  <span>已解析 {{ sd.parsed.toLocaleString() }} 条 · {{ sd.elapsed }} 秒。大快照首次约需 1 分钟，读完会缓存，之后秒开。</span>
+                </div>
               </div>
-              <div class="rst-progress" v-if="j.status === 'running'">
-                <div class="rst-bar"><i :style="{ width: (j.pct || 0) + '%' }"></i></div>
-                <span class="rst-pct">{{ Math.floor(j.pct || 0) }}% · {{ j.files || 0 }} 个文件 / {{ fmtBytes(j.bytes) }}</span>
+              <div class="sd-build err" v-if="sd.err"><b>读取失败</b><span>{{ sd.err }}</span></div>
+
+              <div class="sdt-list" v-if="sdFlat.length">
+                <div
+                  class="sdt-row"
+                  v-for="n in sdFlat"
+                  :key="n.path"
+                  :class="{ on: sdPicked(n.path), file: !n.is_dir }"
+                  :style="{ paddingLeft: 6 + n.depth * 18 + 'px' }"
+                  @click="n.is_dir ? sdToggleOpen(n.path) : sdToggle(n.path)"
+                >
+                  <span class="sdt-caret" :class="{ open: n.open, leaf: !n.hasKids }" @click.stop="n.hasKids ? sdToggleOpen(n.path) : null">▶</span>
+                  <svg class="sdt-ic" v-if="n.is_dir" viewBox="0 0 40 32" width="17" height="14"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                  <svg class="sdt-ic" v-else viewBox="0 0 24 24" width="14" height="14"><path fill="#e5e9f0" d="M6 2h9l5 5v15H6V2Z"/><path fill="#c9d2e0" d="M15 2l5 5h-5V2Z"/></svg>
+                  <span class="sdt-name" :class="{ sel: sdPicked(n.path) }">{{ n.name }}</span>
+                  <span class="sdt-meta" v-if="n.loading">读取中…</span>
+                  <span class="sdt-meta" v-else-if="!n.is_dir">{{ fmtBytes(n.size) }}</span>
+                  <span class="sdt-meta" v-else-if="n.loaded && !n.children.length">空目录</span>
+                  <span class="sdt-meta" v-else-if="n.loaded && n.truncated">共 {{ n.total }} 项</span>
+                  <span class="sdt-meta" v-else-if="n.loaded">{{ n.children.length }} 项</span>
+                  <span class="cbx" :class="{ on: sdPicked(n.path), half: sdHalf(n.path) }" @click.stop="sdToggle(n.path)">✓</span>
+                </div>
+              </div>
+              <div class="sn-empty" v-if="!sdFlat.length && !sd.building && !sd.err">这个快照里没有可浏览的内容</div>
+            </div>
+
+            <!-- 备份内容：手机端逐层下钻（方案 C） -->
+            <div class="sd-panel sd-drill" v-else>
+              <div class="sd-ph">
+                备份内容
+                <span class="cnt" v-if="sd.sel.length">已选 {{ sd.sel.length }} 项</span>
+              </div>
+
+              <div class="sd-build" v-if="sd.building">
+                <i class="mini-spin"></i>
+                <div>
+                  <b>正在读取目录清单</b>
+                  <span>已解析 {{ sd.parsed.toLocaleString() }} 条 · {{ sd.elapsed }} 秒，读完会缓存。</span>
+                </div>
+              </div>
+              <div class="sd-build err" v-if="sd.err"><b>读取失败</b><span>{{ sd.err }}</span></div>
+
+              <div class="sdc-crumb">
+                <span class="sdc-crumb-p">
+                  <a @click="sd.cur = ''">快照根</a>
+                  <template v-for="(c, i) in sdCrumb" :key="i">
+                    <span class="sl">/</span>
+                    <a :class="{ cur: i === sdCrumb.length - 1 }" @click="sd.cur = c.path">{{ c.label }}</a>
+                  </template>
+                </span>
+                <span class="cbx" :class="{ on: sdCurAll, half: sdCurPart }" @click.stop="sdToggleCur">✓</span>
+              </div>
+
+              <div class="sdc-list">
+                <div class="sdc-row" v-if="sd.cur" @click="sdUp()">
+                  <span class="sdc-back">↩</span>
+                  <span class="sdc-name" style="color:#6b7280">返回上一级</span>
+                </div>
+                <div class="sdc-row" v-for="n in sdItems" :key="n.path" :class="{ on: sdPicked(n.path) }" @click="n.is_dir ? sdEnter(n.path) : sdToggle(n.path)">
+                  <svg class="sdt-ic" v-if="n.is_dir" viewBox="0 0 40 32" width="19" height="15"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                  <svg class="sdt-ic" v-else viewBox="0 0 24 24" width="16" height="16"><path fill="#e5e9f0" d="M6 2h9l5 5v15H6V2Z"/><path fill="#c9d2e0" d="M15 2l5 5h-5V2Z"/></svg>
+                  <span class="sdc-name" :class="{ sel: sdPicked(n.path) }">{{ n.name }}</span>
+                  <span class="sdc-size" v-if="!n.is_dir">{{ fmtBytes(n.size) }}</span>
+                  <span class="sdc-go" v-if="n.is_dir">›</span>
+                  <span class="cbx" :class="{ on: sdPicked(n.path), half: sdHalf(n.path) }" @click.stop="sdToggle(n.path)">✓</span>
+                </div>
+                <div class="sdc-more" v-if="sdCurNode && sdCurNode.truncated">
+                  该目录共 {{ sdCurNode.total }} 项，只显示前 300 项。需要精确挑单个文件时，用还原向导里的文件选择器。
+                </div>
+                <div class="sn-empty" v-if="!sdItems.length && !sd.building && !sd.err">
+                  {{ sd.cur ? "这个目录是空的" : "这个快照里没有可浏览的内容" }}
+                </div>
               </div>
             </div>
+
+            <div class="sd-panel" v-if="snapCur && (snapCur.tags || []).length">
+              <div class="sd-ph">标签</div>
+              <div class="sd-tags">
+                <span class="sd-tag mono" v-for="t in snapCur.tags" :key="t">{{ t }}</span>
+              </div>
+            </div>
+          </template>
+
+          <!-- ---------- 视图 3：还原配置 ---------- -->
+          <template v-else>
+            <div class="sn-rst">
+            <div class="sd-bar">
+              <button class="sd-back" @click="snapView = 'detail'">‹ 返回快照</button>
+              <span class="sd-sep">/</span>
+              <b class="sd-crumb">还原 {{ rst.cur ? fmtSnapTime(rst.cur.time) : "" }}</b>
+            </div>
+
+            <div class="rst-stepper">
+              <template v-for="(st, i) in rstVisibleSteps" :key="st.id">
+                <div class="rst-step-line" v-if="i > 0" :class="{ done: i + rstOffset <= rstStep }"></div>
+                <div class="rst-step-dot" :class="{ on: i + rstOffset === rstStep, done: i + rstOffset < rstStep }">
+                  <span class="n">{{ i + rstOffset < rstStep ? "✓" : i + 1 }}</span>
+                  <span class="lb">{{ st.label }}</span>
+                </div>
+              </template>
+            </div>
+
+            <div class="rst-step-title" v-if="rstSteps[rstStep]">
+              {{ rstSteps[rstStep].title }}<em>{{ rstSteps[rstStep].hint }}</em>
+            </div>
+
+            <div class="sd-panel pad">
+              <!-- 第 0 步：选任务 -->
+              <div v-if="rstStep === 0">
+                <div class="rpick-list" v-if="cfg.tasks.length">
+                  <button class="rpick-item" v-for="t in cfg.tasks" :key="t.id" @click="selectTask(t)">
+                    <span class="rp-ic">↺</span>
+                    <span class="rp-txt">
+                      <b>{{ t.name }}</b>
+                      <small>{{ t.last_done_at ? "上次备份 " + fmtShort(t.last_done_at) : "从未备份" }}</small>
+                    </span>
+                    <svg viewBox="0 0 24 24" width="16" height="16" class="rp-arrow"><path fill="none" stroke="#c0c4cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>
+                  </button>
+                </div>
+                <div class="empty" v-else>
+                  <p>还没有备份任务</p>
+                  <p class="hint">先在「备份」页创建备份任务并完成一次备份，产生快照后才能还原</p>
+                </div>
+              </div>
+
+              <!-- 第 1 步：选快照 -->
+              <div v-else-if="rstStep === 1">
+                <div class="rstep-tools">
+                  <em class="fld-hint">徽章 = 与上一份快照的差异</em>
+                  <em class="snap-cache" v-if="rst.cachedAt" title="本地缓存快照列表，避免每次实时查云盘">缓存于 {{ rst.cachedAt.slice(5) }}</em>
+                  <button type="button" class="snap-refresh" title="强制实时查询云盘并更新缓存" @click="loadRestoreSnaps(rst.task, true)" :disabled="rst.snapsLoading">
+                    <svg viewBox="0 0 24 24" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
+                    刷新缓存
+                  </button>
+                </div>
+                <div class="snap-timeline" v-if="rst.snaps.length">
+                  <div class="snap-row" v-for="s in rst.snaps" :key="s.id" :class="{ on: rst.cur && rst.cur.id === s.id }" @click="pickSnap(s)">
+                    <i class="snap-dot"></i>
+                    <span class="snap-t">{{ snapTime(s) }}</span>
+                    <span class="snap-id mono">{{ (s.short_id || s.id).slice(0, 8) }}</span>
+                    <span class="snap-files" v-if="s.summary && (s.summary.total_files_processed || s.summary.total_files)">{{ s.summary.total_files_processed || s.summary.total_files }} 个文件 · {{ fmtBytes(s.summary.total_bytes_processed || s.summary.total_bytes) }}</span>
+                    <span class="snap-badge" :class="snapBadge(s.id).cls">{{ snapBadge(s.id).text }}</span>
+                  </div>
+                </div>
+                <div class="snap-loading" v-else-if="rst.snapsLoading"><i class="mini-spin"></i> 正在读取快照列表…</div>
+                <div class="snap-loading" v-else>暂无快照，请先运行一次备份</div>
+              </div>
+
+              <!-- 第 2 步：选文件 -->
+              <div v-else-if="rstStep === 2">
+                <button type="button" class="pick-files-btn" @click="openRstPick">
+                  <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg>
+                  {{ rst.includes.length ? "已选 " + rst.includes.length + " 项 · 点击修改" : "浏览快照文件…" }}
+                </button>
+                <div class="inc-tray" v-if="rst.includes.length">
+                  <span class="t" v-for="x in rst.includes" :key="x.path"><b>{{ x.is_dir ? "📁" : "📄" }} {{ x.name }}</b><i @click="removeInclude(x)">×</i></span>
+                </div>
+                <div class="pick-hint" v-else>
+                  不选则还原整份快照<template v-if="rst.cur && (rst.cur.paths || []).length">，即 {{ rst.cur.paths.join("、") }}</template>
+                </div>
+              </div>
+
+              <!-- 第 3 步：目的地 -->
+              <div v-else-if="rstStep === 3">
+                <div class="seg">
+                  <button type="button" :class="{ on: rst.dest === 'original' }" @click="rst.dest = 'original'">原位置</button>
+                  <button type="button" :class="{ on: rst.dest === 'custom' }" @click="rst.dest = 'custom'">新路径</button>
+                </div>
+                <div class="dest-note" v-if="rst.dest === 'original'">
+                  将写回原路径：{{ rst.includes.map((x) => x.path).join("；") }}
+                </div>
+                <div class="target-row" v-else>
+                  <input v-model="rst.target" placeholder="/vol1/1000/还原目录（将自动创建）" />
+                  <button type="button" class="btn ghost" @click="openTargetBrowser">浏览</button>
+                </div>
+              </div>
+
+              <!-- 第 4 步：冲突策略 -->
+              <div v-else-if="rstStep === 4">
+                <div class="conf-grid">
+                  <button type="button" class="conf-card" :class="{ on: rst.conflict === 'always' }" @click="rst.conflict = 'always'">
+                    <span class="conf-rd"></span>
+                    <span class="conf-tx"><b>全部覆盖</b><small>直接覆盖本地同名文件</small></span>
+                  </button>
+                  <button type="button" class="conf-card" :class="{ on: rst.conflict === 'if-changed' }" @click="rst.conflict = 'if-changed'">
+                    <span class="conf-rd"></span>
+                    <span class="conf-tx"><b>仅覆盖有变化</b><small>内容没变的文件不重写</small></span>
+                  </button>
+                  <button type="button" class="conf-card" :class="{ on: rst.conflict === 'never' }" @click="rst.conflict = 'never'">
+                    <span class="conf-rd"></span>
+                    <span class="conf-tx"><b>跳过已存在</b><small>已存在的文件保持不动</small></span>
+                  </button>
+                  <button type="button" v-if="rst.dest === 'custom'" class="conf-card" :class="{ on: rst.conflict === 'rename' }" @click="rst.conflict = 'rename'">
+                    <span class="conf-rd"></span>
+                    <span class="conf-tx"><b>保留两者</b><small>还原版本加后缀另存</small></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="rst-flow" v-if="rstStep === 4 && rst.cur && rst.includes.length">
+              <span class="rst-flow-node">📁 快照 {{ (rst.cur.short_id || rst.cur.id).slice(0, 8) }}</span>
+              <i class="rst-flow-lk">──▶</i>
+              <span class="rst-flow-node hi">{{ rst.dest === "original" ? "⌖ 原位置" : "➝ " + (rst.target || "新路径") }}</span>
+            </div>
+
+            <div class="sd-foot">
+              <button class="btn ghost" :disabled="!rstCanPrev" @click="rstPrev">上一步</button>
+              <div class="sp"></div>
+              <button v-if="rstStep < 4" class="btn primary" :disabled="!rstStepReady(rstStep)" @click="rstNext">下一步</button>
+              <button v-else class="btn primary" :disabled="!rstReady || rst.busy" @click="doRestore">{{ rst.busy ? "启动中…" : "开始还原" }}</button>
+            </div>
+            </div>
+          </template>
+        </template>
+
+        <!-- ==================== 历史：备份 + 还原 ==================== -->
+        <template v-else>
+          <div class="dhead">
+            <h1>历史</h1>
+            <div class="dhead-acts">
+              <button class="btn ghost" :disabled="hist.loading" @click="loadHistory(true)">
+                {{ hist.loading ? "读取中…" : "刷新" }}
+              </button>
+            </div>
           </div>
-          <div class="empty" v-else>
-            <div class="empty-icon">♻️</div>
-            <p>还没有还原记录</p>
-            <button class="btn primary" style="margin: 14px 0 10px;" @click="openRpick">＋ 新建还原</button>
-            <p class="hint">也可以在「备份」页的任务卡上点 <b>↺</b> 按钮，选择快照和文件进行还原</p>
+
+          <div class="hist-bar">
+            <div class="hist-seg">
+              <button :class="{ on: hist.tab === 'bak' }" @click="hist.tab = 'bak'">
+                备份<span class="n" v-if="histBackups.length">{{ histBackups.length }}</span>
+              </button>
+              <button :class="{ on: hist.tab === 'rst' }" @click="hist.tab = 'rst'">
+                还原<span class="n" v-if="histRestores.length">{{ histRestores.length }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="hist-wrap" :class="{ narrow: isNarrow }">
+            <div class="hist-list">
+              <div class="hist-loading" v-if="hist.loading && !hist.items.length"><i class="mini-spin"></i> 正在读取历史…</div>
+
+              <template v-for="g in histGroups" :key="g.key">
+                <div class="hist-day">{{ g.label }}<i></i></div>
+                <div
+                  class="hist-item"
+                  v-for="it in g.items"
+                  :key="it.kind + it.id"
+                  :class="{ on: histSel(it) }"
+                  @click="pickHist(it)"
+                >
+                  <div class="hi-top">
+                    <span class="hi-st" :class="histStatusCls(it.status)">{{ histStatusTxt(it) }}</span>
+                    <span class="hi-nm">{{ histTitle(it) }}</span>
+                    <span class="hi-tm mono">{{ hhmm(it.time) }}</span>
+                  </div>
+                  <div class="hi-sub" v-if="it.one_line">{{ it.one_line }}</div>
+
+                  <!-- 手机：点开就地展开 -->
+                  <div class="hi-open" v-if="isNarrow && histSel(it)">
+                    <div class="hi-kv" v-for="r in histKVs(it, true)" :key="r.k">
+                      <span class="k">{{ r.k }}</span><span class="v mono">{{ r.v }}</span>
+                    </div>
+                    <div class="hi-tl" v-if="it.nodes && it.nodes.length">
+                      <div class="n" v-for="(nd, i) in it.nodes" :key="i"><i class="mono">{{ nd.time }}</i>{{ nd.msg }}</div>
+                    </div>
+                    <div class="hi-ops">
+                      <button class="btn ghost sm" v-if="it.kind === 'backup'" @click.stop="openHistLog(it)">查看完整日志</button>
+                      <button class="btn ghost sm danger" v-else-if="it.status === 'running'" @click.stop="stopRestore(it)">停止还原</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <div class="sn-empty" v-if="!hist.loading && !histGroups.length">
+                <p>{{ hist.tab === "bak" ? "还没有备份记录" : "还没有还原记录" }}</p>
+                <p class="hint">{{ hist.tab === "bak" ? "跑一次备份，这里就会出现记录" : "在「快照」里点开任意快照，就能发起还原" }}</p>
+              </div>
+            </div>
+
+            <!-- 桌面：右侧详情 -->
+            <div class="hist-det" v-if="!isNarrow">
+              <template v-if="hist.cur">
+                <div class="hd-top">
+                  <span class="hi-st" :class="histStatusCls(hist.cur.status)">{{ histStatusTxt(hist.cur) }}</span>
+                  <b>{{ histTitle(hist.cur) }}</b>
+                </div>
+                <div class="hd-time">{{ hist.cur.time || "—" }}</div>
+                <div class="hi-kv" v-for="r in histKVs(hist.cur)" :key="r.k">
+                  <span class="k">{{ r.k }}</span><span class="v mono">{{ r.v }}</span>
+                </div>
+                <div class="hi-tl" v-if="hist.cur.nodes && hist.cur.nodes.length">
+                  <div class="n" v-for="(nd, i) in hist.cur.nodes" :key="i"><i class="mono">{{ nd.time }}</i>{{ nd.msg }}</div>
+                </div>
+                <div class="hd-foot">
+                  <button class="btn ghost" v-if="hist.cur.kind === 'backup'" @click="openHistLog(hist.cur)">查看完整日志</button>
+                  <button class="btn ghost danger" v-else-if="hist.cur.status === 'running'" @click="stopRestore(hist.cur)">停止还原</button>
+                </div>
+              </template>
+              <div class="sn-empty" v-else><p>选一条记录查看详情</p></div>
+            </div>
           </div>
         </template>
       </main>
@@ -1883,20 +3078,35 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- 手机下拉刷新：顶部细条 -->
+    <div class="ptr-bar" v-if="isNarrow && (ptr.dist > 0 || ptr.refreshing)" :class="{ load: ptr.refreshing, hot: ptr.dist >= PTR_TRIGGER }">
+      <i class="ptr-fill" :style="{ width: ptrPct + '%' }"></i>
+    </div>
+    <div
+      class="ptr-tx"
+      v-if="isNarrow && (ptr.dist > 0 || ptr.refreshing)"
+      :class="{ hot: ptr.dist >= PTR_TRIGGER || ptr.refreshing }"
+      :style="{ opacity: ptrTxOpacity }"
+    >{{ ptr.refreshing ? "正在刷新…" : ptr.dist >= PTR_TRIGGER ? "松开刷新" : "下拉刷新" }}</div>
+
     <!-- 手机底部导航（仿飞牛虚拟机 App） -->
     <nav class="bnav">
       <button :class="{ on: nav === 'tasks' }" @click="nav = 'tasks'">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg>
         <span>备份</span>
       </button>
-      <button :class="{ on: nav === 'restore' }" @click="nav = 'restore'">
-        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 5.5V2.8L7.6 6.4 12 10V7.5a6.5 6.5 0 1 1-6.4 7.7"/></svg>
-        <span>还原</span>
+      <button :class="{ on: nav === 'snap' }" @click="nav = 'snap'">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg>
+        <span>快照</span>
+      </button>
+      <button :class="{ on: nav === 'hist' }" @click="nav = 'hist'">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7.2v5l3.1 1.9M20.6 12a8.6 8.6 0 1 1-2.5-6.1"/></svg>
+        <span>历史</span>
       </button>
     </nav>
 
-    <!-- 手机悬浮新建按钮：备份页=新建任务，还原页=新建还原 -->
-    <button class="fab" aria-label="新建" @click.stop="nav === 'restore' ? openRpick() : openWizard(null)">
+    <!-- 手机悬浮新建按钮：只在备份页出现 -->
+    <button class="fab" v-if="nav === 'tasks'" aria-label="新建" @click.stop="openWizard(null)">
       <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
     </button>
 
@@ -1905,175 +3115,68 @@ onUnmounted(() => {
       <div class="toast" :class="toast.type" v-if="toast.show">{{ toast.msg }}</div>
     </transition>
 
-    <!-- ==================== 新建还原 · 分步向导（方案A线性） ==================== -->
-    <div class="mask" v-if="rst.show">
-      <div class="modal rst-modal">
-        <div class="modal-head">
-          <h3>新建还原</h3>
-          <button class="x" @click="rst.show = false">✕</button>
-        </div>
-
-        <!-- 顶部步骤条（5 步） -->
-        <div class="rst-stepper">
-          <template v-for="(st, i) in rstSteps" :key="st.id">
-            <div class="rst-step-line" v-if="i > 0" :class="{ done: i <= rstStep }"></div>
-            <div class="rst-step-dot" :class="{ on: i === rstStep, done: i < rstStep }">
-              <span class="n">{{ i < rstStep ? "✓" : i + 1 }}</span>
-              <span class="lb">{{ st.label }}</span>
-            </div>
-          </template>
-        </div>
-
-        <!-- 中间：单步内容 -->
-        <div class="modal-body single">
-          <div class="rst-step-title">第 {{ rstStep + 1 }} 步 · {{ rstSteps[rstStep].title }}<em>{{ rstSteps[rstStep].hint }}</em></div>
-
-          <!-- 第 0 步：选任务 -->
-          <div v-if="rstStep === 0">
-            <div class="rpick-list" v-if="cfg.tasks.length">
-              <button class="rpick-item" v-for="t in cfg.tasks" :key="t.id" @click="selectTask(t)">
-                <span class="rp-ic">↺</span>
-                <span class="rp-txt">
-                  <b>{{ t.name }}</b>
-                  <small>{{ t.last_done_at ? "上次备份 " + fmtShort(t.last_done_at) : "从未备份" }}</small>
-                </span>
-                <svg viewBox="0 0 24 24" width="16" height="16" class="rp-arrow"><path fill="none" stroke="#c0c4cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>
-              </button>
-            </div>
-            <div class="empty" v-else>
-              <p>还没有备份任务</p>
-              <p class="hint">先在「备份」页创建备份任务并完成一次备份，产生快照后才能还原</p>
-            </div>
-          </div>
-
-          <!-- 第 1 步：选快照 -->
-          <div v-else-if="rstStep === 1">
-            <div class="rstep-tools">
-              <em class="fld-hint">徽章 = 与上一份快照的差异</em>
-              <em class="snap-cache" v-if="rst.cachedAt" :title="'本地缓存快照列表，避免每次实时查云盘'">缓存于 {{ rst.cachedAt.slice(5) }}</em>
-              <button type="button" class="snap-refresh" title="强制实时查询云盘并更新缓存" @click="loadRestoreSnaps(rst.task, true)" :disabled="rst.snapsLoading">
-                <svg viewBox="0 0 24 24" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
-                刷新缓存
-              </button>
-            </div>
-            <div class="snap-timeline" v-if="rst.snaps.length">
-              <div class="snap-row" v-for="s in rst.snaps" :key="s.id" :class="{ on: rst.cur && rst.cur.id === s.id }" @click="pickSnap(s)">
-                <i class="snap-dot"></i>
-                <span class="snap-t">{{ snapTime(s) }}</span>
-                <span class="snap-id mono">{{ (s.short_id || s.id).slice(0, 8) }}</span>
-                <span class="snap-files" v-if="s.summary && (s.summary.total_files_processed || s.summary.total_files)">{{ s.summary.total_files_processed || s.summary.total_files }} 个文件 · {{ fmtBytes(s.summary.total_bytes_processed || s.summary.total_bytes) }}</span>
-                <span class="snap-badge" :class="snapBadge(s.id).cls">{{ snapBadge(s.id).text }}</span>
-              </div>
-            </div>
-            <div class="snap-loading" v-else-if="rst.snapsLoading"><i class="mini-spin"></i> 正在读取快照列表…</div>
-            <div class="snap-loading" v-else>暂无快照，请先运行一次备份</div>
-          </div>
-
-          <!-- 第 2 步：选文件（点卡片弹独立选择器） -->
-          <div v-else-if="rstStep === 2">
-            <button type="button" class="pick-files-btn" @click="openRstPick">
-              <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg>
-              {{ rst.includes.length ? "已选 " + rst.includes.length + " 项 · 点击修改" : "浏览快照文件…" }}
-            </button>
-            <div class="inc-tray" v-if="rst.includes.length">
-              <span class="t" v-for="x in rst.includes" :key="x.path"><b>{{ x.is_dir ? "📁" : "📄" }} {{ x.name }}</b><i @click="removeInclude(x)">×</i></span>
-            </div>
-          </div>
-
-          <!-- 第 3 步：目的地 -->
-          <div v-else-if="rstStep === 3">
-            <div class="seg">
-              <button type="button" :class="{ on: rst.dest === 'original' }" @click="rst.dest = 'original'">原位置</button>
-              <button type="button" :class="{ on: rst.dest === 'custom' }" @click="rst.dest = 'custom'">新路径</button>
-            </div>
-            <div class="dest-note" v-if="rst.dest === 'original'">
-              将写回原路径：{{ rst.includes.map((x) => x.path).join("；") }}
-            </div>
-            <div class="target-row" v-else>
-              <input v-model="rst.target" placeholder="/vol1/1000/还原目录（将自动创建）" />
-              <button type="button" class="btn ghost" @click="openTargetBrowser">浏览</button>
-            </div>
-          </div>
-
-          <!-- 第 4 步：冲突策略 -->
-          <div v-else-if="rstStep === 4">
-            <div class="conf-grid">
-              <button type="button" class="conf-card" :class="{ on: rst.conflict === 'always' }" @click="rst.conflict = 'always'">
-                <span class="conf-rd"></span>
-                <span class="conf-tx"><b>全部覆盖</b><small>直接覆盖本地同名文件</small></span>
-              </button>
-              <button type="button" class="conf-card" :class="{ on: rst.conflict === 'if-changed' }" @click="rst.conflict = 'if-changed'">
-                <span class="conf-rd"></span>
-                <span class="conf-tx"><b>仅覆盖有变化</b><small>内容没变的文件不重写</small></span>
-              </button>
-              <button type="button" class="conf-card" :class="{ on: rst.conflict === 'never' }" @click="rst.conflict = 'never'">
-                <span class="conf-rd"></span>
-                <span class="conf-tx"><b>跳过已存在</b><small>已存在的文件保持不动</small></span>
-              </button>
-              <button type="button" v-if="rst.dest === 'custom'" class="conf-card" :class="{ on: rst.conflict === 'rename' }" @click="rst.conflict = 'rename'">
-                <span class="conf-rd"></span>
-                <span class="conf-tx"><b>保留两者</b><small>还原版本加后缀另存</small></span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- flow-line（仅最后一步作为最终确认摘要） -->
-        <div class="rst-flow" v-if="rstStep === 4 && rst.cur && rst.includes.length">
-          <span class="rst-flow-node">📁 快照 {{ (rst.cur.short_id || rst.cur.id).slice(0, 8) }}</span>
-          <i class="rst-flow-lk">──▶</i>
-          <span class="rst-flow-node hi">{{ rst.dest === "original" ? "⌖ 原位置" : "➝ " + (rst.target || "新路径") }}</span>
-        </div>
-
-        <!-- 底部：上一步 / 下一步 -->
-        <div class="modal-foot even">
-          <button class="btn ghost" :disabled="rstStep === 0" @click="rstPrev">上一步</button>
-          <button v-if="rstStep < 4" class="btn primary" :disabled="!rstStepReady(rstStep)" @click="rstNext">下一步</button>
-          <button v-else class="btn primary" :disabled="!rstReady || rst.busy" @click="doRestore">{{ rst.busy ? "启动中…" : "开始还原" }}</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ==================== 还原 · 文件选择器 ==================== -->
     <div class="mask top" style="z-index:3200;" v-if="rstPick.show">
-      <div class="modal">
+      <div class="modal pk-modal">
         <div class="modal-head">
-          <h3>选择要还原的文件 <span class="pk-snap mono" v-if="rst.cur">快照 {{ (rst.cur.short_id || rst.cur.id).slice(0, 8) }}</span></h3>
-          <button class="x" @click="rstPick.show = false">✕</button>
+          <h3>选择要还原的内容 <span class="pk-snap mono" v-if="rst.cur">快照 {{ (rst.cur.short_id || rst.cur.id).slice(0, 8) }}</span></h3>
+          <button class="x" @click="closeRstPick">✕</button>
         </div>
         <div class="modal-body">
           <div class="crumbC">
             <span class="cloudic" @click.prevent="loadRstDir('')">📦 快照根</span>
-            <template v-for="(seg, i) in rstPick.crumb" :key="i">
+            <template v-for="(c, i) in rstPick.crumb" :key="i">
               <span class="sl">/</span>
-              <a href="#" :class="{ cur: i === rstPick.crumb.length - 1 }" @click.prevent="loadRstDir(rstPick.crumb.slice(0, i + 1).join('/'))">{{ seg }}</a>
+              <a href="#" :class="{ cur: i === rstPick.crumb.length - 1 }" @click.prevent="loadRstDir(c.path)">{{ c.label }}</a>
             </template>
             <span class="selpill" v-if="rstPick.sel.length">已选 {{ rstPick.sel.length }} 项</span>
           </div>
-          <div class="tray" v-if="rstPick.sel.length">
-            <span class="t" v-for="p in rstPick.sel" :key="p"><b>{{ p.split("/").pop() }}</b><i @click="togglePick({ path: p })">×</i></span>
+
+          <!-- 首次读取大快照清单：说明要等多久，并实时报进度 -->
+          <div class="pk-tip" v-if="!rstPick.building && !rstPick.err">
+            点目录名进入子目录；勾选右侧方框可只还原这个目录。也可以直接「还原整份快照」。
           </div>
+          <div class="pk-build" v-if="rstPick.building">
+            <i class="mini-spin"></i>
+            <div>
+              <b>正在读取这份快照的完整文件清单</b>
+              <span>已解析 {{ rstPick.parsed.toLocaleString() }} 条 · {{ rstPick.elapsed }} 秒。大快照首次约需 1 分钟，读完会缓存，之后秒开。</span>
+            </div>
+          </div>
+          <div class="pk-build err" v-if="rstPick.err"><b>读取失败</b><span>{{ rstPick.err }}</span></div>
+
+          <div class="tray" v-if="rstPick.sel.length">
+            <span class="t" v-for="p in rstPick.sel" :key="p"><b>{{ p.split("/").pop() || p }}</b><i @click="togglePick({ path: p })">×</i></span>
+          </div>
+
+          <div class="pk-curdir" v-if="rstPick.dir">
+            <span>当前目录 <b class="mono">{{ rstPick.dir }}</b></span>
+            <button type="button" class="btn ghost sm" @click="pickCurDir">选择整个目录</button>
+          </div>
+
           <div class="dir-list">
-            <div class="frow big" v-if="rstPick.dir" @click="loadRstDir(rstPick.dir.split('/').slice(0, -1).join('/'))">
+            <div class="frow big" v-if="rstPick.dir" @click="loadRstDir(pickUpDir())">
               <span class="fold-ic back">↩</span>
               <span class="nm"><b>返回上一级</b></span>
             </div>
-            <div class="frow big" v-for="it in rstPick.items" :key="it.path" :class="{ sel: isPicked(it.path) }" @click="it.is_dir ? loadRstDir(it.path) : null">
+            <div class="frow big" v-for="it in rstPick.items" :key="it.path" :class="{ sel: isPicked(it.path), dir: it.is_dir }" @click="it.is_dir ? loadRstDir(it.path) : togglePick(it)">
               <svg class="fold-ic" v-if="it.is_dir" viewBox="0 0 40 32" width="30" height="24"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
               <svg class="fold-ic" v-else viewBox="0 0 24 24" width="22" height="22"><path fill="#e5e9f0" d="M6 2h9l5 5v15H6V2Z"/><path fill="#c9d2e0" d="M15 2l5 5h-5V2Z"/></svg>
               <span class="nm">
                 <b>{{ it.name }}<i v-if="it.badge === 'add'" class="dif add">+ 新增</i><i v-else-if="it.badge === 'mod'" class="dif mod">~ 修改</i></b>
               </span>
               <span class="fsize" v-if="!it.is_dir">{{ fmtBytes(it.size) }}</span>
+              <span class="pk-enter" v-if="it.is_dir">›</span>
               <span class="cbx" :class="{ on: isPicked(it.path), half: isHalf(it.path) }" @click.stop="togglePick(it)">✓</span>
             </div>
-            <div class="empty sm" v-if="!rstPick.items.length && !rstPick.loading"><p>此目录为空</p></div>
+            <div class="empty sm" v-if="!rstPick.items.length && !rstPick.loading && !rstPick.building && !rstPick.err"><p>此目录为空</p></div>
             <div class="frow big" v-if="rstPick.loading"><span class="nm"><b><i class="mini-spin"></i> 加载中…</b></span></div>
           </div>
         </div>
         <div class="modal-foot">
           <div class="toolbarC">
-            <button type="button" class="btn ghost" @click="rstPick.sel = []">清空选择</button>
+            <button type="button" class="btn ghost" @click="pickWholeSnap">还原整份快照</button>
+            <button type="button" class="btn ghost" @click="rstPick.sel = []">清空</button>
             <button type="button" class="btn primary" @click="confirmRstPick">确定（已选 {{ rstPick.sel.length }} 项）</button>
           </div>
         </div>
@@ -2325,6 +3428,7 @@ html.scroll-locked body {
   color: #3370ff; font-size: 13.5px; cursor: pointer; font-family: inherit; font-weight: 600;
 }
 .pick-files-btn:hover { background: #eef4ff; }
+.pick-hint { margin-top: 10px; font-size: 12px; color: #9ca3af; line-height: 1.7; word-break: break-all; }
 .inc-tray { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .inc-tray .t, .tray .t {
   display: inline-flex; align-items: center; gap: 5px; background: #fff;
@@ -2394,6 +3498,27 @@ html.scroll-locked body {
 .dif.add { background: #e7f8ee; color: #16a34a; }
 .dif.mod { background: #fef3e2; color: #d97706; }
 .frow.big.sel { background: #eef4ff; }
+/* 文件选择器：目录进入 / 清单读取进度 */
+.modal.pk-modal { width: 620px; }
+.pk-tip { font-size: 12px; color: #9ca3af; line-height: 1.7; margin: 2px 0 8px; }
+.pk-build {
+  display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; margin-bottom: 10px;
+  background: #f5f8ff; border: 1px solid #dbe6ff; border-radius: 9px;
+}
+.pk-build > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pk-build b { font-size: 13px; color: #1f2937; font-weight: 600; }
+.pk-build span { font-size: 12px; color: #6b7280; line-height: 1.6; }
+.pk-build.err { background: #fdf2f2; border-color: #f8d4d4; }
+.pk-build.err b { color: #dc2626; }
+.pk-curdir {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  padding: 8px 11px; margin-bottom: 8px; background: #f7f8fa; border-radius: 9px;
+  font-size: 12.5px; color: #6b7280;
+}
+.pk-curdir b { color: #1f2937; font-weight: 600; word-break: break-all; }
+.pk-curdir .btn { flex: none; }
+.pk-enter { flex: none; color: #c4cad4; font-size: 19px; line-height: 1; margin-left: 2px; }
+.frow.big.dir:hover .pk-enter { color: #3370ff; }
 /* 还原历史页 */
 .rst-list { display: flex; flex-direction: column; gap: 12px; }
 .rst-card { background: #fff; border-radius: 12px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05); }
@@ -2472,6 +3597,69 @@ html.scroll-locked body {
 .repo-cloud.other { background: #6b7280; }
 .repo-uri { color: #6b7280; margin-bottom: 8px; word-break: break-all; }
 .repo-acts { display: flex; gap: 8px; }
+
+/* ==================== 仓库 Tab（仓库 → 任务分组 → 快照） ==================== */
+.rp-list { display: flex; flex-direction: column; gap: 11px; }
+.rp-card {
+  display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 12px;
+  padding: 16px 18px; box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05); cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.rp-card:hover { box-shadow: 0 3px 14px rgba(16, 24, 40, 0.1); }
+.rp-ic { width: 40px; height: 40px; flex: none; border-radius: 10px; background: #eef4ff; display: flex; align-items: center; justify-content: center; }
+.rp-body { flex: 1; min-width: 0; }
+.rp-name { font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.rp-pill { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; flex: none; }
+.rp-pill.ok { background: #e7f8ec; color: #16803a; }
+.rp-pill.gray { background: #f3f4f6; color: #9ca3af; }
+.rp-path { font-size: 11.5px; color: #9ca3af; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-meta { display: flex; gap: 18px; margin-top: 9px; flex-wrap: wrap; }
+.rp-meta span { font-size: 11.5px; color: #8b9098; }
+.rp-meta b { color: #1f2937; font-size: 13px; font-weight: 600; margin-right: 4px; }
+.rp-go { flex: none; font-size: 12.5px; color: #3370ff; font-weight: 600; }
+
+.rp-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.rp-back { display: none; border: none; background: transparent; font-size: 15px; color: #3370ff; cursor: pointer; padding: 0; font-family: inherit; }
+.rp-crumb { font-size: 13px; color: #9ca3af; }
+.rp-crumb b { color: #1f2937; font-weight: 600; }
+.rp-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.rp-search { display: flex; align-items: center; gap: 7px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 11px; color: #b0b7c3; background: #fff; }
+.rp-search input { border: none; outline: none; background: transparent; font-family: inherit; font-size: 12.5px; color: #1f2937; width: 150px; }
+
+.rp-sum { display: flex; gap: 26px; background: #fff; border-radius: 10px; padding: 13px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05); flex-wrap: wrap; }
+.rp-sum > div { display: flex; flex-direction: column; gap: 3px; }
+.rp-sum b { font-size: 15px; font-weight: 600; color: #1f2937; }
+.rp-sum span { font-size: 11.5px; color: #9ca3af; }
+
+.rp-grp { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05); margin-bottom: 14px; overflow: hidden; }
+.rp-grp-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+.rp-grp-head:hover { background: #fafbfd; }
+.rp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.rp-gn { font-size: 13.5px; font-weight: 600; }
+.rp-gp { color: #b0b7c3; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.rp-gc { margin-left: auto; font-size: 11.5px; color: #8b9098; }
+.rp-fold { font-size: 11.5px; color: #3370ff; flex: none; }
+.rp-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.rp-tbl th { text-align: left; font-weight: 500; color: #9ca3af; font-size: 11.5px; padding: 9px 16px; background: #fcfcfd; border-bottom: 1px solid #f3f4f6; white-space: nowrap; }
+.rp-tbl td { padding: 11px 16px; border-bottom: 1px solid #f6f7f9; color: #374151; }
+.rp-tbl tbody tr:last-child td { border-bottom: none; }
+.rp-tbl tbody tr:hover td { background: #f9fbff; }
+.rp-tbl .t { font-weight: 600; color: #1f2937; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rp-tbl .dim { color: #9ca3af; }
+.rp-tbl .acts { text-align: right; }
+.rp-tbl .nowrap { white-space: nowrap; }
+.rp-tbl .ellip { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-tbl .ellip-sm { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-link { border: none; background: transparent; color: #3370ff; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 4px 6px; font-family: inherit; white-space: nowrap; }
+.rp-link:hover { text-decoration: underline; }
+
+.rp-mlist { display: none; }
+.rp-mgrp-t { display: flex; align-items: center; gap: 8px; }
+.rp-mcard { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05); }
+.rp-mtop { display: flex; align-items: center; }
+.rp-mtop b { font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rp-mgo { margin-left: auto; font-size: 12px; color: #3370ff; font-weight: 600; }
+.rp-msub { font-size: 11.5px; color: #9ca3af; margin-top: 5px; }
 
 /* ==================== 按钮 ==================== */
 .btn {
@@ -2896,6 +4084,309 @@ html.scroll-locked body {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
+
+/* ==================== 快照 Tab：仓库 → 快照 → 详情 → 还原 ==================== */
+.sn-list { display: flex; flex-direction: column; gap: 11px; }
+
+.sn-repo {
+  background: #fff; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+.sn-repo.open { box-shadow: 0 3px 12px rgba(16, 24, 40, 0.09); }
+
+.sn-head {
+  display: flex; align-items: center; gap: 14px; padding: 15px 17px;
+  cursor: pointer; transition: background 0.15s;
+}
+.sn-head:hover { background: #fbfcfe; }
+.sn-repo.open .sn-head { border-bottom: 1px solid #f1f3f6; }
+
+.sn-ic {
+  width: 40px; height: 40px; flex: none; border-radius: 10px;
+  background: #eef4ff; display: flex; align-items: center; justify-content: center;
+}
+.sn-body { flex: 1; min-width: 0; }
+.sn-name { font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+.sn-path {
+  font-size: 11.5px; color: #9ca3af; margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sn-meta { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+.sn-meta span { font-size: 11.5px; color: #8b9098; }
+.sn-meta b { color: #1f2937; font-size: 13px; font-weight: 600; margin-right: 3px; }
+
+.sn-pill {
+  font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+}
+.sn-pill.ok { background: #e7f8ec; color: #16803a; }
+.sn-pill.gray { background: #f3f4f6; color: #9ca3af; }
+.sn-pill.blue { background: #eef4ff; color: #3370ff; }
+
+.sn-chev {
+  width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center;
+  color: #c0c4cc; transition: transform 0.18s, color 0.18s;
+}
+.sn-repo.open .sn-chev { transform: rotate(90deg); color: #3370ff; }
+
+.sn-drop { padding: 6px 0 4px; }
+.sn-loading { padding: 18px; text-align: center; font-size: 12.5px; color: #9ca3af; }
+.sn-empty { padding: 22px; text-align: center; font-size: 12.5px; color: #9ca3af; }
+
+.sn-grp { margin-bottom: 4px; }
+.sn-grp-h { display: flex; align-items: center; gap: 9px; padding: 10px 17px 8px; }
+.sn-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.sn-gn { font-size: 13px; font-weight: 600; color: #1f2937; }
+.sn-gp {
+  font-size: 11px; color: #b0b7c3; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; max-width: 340px;
+}
+.sn-gc { margin-left: auto; font-size: 11.5px; color: #9ca3af; }
+
+.sn-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sn-tbl th {
+  text-align: left; font-weight: 500; color: #9ca3af; font-size: 11px; padding: 8px 17px;
+  background: #fcfcfd; border-top: 1px solid #f3f4f6; border-bottom: 1px solid #f3f4f6; white-space: nowrap;
+}
+.sn-tbl td { padding: 10px 17px; border-bottom: 1px solid #f6f7f9; color: #374151; vertical-align: middle; }
+.sn-tbl tbody tr { cursor: pointer; }
+.sn-tbl tbody tr:hover td { background: #f7faff; }
+.sn-tbl tbody tr:last-child td { border-bottom: none; }
+.sn-tbl .t { font-weight: 600; color: #1f2937; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sn-tbl .dim { color: #9ca3af; }
+.sn-tbl .acts { text-align: right; white-space: nowrap; }
+.sn-tbl .nowrap { white-space: nowrap; }
+.sn-tbl .ellip { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sn-tbl .ellip-sm { max-width: 138px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sn-link { color: #3370ff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+
+.sn-mlist { display: none; }
+
+.sn-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 17px 12px; border-top: 1px solid #f3f4f6; font-size: 11px; color: #b0b7c3;
+}
+
+/* 运行中的还原条 */
+.sn-run {
+  display: flex; align-items: center; gap: 11px; background: #fff; border-radius: 10px;
+  padding: 11px 15px; margin-bottom: 11px; font-size: 12.5px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+.sn-run-t { font-weight: 600; color: #1f2937; white-space: nowrap; }
+.sn-run-bar { flex: 1; height: 5px; border-radius: 4px; background: #eef0f3; overflow: hidden; }
+.sn-run-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3370ff, #5ca0ff); }
+.sn-run-p { font-variant-numeric: tabular-nums; color: #8b9098; }
+
+/* 快照详情 */
+.sd-bar { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #9ca3af; margin-bottom: 12px; }
+.sd-back {
+  border: none; background: none; color: #3370ff; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; padding: 3px 6px; font-family: inherit; border-radius: 6px;
+}
+.sd-back:hover { background: #eef4ff; }
+.sd-sep { color: #d5d9e0; }
+.sd-crumb { color: #374151; font-weight: 600; }
+
+.sd-card {
+  background: #fff; border-radius: 12px; padding: 17px 19px; margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+.sd-top { display: flex; align-items: flex-start; gap: 16px; }
+.sd-l { min-width: 0; }
+.sd-time { font-size: 20px; font-weight: 700; letter-spacing: -0.2px; font-variant-numeric: tabular-nums; }
+.sd-sub { display: flex; align-items: center; gap: 9px; margin-top: 6px; font-size: 12px; color: #8b9098; flex-wrap: wrap; }
+.sd-id { color: #9ca3af; }
+.sd-acts { margin-left: auto; flex: none; display: flex; gap: 8px; }
+.sd-kv {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+  margin-top: 16px; padding-top: 15px; border-top: 1px solid #f3f4f6;
+}
+.sd-kv span { display: block; font-size: 11px; color: #9ca3af; margin-bottom: 4px; }
+.sd-kv b { font-size: 13.5px; font-weight: 600; color: #1f2937; font-variant-numeric: tabular-nums; }
+
+.sd-panel {
+  background: #fff; border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+.sd-panel.pad { padding: 16px 18px; }
+.sd-ph {
+  padding: 12px 17px; border-bottom: 1px solid #f3f4f6; font-size: 12.5px;
+  font-weight: 600; color: #374151; display: flex; align-items: center; gap: 8px;
+}
+.sd-ph .cnt { font-weight: 400; color: #9ca3af; font-size: 11.5px; }
+.sd-diff { display: flex; align-items: center; gap: 16px; padding: 13px 17px; font-size: 12.5px; flex-wrap: wrap; }
+.sd-diff .add { color: #16803a; font-weight: 600; }
+.sd-diff .mod { color: #b45309; font-weight: 600; }
+.sd-diff .del { color: #b91c1c; font-weight: 600; }
+.sd-diff .tot { margin-left: auto; color: #9ca3af; font-size: 11.5px; }
+.sd-paths { padding: 5px 0; }
+.sd-path { display: flex; align-items: center; gap: 10px; padding: 9px 17px; font-size: 12px; color: #374151; }
+.sd-path .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-tags { display: flex; gap: 7px; flex-wrap: wrap; padding: 13px 17px; }
+.sd-tag { font-size: 11px; color: #6b7280; background: #f5f6f8; padding: 3px 9px; border-radius: 6px; }
+
+/* 快照详情 · 目录树（桌面） */
+.sd-tree-acts { margin-left: auto; display: flex; gap: 12px; }
+.sd-tree-acts a { font-size: 12px; color: #3370ff; cursor: pointer; }
+.sd-tree-acts a:hover { text-decoration: underline; }
+.sd-build {
+  display: flex; align-items: flex-start; gap: 10px; margin: 4px 16px 10px;
+  padding: 10px 12px; background: #f5f8ff; border: 1px solid #dbe6ff; border-radius: 9px;
+}
+.sd-build > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sd-build b { font-size: 12.5px; color: #1f2937; font-weight: 600; }
+.sd-build span { font-size: 11.5px; color: #6b7280; line-height: 1.6; }
+.sd-build.err { background: #fdf2f2; border-color: #f8d4d4; }
+.sd-build.err b { color: #dc2626; }
+.sdt-list { padding: 2px 10px 10px; }
+.sdt-row {
+  display: flex; align-items: center; gap: 7px; padding: 6px 8px 6px 6px;
+  border-radius: 7px; font-size: 13px; cursor: pointer; user-select: none;
+}
+.sdt-row:hover { background: #f7f9fc; }
+.sdt-row.on { background: #f0f6ff; }
+.sdt-caret { width: 12px; flex: none; text-align: center; color: #b6bcc7; font-size: 9px; transition: transform .13s; }
+.sdt-caret.open { transform: rotate(90deg); }
+.sdt-caret.leaf { visibility: hidden; }
+.sdt-ic { flex: none; }
+.sdt-name { color: #1f2937; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sdt-name.sel { color: #3370ff; font-weight: 600; }
+.sdt-meta { font-size: 11px; color: #b6bcc7; flex: none; }
+.sdt-row .cbx { margin-left: auto; }
+.sdt-row.file .sdt-name { color: #4b5563; font-weight: 400; }
+.sdt-row.file .sdt-meta { color: #b6bcc7; }
+
+/* ==================== 下拉刷新（顶部细条） ==================== */
+.ptr-bar {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 2600;
+  background: transparent; overflow: hidden; pointer-events: none;
+}
+.ptr-fill {
+  display: block; height: 100%; width: 0;
+  background: #9aa1ab; border-radius: 0 3px 3px 0;
+  transition: width .05s linear, background .15s;
+}
+.ptr-bar.hot .ptr-fill { background: #3370ff; }
+.ptr-bar.load .ptr-fill {
+  width: 100% !important;
+  background: linear-gradient(90deg, #dbe6ff 0%, #3370ff 45%, #dbe6ff 100%);
+  background-size: 45% 100%;
+  animation: ptrslide 1.1s linear infinite;
+}
+@keyframes ptrslide {
+  from { background-position: -45% 0; }
+  to { background-position: 145% 0; }
+}
+.ptr-tx {
+  position: fixed; top: 9px; left: 0; right: 0; z-index: 2600;
+  text-align: center; font-size: 11px; font-weight: 600; color: #8b9098;
+  pointer-events: none; transition: opacity .16s, color .16s;
+}
+.ptr-tx.hot { color: #3370ff; }
+
+/* ==================== 历史（备份 + 还原） ==================== */
+.hist-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.hist-seg {
+  display: flex; gap: 4px; background: #eceef2; border-radius: 10px;
+  padding: 3px; flex: 0 1 300px;
+}
+.hist-bar { width: 100%; }
+.hist-seg button {
+  flex: 1; border: none; background: transparent; font: inherit; font-size: 13px; font-weight: 600;
+  color: #6b7280; padding: 7px 0; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.hist-seg button.on { background: #fff; color: #3370ff; box-shadow: 0 1px 2px rgba(16,24,40,.07); }
+.hist-seg .n { font-size: 10.5px; font-weight: 700; color: #9aa1ab; background: #e4e7ec; border-radius: 20px; padding: 0 6px; line-height: 16px; }
+.hist-seg button.on .n { color: #3370ff; background: #eef4ff; }
+
+.hist-wrap { display: flex; gap: 18px; align-items: flex-start; }
+.hist-wrap.narrow { display: block; }
+.hist-list { flex: 1; min-width: 0; }
+.hist-det {
+  width: 340px; flex: none; background: #fff; border-radius: 12px; padding: 16px 18px;
+  box-shadow: 0 1px 3px rgba(16,24,40,.06); position: sticky; top: 16px;
+}
+
+.hist-day { display: flex; align-items: center; gap: 10px; font-size: 11.5px; font-weight: 600; color: #9aa1ab; padding: 14px 4px 8px; }
+.hist-day:first-child { padding-top: 4px; }
+.hist-day i { flex: 1; height: 1px; background: #e8ebf0; }
+
+.hist-item {
+  background: #fff; border-radius: 11px; padding: 11px 14px; margin-bottom: 8px; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16,24,40,.05); border: 1px solid transparent; transition: border-color .12s, background .12s;
+}
+.hist-item:hover { border-color: #e3ebff; }
+.hist-item.on { border-color: #cfe0ff; background: #fafcff; }
+.hi-top { display: flex; align-items: center; gap: 9px; }
+.hi-nm { font-size: 13.5px; font-weight: 600; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hi-tm { margin-left: auto; font-size: 11.5px; color: #9aa1ab; flex: none; }
+.hi-sub { font-size: 11.5px; color: #9aa1ab; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hi-st { font-size: 10.5px; font-weight: 700; padding: 1.5px 7px; border-radius: 5px; flex: none; }
+.hi-st.ok { background: #e7f8ee; color: #16803a; }
+.hi-st.bad { background: #fdeaea; color: #b91c1c; }
+.hi-st.run { background: #eef4ff; color: #3370ff; }
+.hi-st.gray { background: #f2f4f7; color: #6b7280; }
+
+.hi-open { border-top: 1px solid #f1f3f6; margin-top: 10px; padding-top: 10px; }
+.hi-kv { display: flex; gap: 12px; font-size: 12px; line-height: 2; }
+.hi-kv .k { color: #9aa1ab; width: 44px; flex: none; }
+.hi-kv .v { color: #4b5563; min-width: 0; word-break: break-all; white-space: pre-line; }
+.hi-tl { margin-top: 9px; border-top: 1px dashed #eef0f3; padding-top: 8px; }
+.hi-tl .n { font-size: 11.5px; color: #6b7280; line-height: 1.95; display: flex; gap: 9px; }
+.hi-tl .n i { font-style: normal; color: #b6bcc7; flex: none; }
+.hi-ops { margin-top: 11px; display: flex; gap: 8px; }
+
+.hd-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.hd-top b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-time { font-size: 11.5px; color: #9aa1ab; margin-bottom: 12px; }
+.hd-foot { margin-top: 15px; display: flex; gap: 8px; }
+.hist-loading { font-size: 12.5px; color: #9aa1ab; padding: 24px 4px; display: flex; align-items: center; gap: 8px; }
+
+/* 快照详情 · 逐层下钻（手机） */
+.sdc-crumb {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px 7px 12px; margin: 0 0 8px; background: #f7f8fa; border-radius: 9px;
+  font-size: 12.5px; color: #9ca3af;
+}
+.sdc-crumb-p { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.sdc-crumb a { color: #3370ff; cursor: pointer; }
+.sdc-crumb a.cur { color: #1f2937; font-weight: 600; }
+.sdc-crumb .sl { color: #d5d9e0; }
+.sdc-crumb .cbx { margin: 0; flex: none; }
+.sdc-list { padding-bottom: 4px; }
+.sdc-row {
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+  border-radius: 8px; font-size: 14px; cursor: pointer;
+}
+.sdc-row:active { background: #f7f9fc; }
+.sdc-row.on { background: #f0f6ff; }
+.sdc-back { width: 16px; text-align: center; color: #b6bcc7; }
+.sdc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1f2937; }
+.sdc-name.sel { color: #3370ff; font-weight: 600; }
+.sdc-go { color: #c4cad4; font-size: 18px; line-height: 1; }
+.sdc-size { font-size: 11px; color: #b6bcc7; flex: none; margin-right: 4px; }
+.sdc-more { padding: 10px 12px; font-size: 11.5px; color: #9ca3af; line-height: 1.7; background: #fafbfc; border-radius: 8px; margin-top: 8px; }
+.sdc-row .cbx { margin-left: 0; }
+
+.sd-foot { display: flex; align-items: center; gap: 9px; padding: 15px 0 4px; }
+.sd-foot .sp { flex: 1; }
+
+.rst-ops { padding: 0 16px 12px; display: flex; justify-content: flex-end; }
+
+/* 还原配置：整页形态下收窄，步骤条改成不拉伸的卡片 */
+.sn-rst { max-width: 780px; }
+.sn-rst .rst-stepper {
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 15px 22px; margin-bottom: 14px; background: #fff; border: none;
+  border-radius: 12px; box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+.sn-rst .rst-step-dot { flex: none; min-width: 62px; }
+.sn-rst .rst-step-line { width: 44px; }
+.sn-rst .rst-step-title { margin: 14px 0 10px; }
+.sn-rst .seg { max-width: 300px; margin: 0 auto; }
+.sn-rst .conf-grid { max-width: 640px; grid-template-columns: repeat(3, 1fr); }
+
 /* ==================== 响应式：≤768px 切换为原生手机布局 ==================== */
 @media (max-width: 768px) {
   .page { display: block; background: #f2f4f7; }
@@ -2946,8 +4437,17 @@ html.scroll-locked body {
   /* even：两个按钮等宽 */
   .modal-foot.even .spacer { flex: 0 0 auto; }
   .modal-foot.even .btn { flex: 1 1 0; min-width: 0; }
+  /* 文件选择器：手机上目录行与「选择整个目录」竖排 */
+  .pk-curdir { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .pk-curdir .btn { width: 100%; }
+  .pk-modal .toolbarC { flex-wrap: wrap; }
+  .pk-modal .toolbarC .btn.primary { flex: 1 1 100%; }
+  .frow.big .nm .sub { display: none; }
   .hide-m { display: none !important; }
   .dhead { display: none; }
+  /* 历史：两个子页签平分整行 */
+  .hist-bar { gap: 0; }
+  .hist-seg { flex: 1 1 100%; }
 
   /* 表格卡片流 */
   .task-list { display: none; }
@@ -2994,10 +4494,83 @@ html.scroll-locked body {
   .sheet-btn.cancel { background: transparent; color: #9ca3af; }
 
   .repo-grid { grid-template-columns: 1fr; }
+
+  /* 仓库 Tab：桌面表格 → 手机分组卡片 */
+  .rp-crumb { display: none; }
+  .rp-back { display: block; }
+  .rp-search input { width: 92px; }
+  .rp-card { padding: 14px; gap: 12px; }
+  .rp-go { display: none; }
+  .rp-meta { gap: 14px; }
+  .rp-sum { gap: 18px; padding: 12px 14px; }
+  .rp-sum b { font-size: 14px; }
+  .rp-grp { display: none; }
+  .rp-mlist { display: block; }
+  .rp-mgrp { margin-bottom: 14px; }
+  .rp-mgrp-t { font-size: 13px; font-weight: 600; padding: 0 2px 8px; color: #1f2937; }
+  .rp-mgrp-t em { margin-left: auto; font-style: normal; font-size: 11.5px; color: #9ca3af; font-weight: 400; }
   .run-cur { display: none; }
   .steps-preview { justify-content: center; }
   .ws-arrow { display: none; }
   .wiz-step { flex-direction: row; }
   .ws-t { font-size: 11px; }
+  /* 快照 Tab：仓库卡 + 快照卡片 */
+  .sn-head { padding: 13px 14px; gap: 11px; }
+  .sn-ic { width: 34px; height: 34px; border-radius: 9px; }
+  .sn-name { font-size: 13.5px; gap: 7px; }
+  .sn-meta { gap: 13px; margin-top: 6px; }
+  .sn-tbl { display: none; }
+  .sn-grp { display: none; }
+  .sn-mlist { display: block; padding: 2px 0 6px; }
+  .sn-grp-h { padding: 8px 14px 6px; }
+  .sn-gp { display: none; }
+  .sn-mgrp { padding: 0 14px; margin-bottom: 10px; }
+  .sn-mgrp-t { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; padding: 4px 0 7px; color: #1f2937; }
+  .sn-mgrp-t em { margin-left: auto; font-style: normal; font-size: 11px; color: #9ca3af; font-weight: 400; }
+  .sn-mcard { background: #fafbfc; border-radius: 9px; padding: 10px 12px; margin-bottom: 6px; }
+  .sn-mtop { display: flex; align-items: center; }
+  .sn-mtop b { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .sn-mgo { margin-left: auto; font-size: 11.5px; color: #3370ff; font-weight: 600; }
+  .sn-msub { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+  .sn-foot { padding: 8px 14px 11px; }
+  .sn-run { padding: 10px 13px; gap: 9px; }
+
+  /* 快照详情 */
+  .sd-card { padding: 14px; }
+  .sd-top { flex-direction: row; align-items: flex-start; gap: 10px; }
+  .sd-time { font-size: 17px; }
+  .sd-acts { margin-left: auto; width: auto; flex: none; }
+  .sd-acts .btn { flex: 0 0 auto; justify-content: center; padding: 8px 14px; font-size: 12.5px; }
+  .sd-kv { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .sd-diff { gap: 12px; padding: 12px 14px; }
+  .sd-diff .tot { margin-left: 0; width: 100%; }
+  .sd-ph { padding: 11px 14px; }
+  .sd-path { padding: 8px 14px; }
+  .sd-tags { padding: 12px 14px; }
+  .sd-panel.pad { padding: 14px; }
+  .sdc-row { padding: 12px 6px; }
+  .sd-build { margin: 4px 10px 10px; }
+
+  /* 还原配置：步骤条左右对称、位置 tab 撑满、上一步/下一步固定到底部 */
+  .sn-rst .rst-stepper { padding: 15px 16px; }
+  .sn-rst .rst-step-dot { flex: 1 1 0; min-width: 0; }
+  .sn-rst .rst-step-line { width: 18px; }
+  .sn-rst .seg { max-width: none; width: 100%; margin: 0; }
+  .sn-rst .sd-foot {
+    position: fixed; left: 0; right: 0; z-index: 2400;
+    bottom: calc(59px + env(safe-area-inset-bottom));
+    margin: 0; padding: 10px 14px;
+    background: #fff; border-top: 1px solid #eef0f3;
+    box-shadow: 0 -2px 12px rgba(16, 24, 40, .06);
+  }
+  .sn-rst .sd-foot .sp { display: none; }
+  .sn-rst .sd-foot .btn { flex: 1 1 0; min-width: 0; justify-content: center; padding: 12px; border-radius: 12px; font-size: 15px; }
+  /* 冲突策略：手机上改单列横排，避免文字被挤成两行 */
+  .sn-rst .conf-grid { grid-template-columns: 1fr; gap: 8px; max-width: none; }
+  .sn-rst .conf-card { flex-direction: row; align-items: center; gap: 10px; padding: 13px 14px; }
+  .sn-rst .conf-card .conf-tx { flex: 1; padding-right: 26px; }
+  .sn-rst .conf-card .conf-tx b { font-size: 14px; }
+  .sn-rst .conf-card .conf-rd { top: 50%; right: 12px; transform: translateY(-50%); }
+
 }
 </style>

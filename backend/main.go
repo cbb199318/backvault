@@ -6,12 +6,15 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -772,6 +775,10 @@ func runTask(t *Task) error {
 
 	// 备份
 	args := []string{"backup", "--json"}
+	// 打任务标签：仓库 Tab 靠它精确归属快照（历史快照没有 tag，读取时按路径兜底）
+	if t.ID != "" {
+		args = append(args, "--tag", "task:"+t.ID)
+	}
 	args = append(args, t.Paths...)
 	for _, ex := range t.Excludes {
 		if ex != "" {
@@ -2370,7 +2377,11 @@ func loadSnapCache(repoID string) *snapCacheEntry {
 	return &e
 }
 
-// ---- 快照文件列表缓存（LRU 2 份，含目录树全量节点） ----
+// ---- 快照文件列表缓存（内存 LRU 2 份 + 磁盘缓存，含目录树全量节点） ----
+//
+// restic ls 会把整份快照的文件清单吐出来，几十万文件时要跑一分钟左右，
+// 而目录浏览只是在这份清单里按父目录过滤。所以：第一次流式读取并落盘，
+// 之后（含进程重启后）直接从磁盘缓存秒开；读取过程中通过 202 状态回报进度。
 
 type snapNode struct {
 	Name  string `json:"name"`
@@ -2381,12 +2392,41 @@ type snapNode struct {
 }
 
 type snapListing struct {
-	Roots  []string              // 快照的源路径（绝对）
-	Nodes  []snapNode            // 全部节点（目录+文件）
-	byPath map[string]*snapNode  `json:"-"`
-	Files  []snapNode            // 仅文件（搜索用）
+	Roots  []string             // 快照的源路径（绝对）
+	Nodes  []snapNode           // 全部节点（目录+文件）
+	byPath map[string]*snapNode `json:"-"`
+	Files  []snapNode           // 仅文件（搜索用）
 	total  int
 }
+
+// lsJob 记录一次「读取整份快照清单」的后台任务，供前端轮询进度。
+type lsJob struct {
+	key    string
+	mu     sync.Mutex
+	run    bool
+	parsed int
+	start  time.Time
+	err    string
+	sl     *snapListing
+	done   chan struct{}
+}
+
+func (j *lsJob) snapshot() (run bool, parsed int, elapsed int, errMsg string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.run, j.parsed, int(time.Since(j.start).Seconds()), j.err
+}
+
+func (j *lsJob) setParsed(n int) {
+	j.mu.Lock()
+	j.parsed = n
+	j.mu.Unlock()
+}
+
+var (
+	lsJobsMu sync.Mutex
+	lsJobs   = map[string]*lsJob{}
+)
 
 var (
 	lsMu    sync.Mutex
@@ -2394,23 +2434,166 @@ var (
 	lsOrder []string
 )
 
-func getSnapshotListing(repo *Repo, snapID string) (*snapListing, error) {
-	key := repo.ID + "|" + snapID
+func lsCacheGet(key string) *snapListing {
 	lsMu.Lock()
-	if sl := lsCache[key]; sl != nil {
-		lsMu.Unlock()
-		return sl, nil
-	}
-	lsMu.Unlock()
+	defer lsMu.Unlock()
+	return lsCache[key]
+}
 
-	lp := filepath.Join(logDir(), "ls-"+snapID+".log")
-	out, err := runResticCapture(repo, []string{"ls", "--json", snapID}, lp)
+func lsCachePut(key string, sl *snapListing) {
+	lsMu.Lock()
+	defer lsMu.Unlock()
+	if _, ok := lsCache[key]; ok {
+		return
+	}
+	lsCache[key] = sl
+	lsOrder = append(lsOrder, key)
+	for len(lsOrder) > 2 {
+		delete(lsCache, lsOrder[0])
+		lsOrder = lsOrder[1:]
+	}
+}
+
+// ---- 磁盘缓存：cache/ls-<repo>-<snap>.json.gz ----
+
+func lsDiskPath(repoID, snapID string) string {
+	return filepath.Join(varDir(), "cache", "ls-"+repoID+"-"+snapID+".json.gz")
+}
+
+type lsDiskFile struct {
+	SnapID  string     `json:"snapshot_id"`
+	BuiltAt string     `json:"built_at"`
+	Roots   []string   `json:"roots"`
+	Total   int        `json:"total_files"`
+	Nodes   []snapNode `json:"nodes"`
+}
+
+func loadLsDisk(repoID, snapID string) *snapListing {
+	f, err := os.Open(lsDiskPath(repoID, snapID))
 	if err != nil {
-		return nil, fmt.Errorf("读取快照文件列表失败（详见日志 %s）: %v", lp, err)
+		return nil
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(bufio.NewReaderSize(f, 1<<20))
+	if err != nil {
+		return nil
+	}
+	defer zr.Close()
+	var d lsDiskFile
+	if json.NewDecoder(zr).Decode(&d) != nil || d.SnapID != snapID || len(d.Nodes) == 0 {
+		return nil
+	}
+	sl := &snapListing{Roots: d.Roots, Nodes: d.Nodes, total: d.Total}
+	sl.reindex()
+	return sl
+}
+
+func saveLsDisk(repoID, snapID string, sl *snapListing) {
+	dir := filepath.Join(varDir(), "cache")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	p := lsDiskPath(repoID, snapID)
+	tmp := p + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return
+	}
+	bw := bufio.NewWriterSize(f, 1<<20)
+	zw := gzip.NewWriter(bw)
+	d := lsDiskFile{SnapID: snapID, BuiltAt: time.Now().Format("2006-01-02 15:04:05"),
+		Roots: sl.Roots, Total: sl.total, Nodes: sl.Nodes}
+	err = json.NewEncoder(zw).Encode(&d)
+	if err == nil {
+		err = zw.Close()
+	} else {
+		_ = zw.Close()
+	}
+	if err == nil {
+		err = bw.Flush()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return
+	}
+	_ = os.Rename(tmp, p)
+	pruneLsDisk(4)
+}
+
+// pruneLsDisk 只保留最近使用的若干份清单，避免几十万文件的快照把磁盘吃满。
+func pruneLsDisk(keep int) {
+	ents, err := os.ReadDir(filepath.Join(varDir(), "cache"))
+	if err != nil {
+		return
+	}
+	type fi struct {
+		p string
+		t time.Time
+	}
+	var all []fi
+	for _, e := range ents {
+		n := e.Name()
+		if !strings.HasPrefix(n, "ls-") || !strings.HasSuffix(n, ".json.gz") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		all = append(all, fi{filepath.Join(varDir(), "cache", n), info.ModTime()})
+	}
+	if len(all) <= keep {
+		return
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].t.After(all[j].t) })
+	for _, f := range all[keep:] {
+		_ = os.Remove(f.p)
+	}
+}
+
+func (sl *snapListing) reindex() {
+	sl.byPath = make(map[string]*snapNode, len(sl.Nodes))
+	sl.Files = sl.Files[:0]
+	for i := range sl.Nodes {
+		n := &sl.Nodes[i]
+		sl.byPath[n.Path] = n
+		if n.Type != "dir" {
+			sl.Files = append(sl.Files, *n)
+		}
+	}
+	if sl.total == 0 {
+		sl.total = len(sl.Files)
+	}
+}
+
+// buildListing 流式跑 restic ls --json，边解析边回报进度，完成后落盘。
+func buildListing(repo *Repo, snapID string, job *lsJob) (*snapListing, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binPath("restic"), "ls", "--json", snapID)
+	cmd.Env = append(os.Environ(), resticEnv(repo)...)
+	lp := filepath.Join(logDir(), "ls-"+snapID+".log")
+	if lf, err := os.Create(lp); err == nil {
+		defer lf.Close()
+		cmd.Stderr = lf
+		fmt.Fprintf(lf, "$ restic ls --json %s\n", snapID)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
 	}
 	sl := &snapListing{byPath: map[string]*snapNode{}}
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
+	sc := bufio.NewScanner(stdout)
+	sc.Buffer(make([]byte, 256*1024), 8*1024*1024)
+	n := 0
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue
 		}
@@ -2428,30 +2611,109 @@ func getSnapshotListing(repo *Repo, snapID string) (*snapListing, error) {
 			}
 			continue
 		}
-		var n snapNode
-		if json.Unmarshal([]byte(line), &n) != nil || n.Path == "" {
+		var node snapNode
+		if json.Unmarshal([]byte(line), &node) != nil || node.Path == "" {
 			continue
 		}
-		sl.Nodes = append(sl.Nodes, n)
-		sl.byPath[n.Path] = &sl.Nodes[len(sl.Nodes)-1]
-		if n.Type != "dir" {
-			sl.Files = append(sl.Files, n)
+		sl.Nodes = append(sl.Nodes, node)
+		n++
+		if n%5000 == 0 {
+			job.setParsed(n)
 		}
 	}
-	sl.total = len(sl.Files)
+	scanErr := sc.Err()
+	waitErr := cmd.Wait()
+	job.setParsed(n)
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("读取快照清单超时（10 分钟），云端可能不稳定，请稍后重试")
+	}
+	if scanErr != nil {
+		return nil, fmt.Errorf("读取快照文件列表失败（详见日志 %s）: %v", lp, scanErr)
+	}
+	if waitErr != nil {
+		return nil, fmt.Errorf("读取快照文件列表失败（详见日志 %s）: %v", lp, waitErr)
+	}
+	sl.reindex()
+	saveLsDisk(repo.ID, snapID, sl)
+	return sl, nil
+}
 
-	lsMu.Lock()
-	if _, ok := lsCache[key]; !ok {
-		lsCache[key] = sl
-		lsOrder = append(lsOrder, key)
-		for len(lsOrder) > 2 {
-			delete(lsCache, lsOrder[0])
-			lsOrder = lsOrder[1:]
-		}
+func startListing(repo *Repo, snapID string) *lsJob {
+	key := repo.ID + "|" + snapID
+	lsJobsMu.Lock()
+	j := lsJobs[key]
+	if j == nil {
+		j = &lsJob{key: key, done: make(chan struct{})}
+		lsJobs[key] = j
 	}
-	kept := lsCache[key]
-	lsMu.Unlock()
-	return kept, nil
+	lsJobsMu.Unlock()
+
+	j.mu.Lock()
+	if j.run || j.sl != nil {
+		j.mu.Unlock()
+		return j
+	}
+	j.run = true
+	j.start = time.Now()
+	j.err = ""
+	j.mu.Unlock()
+
+	go func() {
+		sl, err := buildListing(repo, snapID, j)
+		j.mu.Lock()
+		j.run = false
+		if err != nil {
+			j.err = err.Error()
+		} else {
+			j.sl = sl
+		}
+		close(j.done)
+		j.mu.Unlock()
+		if sl != nil {
+			lsCachePut(key, sl)
+		} else {
+			// 失败的任务从注册表移除，下次请求可以重试
+			lsJobsMu.Lock()
+			if lsJobs[key] == j {
+				delete(lsJobs, key)
+			}
+			lsJobsMu.Unlock()
+		}
+	}()
+	return j
+}
+
+// getSnapshotListing 阻塞式获取（差异对比用）：内存 → 磁盘 → 现跑。
+func getSnapshotListing(repo *Repo, snapID string) (*snapListing, error) {
+	key := repo.ID + "|" + snapID
+	if sl := lsCacheGet(key); sl != nil {
+		return sl, nil
+	}
+	if sl := loadLsDisk(repo.ID, snapID); sl != nil {
+		lsCachePut(key, sl)
+		return sl, nil
+	}
+	j := startListing(repo, snapID)
+	<-j.done
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.err != "" {
+		return nil, errors.New(j.err)
+	}
+	return j.sl, nil
+}
+
+// ensureListing 非阻塞式获取（目录浏览用）：拿不到就返回 job 让前端轮询进度。
+func ensureListing(repo *Repo, snapID string) (*snapListing, *lsJob) {
+	key := repo.ID + "|" + snapID
+	if sl := lsCacheGet(key); sl != nil {
+		return sl, nil
+	}
+	if sl := loadLsDisk(repo.ID, snapID); sl != nil {
+		lsCachePut(key, sl)
+		return sl, nil
+	}
+	return nil, startListing(repo, snapID)
 }
 
 // ---- 变化对比（与上一份快照比），结果缓存供文件列表加徽章 ----
@@ -2571,6 +2833,184 @@ func taskSnapshotsHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"snapshots": snaps, "task_paths": cp.Paths, "cached_at": cachedAt, "repo_snap_count": len(all)})
 }
 
+// ---- API：仓库维度（仓库 Tab） ----
+
+// pathOverlap：任务源路径与快照路径是否有包含关系（任一方是另一方的前缀）
+func pathOverlap(taskPaths, snapPaths []string) bool {
+	for _, tp := range taskPaths {
+		if tp == "" {
+			continue
+		}
+		for _, sp := range snapPaths {
+			if tp == sp || strings.HasPrefix(tp, sp+"/") || strings.HasPrefix(sp, tp+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// repoSnapItem：仓库视角的一条快照，附带归属任务（tag 优先，paths 兜底）
+type repoSnapItem struct {
+	resticSnap
+	TaskID   string `json:"task_id"`
+	TaskName string `json:"task_name"`
+}
+
+type repoTaskStat struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Paths      []string `json:"paths"`
+	SnapCount  int      `json:"snap_count"`
+	LastTime   string   `json:"last_time"`
+	LastStatus string   `json:"last_status"`
+}
+
+// repoSnapshotsHandler：GET /api/repos/:id/snapshots
+// 返回该仓库的全量快照 + 每条快照归属的任务；refresh=1 强制实时查云端。
+func repoSnapshotsHandler(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSuffix(afterMarker(r.URL.Path, "/api/repos/"), "/snapshots")
+	refresh := r.URL.Query().Get("refresh") == "1"
+
+	cfgMu.Lock()
+	var rp Repo
+	if repo := findRepo(id); repo != nil {
+		rp = *repo
+	}
+	var tasks []Task
+	if rp.ID != "" {
+		for _, t := range cfg.Tasks {
+			if t.RepoID == rp.ID {
+				tasks = append(tasks, t)
+			}
+		}
+	}
+	cfgMu.Unlock()
+	if rp.ID == "" {
+		writeJSON(w, 404, map[string]string{"error": "仓库不存在"})
+		return
+	}
+
+	// 三级取数：强制刷新 → 本地缓存 → 实时查并回写缓存
+	var all []resticSnap
+	var cachedAt string
+	if refresh {
+		if e := refreshSnapCache(&rp); e != nil {
+			all, cachedAt = e.Snaps, e.GeneratedAt
+		}
+	} else if e := loadSnapCache(rp.ID); e != nil {
+		all, cachedAt = e.Snaps, e.GeneratedAt
+	}
+	if all == nil {
+		e := refreshSnapCache(&rp)
+		if e == nil {
+			writeJSON(w, 500, map[string]string{"error": "读取快照列表失败：云端查询出错，请稍后重试"})
+			return
+		}
+		all, cachedAt = e.Snaps, e.GeneratedAt
+	}
+
+	byID := map[string]*Task{}
+	for i := range tasks {
+		byID[tasks[i].ID] = &tasks[i]
+	}
+	items := make([]repoSnapItem, 0, len(all))
+	for _, s := range all {
+		it := repoSnapItem{resticSnap: s}
+		// 1) 优先看备份时打的 tag（task:<id>）
+		for _, tg := range s.Tags {
+			if strings.HasPrefix(tg, "task:") {
+				if t, ok := byID[strings.TrimPrefix(tg, "task:")]; ok {
+					it.TaskID, it.TaskName = t.ID, t.Name
+				}
+			}
+		}
+		// 2) 历史快照没有 tag，按源路径前缀兜底
+		if it.TaskID == "" {
+			for i := range tasks {
+				if pathOverlap(tasks[i].Paths, s.Paths) {
+					it.TaskID, it.TaskName = tasks[i].ID, tasks[i].Name
+					break
+				}
+			}
+		}
+		items = append(items, it)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Time > items[j].Time })
+
+	var totalBytes int64
+	for _, it := range items {
+		if it.Summary != nil {
+			totalBytes += it.Summary.TotalBytes
+		}
+	}
+
+	stats := make([]repoTaskStat, 0, len(tasks))
+	for i := range tasks {
+		st := repoTaskStat{ID: tasks[i].ID, Name: tasks[i].Name, Paths: tasks[i].Paths,
+			LastStatus: tasks[i].LastStatus}
+		for _, it := range items {
+			if it.TaskID == st.ID {
+				st.SnapCount++
+				if it.Time > st.LastTime {
+					st.LastTime = it.Time
+				}
+			}
+		}
+		stats = append(stats, st)
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"repo_id": rp.ID, "repo_name": rp.Name, "cloud": rp.Cloud, "uri": rp.URI,
+		"snapshots": items, "tasks": stats,
+		"total": len(items), "total_bytes": totalBytes,
+		"latest_time": func() string {
+			if len(items) > 0 {
+				return items[0].Time
+			}
+			return ""
+		}(),
+		"cached_at": cachedAt,
+	})
+}
+
+// repoSummaryHandler：GET /api/repos/summary —— 只读本地缓存，绝不查云端。
+// 仓库列表页用它出「快照数 / 占用 / 最近快照」，没缓存时 cached=false，前端提示手动刷新。
+func repoSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	cfgMu.Lock()
+	repos := make([]Repo, len(cfg.Repos))
+	copy(repos, cfg.Repos)
+	taskCount := map[string]int{}
+	for _, t := range cfg.Tasks {
+		taskCount[t.RepoID]++
+	}
+	cfgMu.Unlock()
+
+	out := make([]map[string]any, 0, len(repos))
+	for _, rp := range repos {
+		row := map[string]any{
+			"id": rp.ID, "name": rp.Name, "cloud": rp.Cloud, "uri": rp.URI,
+			"task_count": taskCount[rp.ID], "cached": false,
+			"count": 0, "total_bytes": int64(0), "latest_time": "", "cached_at": "",
+		}
+		if e := loadSnapCache(rp.ID); e != nil {
+			var bytes int64
+			for _, s := range e.Snaps {
+				if s.Summary != nil {
+					bytes += s.Summary.TotalBytes
+				}
+			}
+			row["cached"] = true
+			row["count"] = len(e.Snaps)
+			row["total_bytes"] = bytes
+			row["latest_time"] = e.LatestTime
+			row["cached_at"] = e.GeneratedAt
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, 200, map[string]any{"repos": out})
+}
+
 // ---- API：文件浏览 / 搜索 ----
 
 func taskFilesHandler(w http.ResponseWriter, r *http.Request) {
@@ -2578,6 +3018,10 @@ func taskFilesHandler(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	snapID := strings.TrimSpace(r.URL.Query().Get("snapshot"))
 	dir := strings.TrimSuffix(strings.TrimSpace(r.URL.Query().Get("dir")), "/")
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	if limit < 0 {
+		limit = 0
+	}
 	cfgMu.Lock()
 	t := findTask(id)
 	var cp *Task
@@ -2600,9 +3044,19 @@ func taskFilesHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "缺少 snapshot 参数"})
 		return
 	}
-	sl, err := getSnapshotListing(&rp, snapID)
-	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
+	sl, job := ensureListing(&rp, snapID)
+	if sl == nil {
+		// 首次读取大快照要跑一分钟左右，先回 200 + loading，前端轮询进度
+		run, parsed, elapsed, errMsg := job.snapshot()
+		resp := map[string]any{
+			"dir": dir, "q": q, "items": []any{}, "loading": run,
+			"parsed": parsed, "elapsed": elapsed, "snapshot": snapID,
+		}
+		if errMsg != "" {
+			resp["error"] = errMsg
+			resp["loading"] = false
+		}
+		writeJSON(w, 200, resp)
 		return
 	}
 	diffMu.Lock()
@@ -2658,14 +3112,16 @@ func taskFilesHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]string{"error": "目录不存在于该快照"})
 			return
 		}
-		parent := filepath.Dir(dir)
+		parent := dir
 		for i := range sl.Nodes {
 			nd := &sl.Nodes[i]
 			if nd.Path != dir && filepath.Dir(nd.Path) == dir {
 				addNode(nd, parent)
 			}
 		}
-		// 目录在前、按名排序
+	}
+	// 目录在前、按名排序（搜索分支保持原顺序）
+	if q == "" {
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].IsDir != items[j].IsDir {
 				return items[i].IsDir
@@ -2676,7 +3132,17 @@ func taskFilesHandler(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []item{}
 	}
-	writeJSON(w, 200, map[string]any{"dir": dir, "q": q, "items": items, "total_files": sl.total, "roots": sl.Roots})
+	// 目录下文件可能上万，按 limit 截断，避免一次吐太多
+	dirTotal := len(items)
+	truncated := false
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+		truncated = true
+	}
+	writeJSON(w, 200, map[string]any{
+		"dir": dir, "q": q, "items": items, "total_files": sl.total,
+		"roots": sl.Roots, "dir_total": dirTotal, "truncated": truncated,
+	})
 }
 
 // ---- API：变化对比 ----
@@ -3038,6 +3504,218 @@ func runRestore(j RestoreJob) {
 
 // ---- API：还原历史 / 停止 ----
 
+// ---------------------------------------------------------------------------
+// 历史聚合：备份（任务日志）+ 还原（config.restores）
+// ---------------------------------------------------------------------------
+
+// histItem：历史列表里的一条（备份或还原）
+type histItem struct {
+	Kind     string    `json:"kind"` // backup | restore
+	ID       string    `json:"id"`
+	TaskID   string    `json:"task_id,omitempty"`
+	TaskName string    `json:"task_name"`
+	Time     string    `json:"time"` // 2006-01-02 15:04
+	Status   string    `json:"status"`
+	OneLine  string    `json:"one_line"`
+	File     string    `json:"file,omitempty"`     // 备份：日志文件名
+	Snapshot string    `json:"snapshot,omitempty"` // 还原：来源快照
+	Dest     string    `json:"dest,omitempty"`
+	Target   string    `json:"target,omitempty"`
+	Conflict string    `json:"conflict,omitempty"`
+	Includes []string  `json:"includes,omitempty"`
+	Message  string    `json:"message,omitempty"`
+	Pct      float64   `json:"pct,omitempty"`
+	Nodes    []logNode `json:"nodes,omitempty"`
+}
+
+type histCacheEntry struct {
+	mod  int64
+	size int64
+	sum  logSummary
+}
+
+var (
+	histMu    sync.Mutex
+	histCache = map[string]histCacheEntry{}
+)
+
+// readLogForHistory：大日志只取头尾，避免为了列表把几十 MB 全读进来。
+// 头里有开始时间/扫描节点，尾里有 summary 和结束信息。
+func readLogForHistory(fp string) ([]byte, error) {
+	f, err := os.Open(fp)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	const headN = 96 << 10
+	const tailN = 320 << 10
+	size := st.Size()
+	if size <= headN+tailN {
+		return io.ReadAll(f)
+	}
+	head := make([]byte, headN)
+	if _, err := io.ReadFull(f, head); err != nil {
+		return nil, err
+	}
+	if _, err := f.Seek(size-tailN, io.SeekStart); err != nil {
+		return nil, err
+	}
+	tail := make([]byte, tailN)
+	if _, err := io.ReadFull(f, tail); err != nil {
+		return nil, err
+	}
+	out := make([]byte, 0, len(head)+len(tail)+2)
+	out = append(out, head...)
+	out = append(out, '\n')
+	out = append(out, tail...)
+	return out, nil
+}
+
+// parseAnyTime：兼容 RFC3339 与 "2006-01-02 15:04:05" 两种写法
+func parseAnyTime(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, l := range []string{"2006-01-02 15:04:05", time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04", "2006-01-02"} {
+		if t, err := time.ParseInLocation(l, s, time.Local); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// historyHandler：/api/history?limit=60
+func historyHandler(w http.ResponseWriter, r *http.Request) {
+	limit := 80
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 300 {
+			limit = n
+		}
+	}
+	perTask := 8
+	cfgMu.Lock()
+	tasks := make([]Task, len(cfg.Tasks))
+	copy(tasks, cfg.Tasks)
+	restores := make([]RestoreJob, len(cfg.Restores))
+	copy(restores, cfg.Restores)
+	cfgMu.Unlock()
+
+	items := make([]histItem, 0, limit)
+
+	// ---- 备份：每个任务取最近 N 份日志 ----
+	for _, t := range tasks {
+		dir := filepath.Join(logDir(), t.ID)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
+				continue
+			}
+			names = append(names, e.Name())
+		}
+		sort.Sort(sort.Reverse(sort.StringSlice(names)))
+		if len(names) > perTask {
+			names = names[:perTask]
+		}
+		for _, nm := range names {
+			fp := filepath.Join(dir, nm)
+			fi, err := os.Stat(fp)
+			if err != nil {
+				continue
+			}
+			histMu.Lock()
+			ce, ok := histCache[fp]
+			histMu.Unlock()
+			var sum logSummary
+			if ok && ce.mod == fi.ModTime().UnixNano() && ce.size == fi.Size() {
+				sum = ce.sum
+			} else {
+				data, err := readLogForHistory(fp)
+				if err != nil {
+					continue
+				}
+				var ft time.Time
+				if tt, e2 := time.ParseInLocation("2006-01-02_150405", strings.TrimSuffix(nm, ".log"), time.Local); e2 == nil {
+					ft = tt
+				}
+				stateMu.Lock()
+				isRun := running == t.ID && runLog == fp
+				stateMu.Unlock()
+				sum = parseLogSummary(data, isRun, ft)
+				histMu.Lock()
+				if len(histCache) > 400 {
+					histCache = map[string]histCacheEntry{}
+				}
+				histCache[fp] = histCacheEntry{mod: fi.ModTime().UnixNano(), size: fi.Size(), sum: sum}
+				histMu.Unlock()
+			}
+			ts := ""
+			if tt, e2 := time.ParseInLocation("2006-01-02_150405", strings.TrimSuffix(nm, ".log"), time.Local); e2 == nil {
+				ts = tt.Format("2006-01-02 15:04")
+			}
+			items = append(items, histItem{
+				Kind: "backup", ID: t.ID + "|" + nm, TaskID: t.ID, TaskName: t.Name,
+				Time: ts, Status: sum.Status, OneLine: sum.OneLine, File: nm, Nodes: sum.Nodes,
+			})
+		}
+	}
+
+	// ---- 还原 ----
+	for _, j := range restores {
+		parts := []string{}
+		if j.Status == "running" {
+			parts = append(parts, fmt.Sprintf("已还原 %d%%", int(j.Pct)))
+		} else {
+			if j.Files > 0 {
+				parts = append(parts, formatInt(j.Files)+" 个文件")
+			}
+			if j.Bytes > 0 {
+				parts = append(parts, humanBytes(j.Bytes))
+			}
+			if a, e1 := parseAnyTime(j.StartedAt); e1 {
+				if b, e2 := parseAnyTime(j.FinishedAt); e2 {
+					if d := b.Sub(a).Seconds(); d > 0 {
+						parts = append(parts, "用时 "+humanDur(d))
+					}
+				}
+			}
+			if len(parts) == 0 && j.Message != "" {
+				parts = append(parts, j.Message)
+			}
+		}
+		oneLine := strings.Join(parts, " · ")
+		if j.Status == "failed" && j.Message != "" {
+			oneLine = j.Message
+		}
+		if j.Status == "stopped" && oneLine == "" {
+			oneLine = "已停止"
+		}
+		ts := ""
+		if a, e := parseAnyTime(j.StartedAt); e {
+			ts = a.Format("2006-01-02 15:04")
+		}
+		items = append(items, histItem{
+			Kind: "restore", ID: j.ID, TaskID: j.TaskID, TaskName: j.TaskName,
+			Time: ts, Status: j.Status, OneLine: oneLine,
+			Snapshot: j.Snapshot, Dest: j.Dest, Target: j.Target, Conflict: j.Conflict,
+			Includes: j.Includes, Message: j.Message, Pct: j.Pct,
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool { return items[i].Time > items[j].Time })
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	writeJSON(w, 200, map[string]any{"items": items})
+}
+
 func restoresHandler(w http.ResponseWriter, r *http.Request) {
 	cfgMu.Lock()
 	rs := make([]RestoreJob, len(cfg.Restores))
@@ -3083,9 +3761,15 @@ func registerRoutes(mux *http.ServeMux, base string) {
 	mux.HandleFunc(base+"/api/test-dav", testDavHandler)
 	mux.HandleFunc(base+"/api/repos", reposHandler)
 	mux.HandleFunc(base+"/api/repos/verify", repoVerifyHandler) // 防 base=="" 时歧义
+	mux.HandleFunc(base+"/api/repos/summary", repoSummaryHandler)
 	mux.HandleFunc(base+"/api/repos/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/verify") {
 			repoVerifyHandler(w, r)
+			return
+		}
+		// 仓库维度快照列表（仓库 Tab）
+		if strings.HasSuffix(r.URL.Path, "/snapshots") && r.Method == http.MethodGet {
+			repoSnapshotsHandler(w, r)
 			return
 		}
 		// 查看仓库密码（前端下拉 👁 / 复制用）
@@ -3158,6 +3842,7 @@ func registerRoutes(mux *http.ServeMux, base string) {
 		}
 		tasksHandler(w, r)
 	})
+	mux.HandleFunc(base+"/api/history", historyHandler)
 	mux.HandleFunc(base+"/api/restores", restoresHandler)
 	mux.HandleFunc(base+"/api/restores/", restoreSubHandler)
 	mux.HandleFunc(base+"/api/hello", func(w http.ResponseWriter, r *http.Request) {
