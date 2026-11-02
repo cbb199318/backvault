@@ -1964,6 +1964,16 @@ onUnmounted(() => {
   <div class="page" @click="menuOpen = ''">
     <!-- ==================== 桌面左侧导航 ==================== -->
     <aside class="sidebar">
+      <div class="sb-brand">
+        <span class="sb-logo">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M12 2.7c-2.9 0-5.6 4.7-5.6 9.2 0 4 2.5 6.9 5.6 6.9s5.6-2.9 5.6-6.9c0-4.5-2.7-9.2-5.6-9.2Z" stroke="#3370ff" stroke-width="1.7" stroke-linejoin="round"/>
+            <rect x="8.9" y="11" width="6.2" height="4.6" rx="1.2" fill="#3370ff"/>
+            <path d="M10.3 11V9.7a1.7 1.7 0 0 1 3.4 0V11" stroke="#3370ff" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span>蛋壳备份</span>
+      </div>
       <nav class="sb-nav">
         <button class="sb-item" :class="{ on: nav === 'tasks' }" @click="nav = 'tasks'">
           <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M4 5.5A2.5 2.5 0 0 1 6.5 3h3.67a2 2 0 0 1 1.41.59l1.42 1.41H19.5A2.5 2.5 0 0 1 22 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 4 17.5v-12Z"/></svg>
