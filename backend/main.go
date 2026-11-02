@@ -2278,6 +2278,29 @@ type resticSnapSummary struct {
 	TotalBytes int64 `json:"total_bytes"`
 }
 
+// UnmarshalJSON：restic 输出的字段是 total_files_processed / total_bytes_processed，
+// 对外仍用 total_files / total_bytes（前端沿用），旧缓存里的同名字段也兼容。
+func (s *resticSnapSummary) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		FilesProc  int64 `json:"total_files_processed"`
+		BytesProc  int64 `json:"total_bytes_processed"`
+		FilesPlain int64 `json:"total_files"`
+		BytesPlain int64 `json:"total_bytes"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	s.TotalFiles = raw.FilesProc
+	if s.TotalFiles == 0 {
+		s.TotalFiles = raw.FilesPlain
+	}
+	s.TotalBytes = raw.BytesProc
+	if s.TotalBytes == 0 {
+		s.TotalBytes = raw.BytesPlain
+	}
+	return nil
+}
+
 type resticSnap struct {
 	ID       string             `json:"id"`
 	ShortID  string             `json:"short_id"`
