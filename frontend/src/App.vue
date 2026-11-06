@@ -161,14 +161,81 @@ const progress = reactive({
 });
 let pollTimer = null;
 
+// ---------------------------------------------------------------------------
+// 预计完成时间
+// ---------------------------------------------------------------------------
+// restic 的 percent_done 不是匀速的：开头扫描目录时会长时间停在 0，之后才快速
+// 推进。所以只看整段平均会把「刚开始」估得极长、把「快结束」估得过短。
+// 这里用最近 90 秒的采样算瞬时速率，样本不足时再退回整段平均。
+const etaText = ref("");
+let etaSamples = [];
+
+function resetEta() {
+  etaSamples = [];
+  etaText.value = "";
+}
+
+function updateEta(p) {
+  const pct = Number(p.percent) || 0;
+  if (!p || !p.task_id || pct <= 0.2 || pct >= 99.9) {
+    resetEta();
+    return;
+  }
+  const now = Date.now();
+  etaSamples.push({ t: now, pct });
+  while (etaSamples.length > 2 && now - etaSamples[0].t > 90000) etaSamples.shift();
+
+  const a = etaSamples[0];
+  const b = etaSamples[etaSamples.length - 1];
+  let rate = 0; // 每秒推进的百分点
+  if (b.pct > a.pct && b.t > a.t) rate = (b.pct - a.pct) / ((b.t - a.t) / 1000);
+
+  if (!(rate > 0)) {
+    const startedAt = Date.parse(p.started_at || "");
+    if (!isNaN(startedAt) && now > startedAt && pct > 0) {
+      rate = pct / ((now - startedAt) / 1000);
+    }
+  }
+  if (!(rate > 0)) return; // 算不出来就保持上一次的估计，别让数字忽隐忽现
+
+  const remainSec = (100 - pct) / rate;
+  if (!isFinite(remainSec) || remainSec <= 0 || remainSec > 86400) return;
+
+  const done = new Date(now + remainSec * 1000);
+  const hm = String(done.getHours()).padStart(2, "0") + ":" + String(done.getMinutes()).padStart(2, "0");
+  const sameDay = done.getDate() === new Date().getDate() && done.getMonth() === new Date().getMonth();
+  const clock = sameDay
+    ? hm
+    : `${String(done.getMonth() + 1).padStart(2, "0")}-${String(done.getDate()).padStart(2, "0")} ${hm}`;
+  etaText.value = `${clock} · 约 ${fmtDuration(Math.max(1, Math.round(remainSec)))}`;
+}
+
+// 统一的进度落地入口：赋值 + 重算 ETA，保证首屏与轮询走同一条路径
+function applyProgress(p) {
+  if (!p) return;
+  Object.assign(progress, p);
+  updateEta(p);
+}
+
 async function loadAll() {
   try {
-    const [st, cf] = await Promise.all([api("/api/status"), api("/api/config")]);
+    // 进度与状态并行拉取：备份页首屏就能拿到正在运行的任务，
+    // 不再等第一次轮询（原来要空等 2 秒进度条才出现）
+    const [st, cf, pg] = await Promise.all([
+      api("/api/status"),
+      api("/api/config"),
+      api("/api/progress").catch(() => null),
+    ]);
     status.value = st;
+    if (Array.isArray(st.roots) && st.roots.length) USER_ROOTS.value = st.roots.slice();
     if (st.user_root) USER_ROOT.value = st.user_root;
+    if (st.home) HOME_ROOT.value = st.home;
     cfg.repos = cf.repos || [];
     cfg.tasks = cf.tasks || [];
-    if (st.running_task) startPolling();
+    if (pg && pg.task_id) applyProgress(pg);
+    // progress 接口偶发拿不到时，用 status 的 running_task 兜底，先让进度区渲染出来
+    if (!progress.task_id && st.running_task) progress.task_id = st.running_task;
+    if (progress.task_id) startPolling();
   } catch (e) {
     showToast("无法连接后端：" + e.message, "bad");
   }
@@ -176,17 +243,26 @@ async function loadAll() {
 
 function startPolling() {
   if (pollTimer) return;
-  pollTimer = setInterval(async () => {
+  const tick = async () => {
     try {
       const p = await api("/api/progress");
-      Object.assign(progress, p);
+      applyProgress(p);
       if (!p.task_id) {
         clearInterval(pollTimer);
         pollTimer = null;
+        resetEta();
         loadAll();
       }
     } catch (e) { /* 忽略 */ }
-  }, 2000);
+  };
+  tick(); // 立即拉一次，不等第一个 2 秒间隔
+  pollTimer = setInterval(tick, 2000);
+}
+
+// 页面从后台切回时立刻补一次进度，避免停留在切走前的旧数值
+function onPageVisible() {
+  if (document.visibilityState !== "visible" || !progress.task_id) return;
+  api("/api/progress").then(applyProgress).catch(() => {});
 }
 
 function repoName(id) {
@@ -204,6 +280,8 @@ async function runTask(t) {
   try {
     await api(`/api/tasks/${t.id}/run`, { method: "POST" });
     progress.task_id = t.id;
+    progress.percent = 0;
+    resetEta();
     showToast(`「${t.name}」已开始备份`);
     startPolling();
     const x = cfg.tasks.find((y) => y.id === t.id);
@@ -352,35 +430,113 @@ function confirmSrc() {
   srcEdit.show = false;
 }
 function dispPath(p) {
-  return "存储空间1/我的文件/" + shortPath(p);
+  const s = shortPath(p);
+  return s.startsWith("/") ? s : "存储空间1/我的文件/" + s;
 }
 
 // 目录选择器（仿飞牛：大图标列表，点行=选中，右侧 › 进入子级）
-// 用户根目录从后端 status.user_root 读取（fpk=/vol1/1000，Docker=USER_ROOT 环境变量）
+// 可见根目录由后端按登录账号给出（status.roots），可能不止一个（管理员授权了多个目录）
 const USER_ROOT = ref("/vol1/1000");
-const browser = reactive({ show: false, path: "/", dirs: [], loading: false, showAll: false });
+const USER_ROOTS = ref(["/vol1/1000"]);
+const HOME_ROOT = ref("/vol1/1000"); // 本人家目录，只用于把绝对路径显示成相对路径
+const browser = reactive({ show: false, path: "", dirs: [], loading: false, showAll: false });
+
+function baseName(p) {
+  const segs = String(p || "").split("/").filter(Boolean);
+  return segs.length ? segs[segs.length - 1] : p;
+}
+function isScopeRoot(p) { return USER_ROOTS.value.includes(p); }
+// 路径所属的根（多个授权目录时用来切面包屑）
+function activeRoot(p) { return USER_ROOTS.value.find((r) => p === r || p.startsWith(r + "/")) || ""; }
+// 根目录的展示名：就是家目录时叫「我的文件」，否则用目录名（如「资源」）
+function scopeRootName(p) { return p === HOME_ROOT.value ? "我的文件" : baseName(p); }
+
 async function openBrowser() {
   browser.show = true;
   browser.showAll = false;
-  await browseTo(USER_ROOT.value);
+  // 一律先列「已授权的根目录」，不管授权了 1 个还是多个。
+  // 只有一个根时也要把根本身显示出来（可整行选中），否则一进来就是它的子目录，
+  // 看起来像「只看到某个子目录」，也选不到根本身。
+  browser.path = "";
+  browser.dirs = [];
 }
 async function browseTo(p) {
+  // 空路径 = 根目录列表（纯前端状态，不请求后端）
+  if (!p) { browser.path = ""; browser.dirs = []; return; }
   browser.loading = true;
   try {
     const r = await api("/api/browse", { method: "POST", body: JSON.stringify({ path: p, show_all: browser.showAll }) });
     browser.dirs = r.dirs || [];
     browser.path = r.path;
+    if (r.roots && r.roots.length) USER_ROOTS.value = r.roots.slice();
+    if (r.home) HOME_ROOT.value = r.home;
   } catch (e) { showToast(e.message, "bad"); }
   browser.loading = false;
 }
-function pathFull(d) {
-  const root = USER_ROOT.value;
-  return (browser.path === root ? root : browser.path) + "/" + d.name;
-}
-function pickSrc(d) {
-  const np = pathFull(d);
+function pathFull(d) { return browser.path.replace(/\/$/, "") + "/" + d.name; }
+function pickSrc(d) { pickPath(pathFull(d)); }
+// 选中某个绝对路径（根目录本身、当前所在目录都走这里）
+function pickPath(p) {
+  const np = String(p || "").replace(/\/$/, "");
+  if (!np) return;
   if (!srcEdit.paths.includes(np)) srcEdit.paths.push(np);
   browser.show = false;
+}
+
+// 授权目录现在由后端实时读取（后台每几秒同步一次平台授权表），
+// 管理员在应用中心改完勾选，这里不用重启应用，点一下立刻重新读取。
+const reloading = ref(false);
+async function reloadScope() {
+  if (reloading.value) return;
+  reloading.value = true;
+  try {
+    const r = await api("/api/reload-scope", { method: "POST" });
+    if (r && r.live) {
+      applyScopeRoots(r.roots, r.home);
+      await refreshScopeView();
+      showToast(r.changed ? "授权目录已更新" : "授权目录已是最新");
+    } else {
+      showToast((r && r.msg) || "无法直接读取授权目录，请到应用中心重启应用", "bad");
+    }
+  } catch (e) {
+    showToast(e.message, "bad");
+  } finally {
+    reloading.value = false;
+  }
+}
+
+// applyScopeRoots 把后端算出的可访问根目录同步到界面
+function applyScopeRoots(roots, home) {
+  if (Array.isArray(roots) && roots.length) {
+    USER_ROOTS.value = roots.slice();
+    // 当前浏览位置已经不在授权范围里：退回根列表，避免停在非法目录
+    const still = roots.some((r) => !browser.path || browser.path === r || browser.path.startsWith(r + "/"));
+    if (!still) browser.path = "";
+  }
+  if (home) HOME_ROOT.value = home;
+}
+async function refreshScopeView() {
+  // 停在根列表就继续停在根列表；授权目录数量变化时不要把用户「推」进某个目录
+  if (browser.path) {
+    await browseTo(browser.path).catch(() => {});
+  } else {
+    browser.dirs = [];
+  }
+}
+// 后台静默跟随：授权目录被改动后，界面在十几秒内自己更新
+let scopeTimer = null;
+async function syncScope() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    const st = await api("/api/scope");
+    const roots = Array.isArray(st.roots) ? st.roots.slice() : [];
+    if (!roots.length) return;
+    const same = JSON.stringify(roots) === JSON.stringify(USER_ROOTS.value) && (st.home || "") === HOME_ROOT.value;
+    if (same) return;
+    applyScopeRoots(roots, st.home);
+    await refreshScopeView();
+    showToast("授权目录已更新");
+  } catch (e) { /* 忽略：下次轮询再试 */ }
 }
 function fmtMtime(ts) {
   if (!ts) return "";
@@ -388,13 +544,17 @@ function fmtMtime(ts) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+function atScopeRoot() { return isScopeRoot(browser.path); }
 function parentPath() {
-  const root = USER_ROOT.value;
-  const p = browser.path.split("/").slice(0, -1).join("/");
-  return p.startsWith(root) ? p : root;
+  if (!browser.path) return "";
+  // 已在某个根上：返回根目录列表（无论授权了几个根）
+  if (atScopeRoot()) return "";
+  const up = browser.path.split("/").slice(0, -1).join("/");
+  return up || "/";
 }
 function crumbSegs() {
-  return browser.path.replace(USER_ROOT.value, "").split("/").filter(Boolean);
+  const r = activeRoot(browser.path);
+  return browser.path.replace(r, "").split("/").filter(Boolean);
 }
 // 云端目录面包屑分段（方案C）
 const cloudSegs = computed(() => cloudBrowser.path.split("/").filter(Boolean));
@@ -426,8 +586,11 @@ function repoSubdir(r) {
   return parts ? parts.subdir : "";
 }
 function shortPath(p) {
-  const root = USER_ROOT.value;
-  return p.startsWith(root + "/") ? p.slice(root.length + 1) : p;
+  // 优先相对「本人家目录」显示（能看到 资源/相册 这样的一级目录名），
+  // 不在家目录里再退回相对授权根，都不匹配就显示绝对路径
+  const bases = [HOME_ROOT.value, USER_ROOT.value].filter(Boolean);
+  for (const b of bases) if (p.startsWith(b + "/")) return p.slice(b.length + 1);
+  return p;
 }
 
 async function wizSave() {
@@ -1556,25 +1719,36 @@ function removeInclude(x) {
 // ---- 本地目标目录浏览 ----
 async function openTargetBrowser() {
   tb.show = true;
-  browseTarget(tb.path || "");
+  // 一律先列授权根目录；进入根之后，「使用当前目录」就能选中根本身
+  tb.path = "";
+  tb.dirs = [];
 }
 async function browseTarget(p) {
+  // 空路径 = 根目录列表（纯前端状态）
+  if (!p) { tb.path = ""; tb.dirs = []; return; }
   tb.loading = true;
   try {
     const r = await api("/api/browse", { method: "POST", body: JSON.stringify({ path: p }) });
     tb.dirs = r.dirs || [];
     tb.path = r.path;
     tb.user_root = r.user_root || "";
+    if (r.roots && r.roots.length) USER_ROOTS.value = r.roots.slice();
+    if (r.home) HOME_ROOT.value = r.home;
   } catch (e) { showToast(e.message, "bad"); }
   tb.loading = false;
 }
 function tbUp() {
-  const p = tb.path.split("/").filter(Boolean).slice(0, -1).join("/");
-  browseTarget(p ? "/" + p : "/");
+  if (!tb.path) return;
+  if (isScopeRoot(tb.path)) { tb.path = ""; tb.dirs = []; return; }
+  browseTarget(tb.path.split("/").slice(0, -1).join("/"));
 }
-function tbSegs() { return tb.path.split("/").filter(Boolean); }
-function tbCrumbTo(i) { browseTarget("/" + tbSegs().slice(0, i + 1).join("/")); }
-function pickTarget() { rst.target = tb.path; tb.show = false; }
+function tbSegs() {
+  const r = activeRoot(tb.path);
+  return tb.path.replace(r, "").split("/").filter(Boolean);
+}
+function tbCrumbRoot() { browseTarget(activeRoot(tb.path) || USER_ROOTS.value[0]); }
+function tbCrumbTo(i) { browseTarget(activeRoot(tb.path) + "/" + tbSegs().slice(0, i + 1).join("/")); }
+function pickTarget() { if (!tb.path) return; rst.target = tb.path; tb.show = false; }
 
 // ---- 执行还原 ----
 const rstReady = computed(() => rst.cur && rst.includes.length && (rst.dest === "original" || (rst.target || "").startsWith("/")));
@@ -1942,6 +2116,9 @@ async function ptrOnEnd() {
 
 onMounted(() => {
   loadAll();
+  // 后端每 8 秒同步一次平台授权表，这里每 15 秒对一下，界面自动跟着变
+  scopeTimer = setInterval(syncScope, 15000);
+  document.addEventListener("visibilitychange", onPageVisible);
   window.addEventListener("touchstart", ptrOnStart, { passive: true });
   window.addEventListener("touchmove", ptrOnMove, { passive: false });
   window.addEventListener("touchend", ptrOnEnd, { passive: true });
@@ -1951,10 +2128,12 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
   if (logTimer) clearInterval(logTimer);
   if (rstTimer) clearInterval(rstTimer);
+  if (scopeTimer) clearInterval(scopeTimer);
   window.removeEventListener("touchstart", ptrOnStart);
   window.removeEventListener("touchmove", ptrOnMove);
   window.removeEventListener("touchend", ptrOnEnd);
   window.removeEventListener("touchcancel", ptrOnEnd);
+  document.removeEventListener("visibilitychange", onPageVisible);
   // 保险：组件销毁时解除滚动锁，避免 body 卡在 fixed
   unlockBody();
 });
@@ -1989,6 +2168,7 @@ onUnmounted(() => {
         </button>
       </nav>
       <div class="sb-foot" v-if="status">
+        <div>蛋壳备份 v{{ status.version || "-" }}</div>
         <div>restic {{ status.restic_version || "未找到" }}</div>
         <div>rclone {{ status.rclone_version || "未找到" }}</div>
       </div>
@@ -2088,6 +2268,7 @@ onUnmounted(() => {
                 <div class="pg-meta">
                   <span><span class="pg-k">开始时间</span>{{ fmtClock(progress.started_at) }}</span>
                   <span><span class="pg-k">数据量</span>{{ fmtBytes(progress.bytes_done) }} / {{ fmtBytes(progress.total_bytes) }}</span>
+                  <span><span class="pg-k">预计完成</span>{{ etaText || "计算中…" }}</span>
                   <span v-if="progress.error_count" class="pg-err">⚠ {{ progress.error_count }} 个错误</span>
                 </div>
               </div>
@@ -2133,6 +2314,7 @@ onUnmounted(() => {
                 <div class="pg-meta">
                   <span><span class="pg-k">开始时间</span>{{ fmtClock(progress.started_at) }}</span>
                   <span><span class="pg-k">数据量</span>{{ fmtBytes(progress.bytes_done) }} / {{ fmtBytes(progress.total_bytes) }}</span>
+                  <span><span class="pg-k">预计完成</span>{{ etaText || "计算中…" }}</span>
                   <span v-if="progress.error_count" class="pg-err">⚠ {{ progress.error_count }} 个错误</span>
                 </div>
               </div>
@@ -3010,30 +3192,53 @@ onUnmounted(() => {
     <!-- 目录选择器（仿飞牛：大图标，点行选中，› 进子级） -->
     <div class="mask top2" v-if="browser.show">
       <div class="modal tall">
-        <div class="modal-head sheet-head">
-          <h3>{{ browser.path === USER_ROOT ? "我的文件" : crumbSegs().slice(-1)[0] }}</h3>
-          <button class="x" @click="browser.show = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="dir-list">
-            <div class="frow big" v-if="browser.path !== USER_ROOT" @click="browseTo(parentPath())">
-              <span class="fold-ic back">↩</span>
-              <span class="nm"><b>返回上一级</b></span>
-            </div>
-            <div class="frow big" v-for="d in browser.dirs" :key="d.name" :class="{ dis: srcEdit.paths.includes(pathFull(d)) }" @click="pickSrc(d)">
-              <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
-              <span class="nm">
-                <b>{{ d.name }}</b>
-                <span class="sub">存储空间1 {{ fmtMtime(d.mtime) }}</span>
-              </span>
-              <i class="chev" v-if="d.count > 0" @click.stop="browseTo(pathFull(d))">›</i>
-            </div>
-            <div class="empty sm" v-if="!browser.dirs.length && !browser.loading"><p>没有子目录</p></div>
+          <div class="modal-head sheet-head">
+            <h3>{{ !browser.path ? "选择目录（已授权 " + USER_ROOTS.length + " 个）" : (atScopeRoot() ? scopeRootName(browser.path) : crumbSegs().slice(-1)[0]) }}</h3>
+            <button class="x" @click="browser.show = false">✕</button>
           </div>
-          <div class="hide-sys" v-if="browser.path === USER_ROOT">
+          <div class="modal-body">
+            <div class="dir-list">
+              <!-- 已授权的根目录列表：不管授权了 1 个还是多个，都先在这里列出来 -->
+              <template v-if="!browser.path">
+                <div class="frow big" v-for="r in USER_ROOTS" :key="r" :class="{ dis: srcEdit.paths.includes(r) }" @click="pickPath(r)">
+                  <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                  <span class="nm"><b>{{ scopeRootName(r) }}</b><span class="sub">{{ r }} · 整行点选，或点 › 进入子目录</span></span>
+                  <i class="chev" @click.stop="browseTo(r)">›</i>
+                </div>
+                <div class="empty sm" v-if="!USER_ROOTS.length"><p>当前账号还没有可访问的授权目录</p></div>
+              </template>
+              <template v-else>
+                <div class="frow big" @click="browseTo(parentPath())">
+                  <span class="fold-ic back">↩</span>
+                  <span class="nm"><b>{{ atScopeRoot() ? "返回授权目录列表" : "返回上一级" }}</b></span>
+                </div>
+              <div class="frow big" v-for="d in browser.dirs" :key="d.name" :class="{ dis: srcEdit.paths.includes(pathFull(d)) }" @click="pickSrc(d)">
+                <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                <span class="nm">
+                  <b>{{ d.name }}</b>
+                  <span class="sub">存储空间1 {{ fmtMtime(d.mtime) }}</span>
+                </span>
+                <i class="chev" v-if="d.count > 0" @click.stop="browseTo(pathFull(d))">›</i>
+              </div>
+            </template>
+            <div class="empty sm" v-if="!browser.dirs.length && !browser.loading && browser.path"><p>没有子目录</p></div>
+          </div>
+          <div class="hide-sys" v-if="browser.path && atScopeRoot()">
             <span class="tg" :class="{ off: browser.showAll }" @click="browser.showAll = !browser.showAll; browseTo(browser.path)"></span>
             显示系统目录（docker、@app* 等）
           </div>
+        </div>
+        <!-- 当前所在目录本身也能选（例如授权了「下载」，就要能直接选它，而不只是它的子目录） -->
+        <div class="modal-foot" v-if="browser.path">
+          <button class="btn primary block" :disabled="srcEdit.paths.includes(browser.path)" @click="pickPath(browser.path)">
+            {{ srcEdit.paths.includes(browser.path) ? "已添加该目录" : "使用当前目录：" + browser.path }}
+          </button>
+        </div>
+        <!-- 授权目录会实时同步，这里只是手动催一下，不用重启应用 -->
+        <div class="modal-foot" v-else>
+          <button class="btn ghost block" :disabled="reloading" @click="reloadScope">
+            {{ reloading ? "正在读取…" : "刚在应用中心改过授权目录？点此立即生效" }}
+          </button>
         </div>
       </div>
     </div>
@@ -3202,26 +3407,39 @@ onUnmounted(() => {
         </div>
         <div class="modal-body">
           <div class="crumbC">
-            <span class="cloudic" @click.prevent="browseTarget('/')">💾 NAS</span>
-            <template v-for="(seg, i) in tbSegs()" :key="i">
+            <span class="cloudic" @click.prevent="browseTarget('')">💾 NAS</span>
+            <template v-if="tb.path">
               <span class="sl">/</span>
-              <a href="#" :class="{ cur: i === tbSegs().length - 1 }" @click.prevent="tbCrumbTo(i)">{{ seg }}</a>
+              <a href="#" :class="{ cur: !tbSegs().length }" @click.prevent="tbCrumbRoot()">{{ scopeRootName(activeRoot(tb.path)) }}</a>
+              <template v-for="(seg, i) in tbSegs()" :key="i">
+                <span class="sl">/</span>
+                <a href="#" :class="{ cur: i === tbSegs().length - 1 }" @click.prevent="tbCrumbTo(i)">{{ seg }}</a>
+              </template>
             </template>
           </div>
           <div class="dir-list">
-            <div class="frow big" v-if="tb.path && tb.path !== '/'" @click="tbUp">
-              <span class="fold-ic back">↩</span>
-              <span class="nm"><b>返回上一级</b></span>
-            </div>
-            <div class="frow big" v-for="d in tb.dirs" :key="d.name" @click="browseTarget(tb.path === '/' ? '/' + d.name : tb.path + '/' + d.name)">
-              <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
-              <span class="nm"><b>{{ d.name }}</b><span class="sub" v-if="d.count >= 0">{{ d.count }} 项</span></span>
-            </div>
-            <div class="empty sm" v-if="!tb.dirs.length && !tb.loading"><p>没有子目录</p></div>
+            <template v-if="!tb.path">
+              <div class="frow big" v-for="r in USER_ROOTS" :key="r" @click="browseTarget(r)">
+                <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                <span class="nm"><b>{{ scopeRootName(r) }}</b><span class="sub">{{ r }}</span></span>
+                <i class="chev" @click.stop="browseTarget(r)">›</i>
+              </div>
+            </template>
+            <template v-else>
+              <div class="frow big" @click="tbUp">
+                <span class="fold-ic back">↩</span>
+                <span class="nm"><b>{{ isScopeRoot(tb.path) ? "返回授权目录列表" : "返回上一级" }}</b></span>
+              </div>
+              <div class="frow big" v-for="d in tb.dirs" :key="d.name" @click="browseTarget(tb.path.replace(/\/$/, '') + '/' + d.name)">
+                <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                <span class="nm"><b>{{ d.name }}</b><span class="sub" v-if="d.count >= 0">{{ d.count }} 项</span></span>
+              </div>
+            </template>
+            <div class="empty sm" v-if="tb.path && !tb.dirs.length && !tb.loading"><p>没有子目录</p></div>
           </div>
         </div>
         <div class="modal-foot">
-          <button class="btn primary block" :disabled="!tb.path || tb.path === '/'" @click="pickTarget">使用当前目录：{{ tb.path }}</button>
+          <button class="btn primary block" :disabled="!tb.path" @click="pickTarget">使用当前目录：{{ tb.path || "请先选择" }}</button>
         </div>
       </div>
     </div>
@@ -3725,13 +3943,17 @@ html.scroll-locked body {
 }
 .modal.wide { width: 820px; height: 80vh; }
 .modal.tall { height: 88vh; }
-.modal.tall .modal-body { flex: 1; min-height: 0; }
-.modal.tall .dir-list { flex: 1; max-height: none; }
+/* 滚动容器必须是 dir-list 自己：modal-body 改成 flex 列、不滚动，
+   否则 dir-list 的 max-height:none 会把它撑到超出容器，
+   在移动端 WebView 里表现为「看得到下面的文件夹但手指滑不动」 */
+.modal.tall .modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.modal.tall .dir-list { flex: 1; min-height: 0; max-height: none; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+.modal.tall .hide-sys { flex: 0 0 auto; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 10px; }
 .modal-head h3 { margin: 0; font-size: 16px; }
 .x { border: none; background: none; font-size: 16px; cursor: pointer; color: #6b7280; padding: 4px 8px; }
 .auto-lb { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px; }
-.modal-body { padding: 8px 20px; overflow-y: auto; overscroll-behavior: contain; }
+.modal-body { padding: 8px 20px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .modal-foot { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-top: 1px solid #f3f4f6; }
 .spacer { flex: 1; }
 /* 保存中的进度提示条（仓库保存/init 可能耗时十几秒） */
@@ -4079,7 +4301,7 @@ html.scroll-locked body {
 .raw-toggle:hover { color: #3370ff; }
 
 /* ==================== 路径浏览器 ==================== */
-.dir-list { max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #f3f4f6; border-radius: 8px; }
+.dir-list { max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; border: 1px solid #f3f4f6; border-radius: 8px; }
 .dir-item { padding: 10px 12px; border-bottom: 1px solid #f9fafb; cursor: pointer; font-size: 14px; }
 .dir-item:hover { background: #f5f7fa; }
 .cur-path { color: #6b7280; }

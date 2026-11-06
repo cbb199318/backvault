@@ -20,15 +20,68 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
-const appVersion = "0.2.0"
+// appVersion 由构建时注入：-ldflags "-X main.appVersion=x.y.z"（见 build.sh）。
+// 未注入时（Docker 复用产物、手工 go build）回落到同目录 VERSION 或 fpk 的 manifest，
+// 保证 /api/status 暴露的版本号始终与包一致，不会再出现代码是新的、版本号还停在老版本。
+var appVersion = "dev"
+
+func init() { appVersion = resolveVersion() }
+
+// readVersionFile 读取 "version = 0.2.8" 形式的 manifest，或纯文本的 VERSION 文件
+func readVersionFile(p string) string {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
+			if strings.TrimSpace(k) != "version" {
+				continue
+			}
+			return strings.Trim(strings.TrimSpace(v), `"'`)
+		}
+		return strings.Trim(strings.TrimSpace(line), `"'`) // 纯文本文件：第一行即版本
+	}
+	return ""
+}
+
+func resolveVersion() string {
+	if appVersion != "" && appVersion != "dev" {
+		return appVersion
+	}
+	if v := strings.TrimSpace(os.Getenv("APP_VERSION")); v != "" {
+		return v
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		for _, p := range []string{
+			filepath.Join(dir, "VERSION"),
+			filepath.Join(dir, "manifest"),
+			filepath.Join(dir, "..", "manifest"),
+			filepath.Join(dir, "..", "..", "manifest"),
+		} {
+			if v := readVersionFile(p); v != "" {
+				return v
+			}
+		}
+	}
+	return "unknown"
+}
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -39,8 +92,440 @@ func env(key, def string) string {
 
 func varDir() string { return env("TRIM_PKGVAR", "./var") }
 
-// userRoot：用户视角根目录（默认飞牛个人主目录，Docker 部署可用 USER_ROOT 覆盖）
-func userRoot() string { return env("USER_ROOT", "/vol1/1000") }
+// ------------------------------------------------------------------
+// 身份与授权目录（飞牛统一网关）
+//
+// 网关在确认登录后会把用户身份放进 Header 转发给应用：
+//   X-Trim-Userid / X-Trim-Username / X-Trim-Isadmin
+// 管理员在「应用中心 → 应用设置 → 授权目录」勾选的路径，则通过环境变量
+// TRIM_DATA_ACCESSIBLE_PATHS（冒号分隔）传进来。
+//
+// 所以「能访问哪些目录」的规则是：
+//  1) USER_ROOT 环境变量：Docker / 手工部署显式指定，没有网关身份可依赖，只认它
+//  2) 硬边界：当前登录用户自己的家目录 /volN/<uid> —— 永远不会跨到别人账号
+//  3) 在此之内的收窄：管理员勾选的授权目录若与本人主目录有交集，就只保留交集
+//  4) 网关没给身份（裸端口）时才兜底 /vol1/1000
+//
+// 也就是说 A 账号只可能看到 A 自己的目录，B 账号只看到 B 的；
+// 授权目录只能在本人家目录内部进一步缩小范围，不能把别人账号的目录放进来。
+//
+// 注意：Header 只在 socket 模式（真有网关在前面）采信。裸端口形态没有网关，
+// 任何人都能伪造这几个 Header，采信就等于开了提权后门。
+//
+// 规则：任何来自请求的本地路径，必须先经 resolveSafePath 规范化并确认落在
+// 允许的根目录之内，否则一律拒绝。符号链接会被解析后再判定，避免用 symlink
+// 绕过前缀检查。
+// ------------------------------------------------------------------
+
+const defaultUserRoot = "/vol1/1000"
+
+func socketMode() bool { return os.Getenv("SOCKET_PATH") != "" }
+
+// identity 当前请求的登录用户（由网关 Header 提供）
+type identity struct {
+	UID   int
+	Name  string
+	Admin bool
+	OK    bool
+}
+
+func identityFrom(r *http.Request) identity {
+	var id identity
+	if r == nil || !socketMode() {
+		return id
+	}
+	if v := strings.TrimSpace(r.Header.Get("X-Trim-Userid")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			id.UID, id.OK = n, true
+		}
+	}
+	id.Name = strings.TrimSpace(r.Header.Get("X-Trim-Username"))
+	id.Admin = strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Trim-Isadmin")), "true")
+	return id
+}
+
+// envAuthorizedPaths：启动时由应用中心快照进环境变量的授权目录。
+// 只在动态查询拿不到结果时兜底使用。
+func envAuthorizedPaths() []string {
+	raw := strings.TrimSpace(os.Getenv("TRIM_DATA_ACCESSIBLE_PATHS"))
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(raw, ":") {
+		if p = strings.TrimSpace(p); p == "" || !filepath.IsAbs(p) {
+			continue
+		}
+		out = append(out, filepath.Clean(p))
+	}
+	return out
+}
+
+// ------------------------------------------------------------------
+// 授权目录热更新
+//
+// 平台把授权目录持久化在 appcenter 库的 app_authorization_path 表里，但只在
+// 「启动应用」那一刻快照成环境变量 TRIM_DATA_ACCESSIBLE_PATHS，所以过去改完
+// 授权必须重启应用才生效。
+//
+// 这里改成：后台每隔几秒只读查一次那张表（应用以 root 运行，postgres 的
+// peer 认证免密，psql 走 unix socket），把结果放进内存缓存，newScope 优先用
+// 缓存。于是管理员在应用中心改完授权，最迟一个轮询周期就生效，无需重启。
+//
+// 安全边界不变：
+//  · 只发一条固定 SELECT，应用名做白名单校验，不接受任何外部输入拼接；
+//  · 查询失败 / 查不到（Docker 等非 fpk 形态）时回退到启动快照，功能不退化；
+//  · 拿不到授权列表时退回「本人家目录」，绝不因为读不到就放大到更宽的范围。
+// ------------------------------------------------------------------
+
+var (
+	scopeMu      sync.RWMutex
+	scopeCache   []string // 最近一次成功查到的授权目录
+	scopeLoaded  bool     // 是否成功查过至少一次（成功查到空列表也算）
+	scopeSyncAt  time.Time
+	scopeLastErr string
+
+	// 允许的应用名：写进 SQL 前必须先过这道校验，杜绝拼接注入
+	appNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+)
+
+// appName 当前应用名，由平台注入（TRIM_APPNAME），缺省用包名
+func appName() string {
+	if v := strings.TrimSpace(os.Getenv("TRIM_APPNAME")); v != "" {
+		return v
+	}
+	return "encbackup"
+}
+
+// psqlBinary 定位系统自带的 psql（不同飞牛版本 postgres 主版本号可能不同）
+func psqlBinary() string {
+	if cands, err := filepath.Glob("/usr/lib/postgresql/*/bin/psql"); err == nil && len(cands) > 0 {
+		sort.Strings(cands)
+		return cands[len(cands)-1]
+	}
+	if cands, err := filepath.Glob("/usr/pgsql-*/bin/psql"); err == nil && len(cands) > 0 {
+		sort.Strings(cands)
+		return cands[len(cands)-1]
+	}
+	if p, err := exec.LookPath("psql"); err == nil {
+		return p
+	}
+	return ""
+}
+
+// queryAuthorizedPaths 只读查询平台授权目录表
+func queryAuthorizedPaths() ([]string, error) {
+	name := appName()
+	if !appNamePattern.MatchString(name) {
+		return nil, errors.New("应用名不合法")
+	}
+	psql := psqlBinary()
+	if psql == "" {
+		return nil, errors.New("未找到 psql")
+	}
+	// 只查「应用级」授权（应用设置 → 授权目录 里勾选的那些）。
+	// 用户级授权表 app_user_authorization_path 是「允许用户自行授权」用的，
+	// 与本应用「只见自己家目录」的隔离模型不冲突，这里不参与判定。
+	sql := fmt.Sprintf(`select distinct p.path from app_authorization_path p `+
+		`join app a on a.id = p.app_id where a.app_name = '%s'`, name)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, psql, "-U", "postgres", "-d", "appcenter", "-tAc", sql)
+	cmd.Env = append(os.Environ(), "PGOPTIONS=-c statement_timeout=4000")
+	out, err := cmd.Output()
+	if err != nil {
+		msg := err.Error()
+		if ee, ok := err.(*exec.ExitError); ok {
+			if s := strings.TrimSpace(string(ee.Stderr)); s != "" {
+				msg = s
+			}
+		}
+		return nil, errors.New(msg)
+	}
+	var paths []string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !filepath.IsAbs(line) {
+			continue
+		}
+		paths = append(paths, filepath.Clean(line))
+	}
+	return paths, nil
+}
+
+// refreshAuthorizedPaths 查一次并更新缓存，返回是否发生变化
+func refreshAuthorizedPaths() (bool, error) {
+	paths, err := queryAuthorizedPaths()
+	scopeMu.Lock()
+	defer scopeMu.Unlock()
+	if err != nil {
+		// 保留上一次成功的结果，只记录错误，避免瞬时失败把权限放大
+		scopeLastErr = err.Error()
+		return false, err
+	}
+	changed := !scopeLoaded || !sameStrings(scopeCache, paths)
+	scopeCache, scopeLoaded, scopeSyncAt, scopeLastErr = paths, true, time.Now(), ""
+	return changed, nil
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// authorizedPaths 当前生效的授权目录：优先用热更新缓存，回退启动快照
+func authorizedPaths() []string {
+	scopeMu.RLock()
+	loaded, cached := scopeLoaded, scopeCache
+	scopeMu.RUnlock()
+	if loaded {
+		return append([]string(nil), cached...)
+	}
+	return envAuthorizedPaths()
+}
+
+// 诊断用：是否已从平台实时读到授权目录 / 最后一次同步时间 / 最近一次错误
+func authLive() bool {
+	scopeMu.RLock()
+	defer scopeMu.RUnlock()
+	return scopeLoaded
+}
+
+func authSyncedAt() string {
+	scopeMu.RLock()
+	defer scopeMu.RUnlock()
+	if scopeSyncAt.IsZero() {
+		return ""
+	}
+	return scopeSyncAt.Format(time.RFC3339)
+}
+
+func authErrText() string {
+	scopeMu.RLock()
+	defer scopeMu.RUnlock()
+	return scopeLastErr
+}
+
+// authWatcher 后台盯着授权表，改完授权不用重启应用
+func authWatcher() {
+	const interval = 8 * time.Second
+	var lastErr string
+	tick := func() {
+		changed, err := refreshAuthorizedPaths()
+		if err != nil {
+			// 同样的错误只记一次，避免刷爆日志
+			if err.Error() != lastErr {
+				lastErr = err.Error()
+				log.Printf("[scope] 授权目录查询失败（继续沿用上一次结果）：%v", err)
+			}
+			return
+		}
+		lastErr = ""
+		if changed {
+			scopeMu.RLock()
+			cur := append([]string(nil), scopeCache...)
+			scopeMu.RUnlock()
+			log.Printf("[scope] 授权目录已更新：%v", cur)
+		}
+	}
+	tick()
+	for {
+		time.Sleep(interval)
+		tick()
+	}
+}
+
+// homeDirsFor：指定用户在各卷上的家目录（存在才纳入），实现多用户隔离
+func homeDirsFor(uid int) []string {
+	if uid <= 0 {
+		return nil
+	}
+	sub := strconv.Itoa(uid)
+	var out []string
+	for i := 1; i <= 9; i++ {
+		cand := filepath.Join("/vol"+strconv.Itoa(i), sub)
+		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
+			out = append(out, cand)
+		}
+	}
+	return out
+}
+
+// accessScope 本次请求可访问的范围
+type accessScope struct {
+	Roots      []string // 已解析符号链接，用于前缀比较
+	Display    []string // 原始路径，用于界面展示
+	Source     string   // env / authorized / home / default
+	ID         identity
+	Authorized []string
+	Home       string // 本人家目录（用于前端展示相对路径），拿不到时为空
+}
+
+func realPath(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
+}
+
+// newScope 计算「本次请求能访问哪些目录」。
+//
+// 核心不变式：可见范围永远是本人家目录的子集，任何情况下都不会跨账号。
+// 授权目录的作用只是「在本人家目录内部再缩小」，不会扩大。
+func newScope(r *http.Request) accessScope {
+	sc := accessScope{ID: identityFrom(r)}
+	sc.Authorized = authorizedPaths()
+
+	// ① 显式指定（Docker / 手工部署，没有网关可依赖）
+	if v := strings.TrimSpace(os.Getenv("USER_ROOT")); v != "" {
+		sc.Display = []string{filepath.Clean(v)}
+		sc.Source = "env"
+		return sc.finish()
+	}
+
+	// ② 定出本人家目录（硬边界）
+	home := homeDirsFor(sc.ID.UID)
+	if len(home) > 0 {
+		sc.Home = home[0]
+	}
+	if len(home) == 0 {
+		if sc.ID.UID > 0 {
+			// 有身份但该用户在任何卷上都没有家目录：给一个必然不存在的根，
+			// 宁可什么都访问不到，也绝不落到别人账号的目录上
+			home = []string{filepath.Join("/vol1", strconv.Itoa(sc.ID.UID))}
+		} else {
+			// 没有身份（裸端口部署）：兜底，行为与旧版一致
+			sc.Display = []string{defaultUserRoot}
+			sc.Source = "default"
+			return sc.finish()
+		}
+	}
+
+	// ③ 授权目录只保留「属于自己的」，非空则收窄
+	if inter := ownAuthorized(home, sc.Authorized); len(inter) > 0 {
+		sc.Display = inter
+		sc.Source = "authorized"
+		return sc.finish()
+	}
+
+	sc.Display = home
+	sc.Source = "home"
+	return sc.finish()
+}
+
+// ownAuthorized 取「授权目录 ∩ 本人主目录」：只保留落在自己家目录内的授权项。
+// 管理员勾了别人账号的目录时，那一条对本账号无效。
+func ownAuthorized(home, auth []string) []string {
+	if len(home) == 0 || len(auth) == 0 {
+		return nil
+	}
+	realHome := make([]string, 0, len(home))
+	for _, h := range home {
+		realHome = append(realHome, realPath(h))
+	}
+	var out []string
+	for _, a := range auth {
+		ra := realPath(a)
+		for _, rh := range realHome {
+			if withinRoot(ra, rh) {
+				out = append(out, filepath.Clean(a))
+				break
+			}
+		}
+	}
+	return out
+}
+
+// finish 把展示路径转成用于前缀比较的真实路径
+func (sc accessScope) finish() accessScope {
+	if len(sc.Display) == 0 {
+		sc.Display = []string{defaultUserRoot}
+	}
+	sc.Roots = sc.Roots[:0]
+	for _, d := range sc.Display {
+		sc.Roots = append(sc.Roots, realPath(d))
+	}
+	return sc
+}
+
+// withinRoot 判断 p 是否等于 root 或位于 root 之下（按路径分隔符边界判断，
+// 避免 /vol1/10001 被误判为 /vol1/1000 的子路径）
+func withinRoot(p, root string) bool {
+	if p == root {
+		return true
+	}
+	return strings.HasPrefix(p, root+string(os.PathSeparator))
+}
+
+// resolveSafePath 校验并规范化用户提交的本地路径。
+// 校验在「符号链接解析后」的真实路径上做，返回的却是清理过的原始路径
+// （保持与前端展示的 user_root 一致，避免把 /private/tmp 之类真身暴露到界面）。
+// 允许范围随请求变化：平台授权目录 / 当前登录用户家目录 / USER_ROOT 覆盖。
+// 越界或非法则返回 error。
+func resolveSafePath(r *http.Request, p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", errors.New("路径不能为空")
+	}
+	if !filepath.IsAbs(p) {
+		return "", errors.New("路径必须是绝对路径")
+	}
+	clean := filepath.Clean(p)
+
+	// 解析符号链接：路径存在则整体解析；不存在则解析最近的存在祖先，
+	// 再把剩余部分接回去（用于「目标目录还没创建」的还原场景）。
+	resolved := clean
+	if r, err := filepath.EvalSymlinks(clean); err == nil {
+		resolved = r
+	} else {
+		dir := clean
+		for {
+			if r, err := filepath.EvalSymlinks(dir); err == nil {
+				if rest, rerr := filepath.Rel(dir, clean); rerr == nil && rest != "." {
+					resolved = filepath.Join(r, rest)
+				} else {
+					resolved = r
+				}
+				break
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	sc := newScope(r)
+	for _, root := range sc.Roots {
+		if withinRoot(resolved, root) {
+			return clean, nil
+		}
+	}
+	return "", fmt.Errorf("路径超出允许范围（当前可访问 %s）", strings.Join(sc.Display, "、"))
+}
+
+// safeIncludes 校验 restic 还原时的 include 模式，拒绝任何试图跳出快照根的写法
+func safeIncludes(includes []string) error {
+	for _, inc := range includes {
+		if inc == "" {
+			return errors.New("还原路径不能为空")
+		}
+		for _, seg := range strings.Split(inc, "/") {
+			if seg == ".." {
+				return fmt.Errorf("还原路径含非法片段：%s", inc)
+			}
+		}
+	}
+	return nil
+}
 
 func binPath(name string) string {
 	// 显式指定优先（Docker 部署可设 ENGINES_DIR=/app/engines）
@@ -89,12 +574,12 @@ type Repo struct {
 	Password string `json:"password"` // 输出时掩码
 	Cloud    string `json:"cloud"`    // tianyi / y115 / webdav / other
 	// WebDAV 直连仓库：凭据写入 rclone.conf（pass 为 rclone obscure 后的密文）
-	Remote    string `json:"remote,omitempty"`    // rclone 远端名（wd-xxxxxxxx）
-	DavURL    string `json:"dav_url,omitempty"`   // 服务器地址
-	DavUser   string `json:"dav_user,omitempty"`  // 账号
-	DavPass   string `json:"dav_pass,omitempty"`  // 密码（输出时掩码）
+	Remote    string `json:"remote,omitempty"`     // rclone 远端名（wd-xxxxxxxx）
+	DavURL    string `json:"dav_url,omitempty"`    // 服务器地址
+	DavUser   string `json:"dav_user,omitempty"`   // 账号
+	DavPass   string `json:"dav_pass,omitempty"`   // 密码（输出时掩码）
 	DavVendor string `json:"dav_vendor,omitempty"` // other / owncloud / nextcloud / sharepoint
-	Inited    bool   `json:"inited,omitempty"`   // restic init 已成功完成
+	Inited    bool   `json:"inited,omitempty"`     // restic init 已成功完成
 }
 
 type Task struct {
@@ -104,15 +589,15 @@ type Task struct {
 	Excludes     []string `json:"excludes"`
 	RepoID       string   `json:"repo_id"`
 	Password     string   `json:"password,omitempty"`    // 加密密码（新建任务时生成/填写；实际存到对应 repo，此处仅用于创建时透传与回显掩码）
-	DestCloud    string   `json:"dest_cloud,omitempty"`   // 目的地两步式：tianyi / y115
+	DestCloud    string   `json:"dest_cloud,omitempty"`  // 目的地两步式：tianyi / y115
 	DestSubdir   string   `json:"dest_subdir,omitempty"` // 云端目标目录
-	SchedMode    string   `json:"sched_mode"` // manual | daily | weekly | monthly | interval
-	DailyTime    string   `json:"daily_time"` // 执行时间 "03:00"（daily/weekly/monthly 共用）
+	SchedMode    string   `json:"sched_mode"`            // manual | daily | weekly | monthly | interval
+	DailyTime    string   `json:"daily_time"`            // 执行时间 "03:00"（daily/weekly/monthly 共用）
 	IntervalHrs  int      `json:"interval_hrs"`
 	DailyDays    int      `json:"daily_days"`   // daily: 每 N 天（0/1 = 每天）
 	WeeklyDays   []int    `json:"weekly_days"`  // weekly: 0=周日 … 6=周六
 	MonthlyDays  []int    `json:"monthly_days"` // monthly: 1-31，-1=末天
-	KeepLast     int      `json:"keep_last"` // restic forget --keep-last, 0=不清理
+	KeepLast     int      `json:"keep_last"`    // restic forget --keep-last, 0=不清理
 	Enabled      bool     `json:"enabled"`
 	CreatedAt    string   `json:"created_at"`
 	LastRunAt    string   `json:"last_run_at"`
@@ -138,23 +623,23 @@ type RestoreJob struct {
 	ID           string   `json:"id"`
 	TaskID       string   `json:"task_id"`
 	TaskName     string   `json:"task_name"`
-	Snapshot     string   `json:"snapshot"`            // restic 快照 ID（短）
+	Snapshot     string   `json:"snapshot"` // restic 快照 ID（短）
 	SnapshotTime string   `json:"snapshot_time,omitempty"`
-	Dest         string   `json:"dest"`               // original | custom
-	Target       string   `json:"target,omitempty"`   // custom：目标目录
-	Conflict     string   `json:"conflict"`           // always | if-changed | never | rename
-	Includes     []string `json:"includes"`           // 要还原的绝对路径
-	Status       string   `json:"status"`             // running | success | failed | stopped
+	Dest         string   `json:"dest"`             // original | custom
+	Target       string   `json:"target,omitempty"` // custom：目标目录
+	Conflict     string   `json:"conflict"`         // always | if-changed | never | rename
+	Includes     []string `json:"includes"`         // 要还原的绝对路径
+	Status       string   `json:"status"`           // running | success | failed | stopped
 	Message      string   `json:"message,omitempty"`
 	StartedAt    string   `json:"started_at"`
 	FinishedAt   string   `json:"finished_at,omitempty"`
 	Pct          float64  `json:"pct"`
 	Files        int64    `json:"files"`
 	Bytes        int64    `json:"bytes"`
-	Restored     int      `json:"restored"`          // 新增（原不存在）
-	Replaced     int      `json:"replaced"`          // 覆盖
-	Renamed      int      `json:"renamed"`           // 保留两者（重命名）
-	Skipped      int      `json:"skipped"`           // 跳过
+	Restored     int      `json:"restored"` // 新增（原不存在）
+	Replaced     int      `json:"replaced"` // 覆盖
+	Renamed      int      `json:"renamed"`  // 保留两者（重命名）
+	Skipped      int      `json:"skipped"`  // 跳过
 }
 
 // ---------------------------------------------------------------------------
@@ -165,9 +650,9 @@ var (
 	cfgMu    sync.Mutex
 	cfg      = &Config{}
 	stateMu  sync.Mutex
-	running  = ""    // 正在运行的任务 ID
+	running  = ""          // 正在运行的任务 ID
 	runStop  chan struct{} // 停止信号
-	runStart string // 当前运行开始时间（RFC3339）
+	runStart string        // 当前运行开始时间（RFC3339）
 	runPct   float64
 	runFiles int64
 	runBytes int64
@@ -185,7 +670,7 @@ type authProbe struct {
 }
 
 var (
-	authMu   sync.Mutex
+	authMu    sync.Mutex
 	authCache = map[string]authProbe{}
 )
 
@@ -564,26 +1049,26 @@ func resticEnv(repo *Repo) []string {
 }
 
 type resticStatus struct {
-	MessageType string   `json:"message_type"`
-	PercentDone float64  `json:"percent_done"`
-	TotalFiles  int64    `json:"total_files"`
-	FilesDone   int64    `json:"files_done"`
-	TotalBytes  int64    `json:"total_bytes"`
-	BytesDone   int64    `json:"bytes_done"`
-	CurrentFiles []string `json:"current_files"`
-	ErrorCount  int64    `json:"error_count"`
-	SnapshotID  string   `json:"snapshot_id"`
-	TotalFilesProcessed int64 `json:"total_files_processed"`
-	TotalBytesProcessed int64 `json:"total_bytes_processed"`
-	SecondsElapsed float64 `json:"seconds_elapsed"`
-	TotalDuration  float64 `json:"total_duration"`
-	BackupStart    string  `json:"backup_start"`
-	BackupEnd      string  `json:"backup_end"`
-	FilesNew       int64   `json:"files_new"`
-	FilesChanged   int64   `json:"files_changed"`
-	FilesUnmodified int64  `json:"files_unmodified"`
-	Code           int64   `json:"code"`
-	Message        string  `json:"message"`
+	MessageType         string   `json:"message_type"`
+	PercentDone         float64  `json:"percent_done"`
+	TotalFiles          int64    `json:"total_files"`
+	FilesDone           int64    `json:"files_done"`
+	TotalBytes          int64    `json:"total_bytes"`
+	BytesDone           int64    `json:"bytes_done"`
+	CurrentFiles        []string `json:"current_files"`
+	ErrorCount          int64    `json:"error_count"`
+	SnapshotID          string   `json:"snapshot_id"`
+	TotalFilesProcessed int64    `json:"total_files_processed"`
+	TotalBytesProcessed int64    `json:"total_bytes_processed"`
+	SecondsElapsed      float64  `json:"seconds_elapsed"`
+	TotalDuration       float64  `json:"total_duration"`
+	BackupStart         string   `json:"backup_start"`
+	BackupEnd           string   `json:"backup_end"`
+	FilesNew            int64    `json:"files_new"`
+	FilesChanged        int64    `json:"files_changed"`
+	FilesUnmodified     int64    `json:"files_unmodified"`
+	Code                int64    `json:"code"`
+	Message             string   `json:"message"`
 }
 
 type runResult struct {
@@ -1105,13 +1590,27 @@ func statusHandler(gateway string) http.HandlerFunc {
 		stateMu.Lock()
 		runID := running
 		stateMu.Unlock()
+		sc := newScope(r)
+		home := ""
+		if hs := homeDirsFor(sc.ID.UID); len(hs) > 0 {
+			home = hs[0]
+		}
 		writeJSON(w, 200, map[string]any{
-			"app":            "encbackup",
-			"version":        appVersion,
-			"gateway":        gateway,
-		"socket_mode":    os.Getenv("SOCKET_PATH") != "",
-		"data_dir":       varDir(),
-		"user_root":      userRoot(),
+			"app":         "encbackup",
+			"version":     appVersion,
+			"gateway":     gateway,
+			"socket_mode": socketMode(),
+			"data_dir":    varDir(),
+			"user_root":   sc.Display[0],
+			"roots":       sc.Display,
+			"home":        home,
+			"auth": map[string]any{
+				"uid":        sc.ID.UID,
+				"name":       sc.ID.Name,
+				"admin":      sc.ID.Admin,
+				"identified": sc.ID.OK,
+				"source":     sc.Source,
+			},
 			"restic_ready":   engineVersion("restic") != "",
 			"restic_version": engineVersion("restic"),
 			"rclone_version": engineVersion("rclone"),
@@ -1425,6 +1924,15 @@ func tasksHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]string{"error": "参数不完整：需要 name、paths、目的地（云盘+目录）"})
 			return
 		}
+		// 安全校验：备份源路径必须落在用户可见根目录内（防路径穿越）
+		for i, p := range nt.Paths {
+			sp, perr := resolveSafePath(r, p)
+			if perr != nil {
+				writeJSON(w, 400, map[string]string{"error": "备份路径不合法：" + perr.Error()})
+				return
+			}
+			nt.Paths[i] = sp
+		}
 		// 新建仓库时自动 restic init（失败不阻塞建任务，首次备份会再报）
 		// 用带超时的执行，避免 115 等慢写入云盘 init 卡在 create key 无限等待
 		initErr := ""
@@ -1658,13 +2166,13 @@ type logNode struct {
 
 // logSummary：精简日志视图的结构化结果
 type logSummary struct {
-	Status   string    `json:"status"`    // success | failed | running
-	Title    string    `json:"title"`     // 如 "10-26 17:00 的备份"
-	OneLine  string    `json:"one_line"`  // 一行结果："12,846 个文件 · 13.5 GB · 用时 18 分"
-	Percent  float64   `json:"percent"`   // 运行中时的进度（0-100）
-	Speed    string    `json:"speed"`     // 运行中时的速度（可选）
-	Nodes    []logNode `json:"nodes"`     // 关键节点时间轴
-	ErrDetail string   `json:"err_detail"` // 失败时的原始错误详情（可折叠）
+	Status    string    `json:"status"`     // success | failed | running
+	Title     string    `json:"title"`      // 如 "10-26 17:00 的备份"
+	OneLine   string    `json:"one_line"`   // 一行结果："12,846 个文件 · 13.5 GB · 用时 18 分"
+	Percent   float64   `json:"percent"`    // 运行中时的进度（0-100）
+	Speed     string    `json:"speed"`      // 运行中时的速度（可选）
+	Nodes     []logNode `json:"nodes"`      // 关键节点时间轴
+	ErrDetail string    `json:"err_detail"` // 失败时的原始错误详情（可折叠）
 }
 
 // parseLogSummary：解析 restic 日志文件，提取精简结果 + 关键节点。
@@ -1983,13 +2491,25 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 		ShowAll bool   `json:"show_all"` // 显示系统/其他用户目录
 	}
 	_ = readBody(r, &req)
-	root := userRoot()
+	sc := newScope(r)
+	root := sc.Display[0]
 	if req.Path == "" {
 		req.Path = root
 	}
+	// 安全校验：路径必须落在当前用户可见的根目录内（防路径穿越 + 按账号隔离）
+	safePath, serr := resolveSafePath(r, req.Path)
+	if serr != nil {
+		writeJSON(w, 400, map[string]any{
+			"path": root, "dirs": []any{}, "user_root": root,
+			"roots": sc.Display, "home": sc.Home,
+			"error": serr.Error(),
+		})
+		return
+	}
+	req.Path = safePath
 	entries, err := os.ReadDir(req.Path)
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"path": req.Path, "dirs": []any{}, "user_root": root, "error": err.Error()})
+		writeJSON(w, 200, map[string]any{"path": req.Path, "dirs": []any{}, "user_root": root, "roots": sc.Display, "home": sc.Home, "error": err.Error()})
 		return
 	}
 	type dirInfo struct {
@@ -2005,7 +2525,11 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		hidden := strings.HasPrefix(name, ".") || strings.HasPrefix(name, "@")
 		// 其他用户目录（/vol1 下的纯数字目录且非当前用户）也视为系统范围
-		if req.Path == "/vol1" && name != "1000" {
+		self := "1000"
+		if sc.ID.UID > 0 {
+			self = strconv.Itoa(sc.ID.UID)
+		}
+		if req.Path == "/vol1" && name != self {
 			if _, allDigit := strconv.Atoi(name); allDigit == nil {
 				hidden = true
 			}
@@ -2023,7 +2547,7 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 		dirs = append(dirs, info)
 	}
 	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name < dirs[j].Name })
-	writeJSON(w, 200, map[string]any{"path": req.Path, "dirs": dirs, "user_root": root})
+	writeJSON(w, 200, map[string]any{"path": req.Path, "dirs": dirs, "user_root": root, "roots": sc.Display, "home": sc.Home})
 }
 
 // browseCloudHandler：浏览云盘目录（仓库「云端目录」选择用），rclone lsf 单层目录
@@ -3223,6 +3747,11 @@ func taskRestoreHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "请选择快照和要还原的文件"})
 		return
 	}
+	// 安全校验：还原路径片段不允许出现 ..（防跳出快照根）
+	if ierr := safeIncludes(req.Includes); ierr != nil {
+		writeJSON(w, 400, map[string]string{"error": ierr.Error()})
+		return
+	}
 	if req.Dest != "original" && req.Dest != "custom" {
 		writeJSON(w, 400, map[string]string{"error": "dest 参数错误"})
 		return
@@ -3242,6 +3771,13 @@ func taskRestoreHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]string{"error": "目标目录必须为绝对路径"})
 			return
 		}
+		// 安全校验：还原目标必须落在用户可见根目录内（防写入任意路径）
+		safeTarget, terr := resolveSafePath(r, req.Target)
+		if terr != nil {
+			writeJSON(w, 400, map[string]string{"error": "目标目录不合法：" + terr.Error()})
+			return
+		}
+		req.Target = safeTarget
 		if err := os.MkdirAll(req.Target, 0o755); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "目标目录无法创建: " + err.Error()})
 			return
@@ -3871,6 +4407,93 @@ func registerRoutes(mux *http.ServeMux, base string) {
 	mux.HandleFunc(base+"/api/hello", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"msg": "加密备份后端已就绪", "version": appVersion})
 	})
+	// scope：轻量接口，只回当前可见范围，供前端定时比对授权目录有没有变
+	// （不要用 /api/status 做这件事，那个接口会 exec restic/rclone 取版本）
+	mux.HandleFunc(base+"/api/scope", func(w http.ResponseWriter, r *http.Request) {
+		sc := newScope(r)
+		writeJSON(w, 200, map[string]any{
+			"roots":      sc.Display,
+			"home":       sc.Home,
+			"source":     sc.Source,
+			"authorized": sc.Authorized,
+			"live":       authLive(),
+			"synced_at":  authSyncedAt(),
+		})
+	})
+	// whoami：诊断用，回显网关下发的身份 Header 与据此判定的可访问范围
+	mux.HandleFunc(base+"/api/whoami", func(w http.ResponseWriter, r *http.Request) {
+		sc := newScope(r)
+		hdr := map[string]string{}
+		for _, k := range []string{"X-Trim-Userid", "X-Trim-Username", "X-Trim-Isadmin"} {
+			hdr[k] = r.Header.Get(k)
+		}
+		writeJSON(w, 200, map[string]any{
+			"socket_mode":          socketMode(),
+			"headers":              hdr,
+			"uid":                  sc.ID.UID,
+			"name":                 sc.ID.Name,
+			"admin":                sc.ID.Admin,
+			"identified":           sc.ID.OK,
+			"source":               sc.Source,
+			"roots":                sc.Display,
+			"authorized":           sc.Authorized,
+			"env_accessible_paths": os.Getenv("TRIM_DATA_ACCESSIBLE_PATHS"),
+			"scope_live":           authLive(),
+			"scope_synced_at":      authSyncedAt(),
+			"scope_error":          authErrText(),
+		})
+	})
+	// reload-scope：默认走「热刷新」——直接重查平台授权表更新内存，不动进程。
+	// 带 ?restart=1 时退回旧行为（应用自己 停止→启动），只在热刷新不可用时用。
+	mux.HandleFunc(base+"/api/reload-scope", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, 405, map[string]any{"error": "只支持 POST"})
+			return
+		}
+		// 只有管理员可以重新加载授权目录；没有身份（本机直连）时放行
+		if id := identityFrom(r); id.OK && !id.Admin {
+			writeJSON(w, 403, map[string]any{"error": "只有管理员可以重新加载授权目录"})
+			return
+		}
+		if r.URL.Query().Get("restart") != "1" {
+			changed, err := refreshAuthorizedPaths()
+			if err == nil {
+				// 立刻把生效范围回给前端，省一次往返
+				sc := newScope(r)
+				writeJSON(w, 200, map[string]any{
+					"ok": true, "live": true, "changed": changed,
+					"authorized": sc.Authorized, "source": sc.Source,
+					"roots": sc.Display, "home": sc.Home,
+					"msg": "授权目录已重新读取",
+				})
+				return
+			}
+			writeJSON(w, 200, map[string]any{
+				"ok": true, "live": false, "error": err.Error(),
+				"msg": "无法直接读取授权表，请到应用中心重启应用后生效",
+			})
+			return
+		}
+		const cli = "/usr/local/bin/appcenter-cli"
+		if _, err := os.Stat(cli); err != nil {
+			writeJSON(w, 400, map[string]any{"error": "当前环境不支持重启（未找到 appcenter-cli），请到应用中心重启应用"})
+			return
+		}
+		app := appName()
+		// 独立会话启动，避免被随后到来的停止信号一起带走
+		script := fmt.Sprintf("sleep 1; %s stop %s; sleep 2; %s start %s", cli, app, cli, app)
+		cmd := exec.Command("/bin/sh", "-c", script)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if lf, err := os.OpenFile("/tmp/encbackup-reload.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+			cmd.Stdout, cmd.Stderr = lf, lf
+		}
+		if err := cmd.Start(); err != nil {
+			writeJSON(w, 500, map[string]any{"error": "启动重启失败：" + err.Error()})
+			return
+		}
+		go func() { _ = cmd.Wait() }()
+		writeJSON(w, 200, map[string]any{"ok": true, "app": app, "msg": "应用正在重启，约 5 秒后自动恢复"})
+	})
 }
 
 // basicAuth：Docker/裸端口形态的简单密码保护。
@@ -3921,12 +4544,25 @@ func main() {
 				r.URL.Path = "/"
 			}
 		}
+		// 缓存策略：
+		//  - /assets/* 是带内容哈希的文件名，改了名字就会变，可以放心长期缓存；
+		//  - index.html / SPA 回落必须每次回源，否则应用升级后浏览器还在跑旧前端，
+		//    表现为「明明装了新版本，界面却还是老的」。
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
 		fs.ServeHTTP(w, r)
 	}
 	mux.Handle(prefix+"/", http.StripPrefix(prefix, http.HandlerFunc(serveStatic)))
 	mux.HandleFunc("/", http.HandlerFunc(serveStatic))
 
 	go scheduler()
+	// 授权目录热更新：管理员在应用中心改完勾选，几秒内自动生效，无需重启
+	go authWatcher()
 
 	socketPath := os.Getenv("SOCKET_PATH")
 	if socketPath != "" {
@@ -3935,7 +4571,19 @@ func main() {
 		if err != nil {
 			panic("listen unix: " + err.Error())
 		}
-		_ = os.Chmod(socketPath, 0o666)
+		// socket 权限：默认只允许网关（nginx worker，www-data 组）与 root 访问，
+		// 避免本机其它用户绕过飞牛统一鉴权直连 API。组不存在时退回 0666 保证可用。
+		if err := os.Chmod(socketPath, 0o660); err == nil {
+			if g, gerr := user.LookupGroup("www-data"); gerr == nil {
+				if gid, aerr := strconv.Atoi(g.Gid); aerr == nil {
+					_ = os.Chown(socketPath, 0, gid)
+				} else {
+					_ = os.Chmod(socketPath, 0o666)
+				}
+			} else {
+				_ = os.Chmod(socketPath, 0o666)
+			}
+		}
 		if err := http.Serve(l, mux); err != nil {
 			panic(err)
 		}

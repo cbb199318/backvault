@@ -10,8 +10,12 @@ echo "== 1/4 前端构建 (Vue3 + Vite) =="
 (cd frontend && npm install --silent && npm run build)
 
 echo "== 2/4 后端构建 (Go → linux/amd64) =="
+# 版本号从 manifest 读取并注入二进制，避免 /api/status 暴露写死的老版本
+VERSION="$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*//p' "${APPDIR}/manifest" | head -n1 | tr -d ' "\r')"
+if [ -z "${VERSION}" ]; then echo "manifest 里读不到 version"; exit 1; fi
+echo "   版本号：${VERSION}"
 mkdir -p "${APPDIR}/app/server/public" "${APPDIR}/app/server/engines"
-(cd backend && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../${APPDIR}/app/server/encbackup-server .)
+(cd backend && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.appVersion=${VERSION}" -o ../${APPDIR}/app/server/encbackup-server .)
 
 echo "== 3/5 组装静态资源 =="
 rm -rf "${APPDIR}/app/server/public"
