@@ -86,6 +86,11 @@ docker compose up -d --build
 
 ### 方式二：fnOS fpk 应用包
 
+> **免构建安装**：到 [Releases](https://github.com/cbb199318/backvault/releases) 下载对应架构的 fpk
+> （x86_64 选 `-x86`，ARM64 选 `-arm`），在飞牛应用中心「手动安装」上传即可。
+> 注意 `appcenter-cli install-fpk` 不支持原地升级，升级请走应用中心界面。
+> 下面是自行构建的步骤。
+
 ```bash
 # 1. 下载 restic / rclone 的 linux/amd64 二进制到 /tmp/encbin/
 mkdir -p /tmp/encbin
