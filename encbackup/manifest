@@ -1,5 +1,5 @@
 appname=encbackup
-version               = 0.3.6
+version               = 0.3.7
 display_name=蛋壳备份
 desc=基于 restic 的加密备份与快照还原应用。向导式创建任务，定时把指定目录加密备份到天翼云盘 / 115 网盘 / 任意 WebDAV（OpenList 挂载）；支持浏览仓库快照、按目录或文件精确还原、查看备份与还原历史。数据在本机加密后再上传，云端只存密文；仓库密码与云盘凭据仅保存在本机 /vol1/@appdata/encbackup，仅管理员可读，界面与接口均做掩码处理。支持桌面与手机自适应界面。
 maintainer            = cbb199318
@@ -13,4 +13,4 @@ desktop_applaunchname=encbackup.main
 os_min_version=1.1.3100
 ctl_stop=true
 checkport=false
-changelog             = 0.3.6 目录选择器修正：只有一个授权目录时也会先显示该目录本身（整行点选，或点 › 进入子目录），不再一进来就直接钻进它的子目录里；进入后可通过「返回授权目录列表」回到根目录。备份源与还原目标两处选择器行为一致。
+changelog             = 0.3.7 全新应用图标：蓝色渐变圆角方块 + 白色蛋壳、顶端敲开露出奶黄色内容物，与「蛋壳备份」名称对应；同时提供矢量精度的图标生成脚本（scripts/gen_icons.py + assets/logo-source.png），改图标不再需要手工缩图。
