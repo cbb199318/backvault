@@ -10,18 +10,21 @@
         <div class="cp-body" ref="bodyEl">
           <!-- 新增云端 -->
           <div class="cp-item add" @click="onAdd">
-            <div class="cp-ibox">＋</div>
+            <div class="cp-ibox"><Icon name="plus" :size="14" /></div>
             <div class="cp-itxt"><div class="nm">新增云端</div></div>
           </div>
 
           <!-- 已有仓库 -->
           <div class="cp-item" v-for="r in repos" :key="r.id" @click="onPick(r)">
-            <div class="cp-ibox" :class="badgeClass(r.cloud)">{{ badgeText(r.cloud) }}</div>
+            <div class="cp-ibox">
+              <img v-if="cloudLogo(r)" class="cp-logo" :src="cloudLogo(r)" :alt="cloudLabel(r)" :title="cloudLabel(r)" />
+              <Icon v-else :name="cloudIcon(r)" :size="22" />
+            </div>
             <div class="cp-itxt">
               <div class="nm">{{ r.name }}</div>
               <div class="ds">{{ subOf(r) }}</div>
             </div>
-            <button class="cp-more" title="更多" @click.stop="openMenu($event, r)">⋯</button>
+            <button class="cp-more" title="更多" @click.stop="openMenu($event, r)"><Icon name="dots" :size="16" /></button>
           </div>
 
           <div class="cp-empty" v-if="!repos.length">
@@ -32,19 +35,19 @@
       </div>
     </div>
 
-    <!-- ⋯ 菜单 -->
+    <!-- <Icon name="dots" :size="16" /> 菜单 -->
     <div class="cp-ctx" v-if="menu.show" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
       <button @click="doReveal">
-        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <Icon name="eye" :size="15" />
         查看仓库密码
       </button>
       <button @click="doCopy">
-        <svg viewBox="0 0 24 24" width="15" height="15"><rect x="9" y="9" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M5 15V5.5A2.5 2.5 0 0 1 7.5 3H17"/></svg>
+        <Icon name="copy" :size="15" />
         复制仓库密码
       </button>
       <div class="sep"></div>
       <button class="danger" @click="doRemove">
-        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M9.5 11v6M14.5 11v6M6.5 7l.9 12.2A2 2 0 0 0 9.4 21h5.2a2 2 0 0 0 2-1.8L17.5 7M9 7V4.5h6V7"/></svg>
+        <Icon name="trash" :size="15" />
         移除云端仓库
       </button>
     </div>
@@ -64,6 +67,8 @@
 </template>
 
 <script setup>
+import Icon from "./Icon.vue";
+import { cloudLogo, cloudLabel, cloudIcon } from "./cloudLogo.js";
 import { reactive, ref, nextTick, onBeforeUnmount } from "vue";
 
 const props = defineProps({
@@ -77,15 +82,6 @@ const emit = defineEmits(["update:show", "select", "add", "remove"]);
 const sheetEl = ref(null);
 const menu = reactive({ show: false, x: 0, y: 0, repo: null });
 const pw = reactive({ show: false, x: 0, y: 0, name: "", value: "", loading: false });
-
-const CLOUD = {
-  tianyi: ["b-ty", "天翼"],
-  y115: ["b-115", "115"],
-  webdav: ["b-dav", "DAV"],
-  other: ["b-other", "云"],
-};
-const badgeClass = (c) => (CLOUD[c] || CLOUD.other)[0];
-const badgeText = (c) => (CLOUD[c] || CLOUD.other)[1];
 
 // 副标题：WebDAV 显示 账号@地址；云盘显示 URI 的 rclone 路径
 function subOf(r) {
@@ -251,13 +247,12 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick, true));
   transition: background 0.14s, transform 0.1s;
 }
 .cp-item:hover { background: #fbfcfe; }
-.cp-item:active { transform: scale(0.99); }
+.cp-item:active { transform: scale(0.98); }
 .cp-ibox {
-  width: 46px; height: 46px; border-radius: 13px; background: #f1f2f4;
+  width: 46px; height: 46px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12.5px; font-weight: 700; color: #4b5158; flex-shrink: 0;
 }
-.cp-item.add .cp-ibox { font-size: 21px; font-weight: 300; }
+.cp-logo { max-width: 40px; max-height: 28px; object-fit: contain; display: block; }
 .cp-itxt { flex: 1; min-width: 0; }
 .cp-itxt .nm {
   font-size: 14.5px; font-weight: 600; color: #1c1f23;
@@ -276,12 +271,8 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick, true));
 .cp-empty .hint { font-size: 12px; margin-top: 6px; color: #a3a8b0; }
 
 /* 徽标配色 */
-.b-ty { background: linear-gradient(140deg, #4aa8ff, #1668e3); color: #fff; }
-.b-115 { background: linear-gradient(140deg, #3ec777, #14944b); color: #fff; }
-.b-dav { background: linear-gradient(140deg, #939bab, #5d6675); color: #fff; }
-.b-other { background: linear-gradient(140deg, #939bab, #5d6675); color: #fff; }
 
-/* ⋯ 菜单 */
+/* <Icon name="dots" :size="16" /> 菜单 */
 .cp-ctx {
   position: fixed; z-index: 3100; background: #fff; border-radius: 12px;
   box-shadow: 0 10px 34px rgba(20, 25, 35, 0.2); padding: 6px; min-width: 160px;

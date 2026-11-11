@@ -1,4 +1,5 @@
 <script setup>
+import Icon from "./Icon.vue";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 
 const props = defineProps({
@@ -82,11 +83,11 @@ onUnmounted(() => {
           </span>
           <span v-if="o.eyeable || o.xable" class="bdrop-acts">
             <button v-if="o.eyeable" type="button" class="bdrop-act" :title="o.pwShown ? '隐藏密码' : '查看密码'" @click.stop="emit('eye', o)">
-              <svg v-if="o.pwShown" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/></svg>
-              <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <Icon v-if="o.pwShown" name="eye-off" :size="16" />
+              <Icon v-else name="eye" :size="16" />
             </button>
             <button v-if="o.xable" type="button" class="bdrop-act bdrop-x" title="移除" @click.stop="emit('remove', o)">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              <Icon name="x" :size="14" />
             </button>
           </span>
         </div>

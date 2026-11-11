@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import BDrop from "./BDrop.vue";
 import CloudPicker from "./CloudPicker.vue";
 import TPick from "./TPick.vue";
+import Icon from "./Icon.vue";
+import { cloudLogo, cloudLabel, cloudIcon, brandOf, brandFromText, BRANDS, BRAND_OPTIONS } from "./cloudLogo.js";
 
 // ---------------------------------------------------------------------------
 // 基础
@@ -302,17 +304,25 @@ async function stopTask(t) {
     showToast(e.message, "bad");
   }
 }
-async function delTask(t) {
-  if (!confirm(`确定删除任务「${t.name}」吗？（不影响云端已有快照）`)) return;
+function delTask(t) {
+  delDlg.task = t;
+  delDlg.show = true;
+  menuOpen.value = "";
+  sheet.show = false;
+}
+async function doDelTask() {
+  const t = delDlg.task;
+  if (!t || delDlg.busy) return;
+  delDlg.busy = true;
   try {
     await api(`/api/tasks/${t.id}/delete`, { method: "POST" });
     showToast("任务已删除");
+    delDlg.show = false;
     loadAll();
   } catch (e) {
     showToast(e.message, "bad");
   }
-  menuOpen.value = "";
-  sheet.show = false;
+  delDlg.busy = false;
 }
 
 // ⋯ 菜单 / 手机操作面板
@@ -330,7 +340,7 @@ function openSheet(t) {
 // 新建/编辑任务向导
 // ---------------------------------------------------------------------------
 const wiz = reactive({
-  show: false, editing: null, saving: false, openRule: false, openPlan: false, openKeep: false, openAdv: false,
+  show: false, editing: null, copy: false, saving: false, openRule: false, openPlan: false, openKeep: false, openAdv: false,
   form: {
     id: "", name: "", paths: [], excludes: "", repo_id: "",
     sched_mode: "manual", daily_time: "03:00", interval_hrs: 24, keep_last: 3, enabled: true,
@@ -340,6 +350,7 @@ const wiz = reactive({
 });
 function openWizard(task) {
   wiz.editing = !!task;
+  wiz.copy = false;
   wiz.show = true;
   wiz.openRule = false; wiz.openPlan = false; wiz.openKeep = false; wiz.openAdv = false;
   menuOpen.value = "";
@@ -593,7 +604,7 @@ function shortPath(p) {
   return p;
 }
 
-async function wizSave() {
+async function wizSave(runAfter) {
   if (wiz.saving) return; // 防重复提交（init 走云盘网络可能耗时十几秒）
   if (!wizReady.value) {
     showToast("请完善任务名称、源目录和目标仓库", "bad");
@@ -621,7 +632,11 @@ async function wizSave() {
       showToast(wiz.editing ? "任务已保存" : "任务已创建");
     }
     wiz.show = false;
-    loadAll();
+    await loadAll();
+    if (runAfter === true && res && res.id) {
+      const t = cfg.tasks.find((x) => x.id === res.id);
+      if (t) await runTask(t);
+    }
   } catch (e) {
     showToast(e.message, "bad");
   } finally {
@@ -700,13 +715,6 @@ function destCloudLabel(v) {
   const r = cfg.repos.find((x) => x.id === v) || cfg.repos.find((x) => (x.remote || x.id) === v);
   return r ? r.name : v;
 }
-// 云类型徽标（与 CloudPicker 一致）
-function badgeCls(c) {
-  return c === "tianyi" ? "b-ty" : c === "y115" ? "b-115" : c === "webdav" ? "b-dav" : "b-other";
-}
-function badgeTxt(c) {
-  return c === "tianyi" ? "天翼" : c === "y115" ? "115" : c === "webdav" ? "DAV" : "云";
-}
 const cloudOptions = [
   { value: "webdav", title: "WebDAV", sub: "直接填写地址/账号/密码" },
   { value: "other", title: "自定义（rclone URI）", sub: "手动填写 rclone 远端地址" },
@@ -715,10 +723,35 @@ const repoModal = reactive({
   show: false,
   saving: false,
   savingText: "",
-  form: { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other", showPass: false },
+  form: { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other", brand: "auto", showPass: false },
 });
 // WebDAV 连接测试
 const davTest = reactive({ busy: false, ok: null, msg: "" });
+// 「服务商」选自动时，实时回显识别结果，让用户能看见并纠正
+const autoBrandHint = computed(() => {
+  const f = repoModal.form;
+  // 新建 WebDAV 时子目录存在 subdir 里，保存时才清空，所以这里要一起看
+  return cloudLabel({ cloud: f.cloud, dav_url: f.dav_url, name: f.name, uri: f.subdir || f.uri, brand: "auto" });
+});
+
+// 仓库的品牌标识。仓库自身信息不足时，用其关联任务的云端目录补一次信号：
+// WebDAV 走 OpenList 时，上游网盘名常常只出现在任务的 dest_subdir 里（如 115/相册）
+function repoBrand(r) {
+  if (!r) return "other";
+  if (r.brand && r.brand !== "auto" && BRANDS[r.brand]) return r.brand;
+  const own = brandOf(r);
+  if (own !== "webdav" && own !== "other" && own !== "openlist") return own;
+  for (const t of cfg.tasks || []) {
+    if (t.repo_id !== r.id) continue;
+    const k = brandFromText((t.dest_subdir || "").split("/")[0]);
+    if (k) return k;
+  }
+  return own;
+}
+// 传给 CloudPicker 的仓库列表：把品牌算好，弹层里就不用再关心任务
+const pickerRepos = computed(() =>
+  (cfg.repos || []).map((r) => ({ ...r, brand: repoBrand(r) }))
+);
 async function testDav() {
   if (davTest.busy) return;
   davTest.busy = true;
@@ -769,10 +802,10 @@ function openRepo(repo) {
       subdir: parts ? parts.subdir : "",
       uri: repo.uri,
       remote: repo.remote || "",
-      dav_url: repo.dav_url || "", dav_user: repo.dav_user || "", dav_pass: "", dav_vendor: repo.dav_vendor || "other",
+      dav_url: repo.dav_url || "", dav_user: repo.dav_user || "", dav_pass: "", dav_vendor: repo.dav_vendor || "other", brand: repo.brand || "auto",
     });
   } else {
-    Object.assign(repoModal.form, { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other", showPass: false });
+    Object.assign(repoModal.form, { id: "", name: "", cloud: "webdav", subdir: "", uri: "", password: "", remote: "", dav_url: "", dav_user: "", dav_pass: "", dav_vendor: "other", brand: "auto", showPass: false });
     davTest.ok = null; davTest.msg = "";
   }
 }
@@ -1307,12 +1340,6 @@ async function sdLoadDir(path) {
     sd.err = e.message;
   }
 }
-function sdToggleOpen(path) {
-  const n = sdEnsure(path);
-  if (sd.open[path]) { sd.open[path] = false; return; }
-  sd.open[path] = true;
-  if (!n.loaded) sdLoadDir(path);
-}
 // 选中语义：只记最上层路径，勾父目录自动覆盖子路径
 function sdPicked(p) {
   if (sd.sel.includes(p)) return true;
@@ -1350,23 +1377,7 @@ function sdToggleCur() {
   if (sdCurAll.value) { sd.sel = []; return; }
   sdSelectAll();
 }
-// 桌面：按展开状态拍平成一维列表，避免递归组件
-const sdFlat = computed(() => {
-  const out = [];
-  const walk = (paths, depth) => {
-    for (const p of paths) {
-      const n = sd.nodes[p];
-      if (!n) continue;
-      const open = !!sd.open[p];
-      const hasKids = !!n.is_dir && (!n.loaded || (n.children && n.children.length > 0));
-      out.push({ ...n, depth, open, hasKids });
-      if (open && n.children && n.children.length) walk(n.children, depth + 1);
-    }
-  };
-  walk(sd.roots, 0);
-  return out;
-});
-// 手机：当前目录下的子目录
+// 当前目录下的条目（桌面表格与手机下钻共用）
 const sdItems = computed(() => {
   if (!sd.cur) return sd.roots.map((p) => sd.nodes[p]).filter(Boolean);
   const n = sd.nodes[sd.cur];
@@ -1907,7 +1918,8 @@ const hist = reactive({
   loading: false,
   loaded: false,
   items: [],     // 后端按时间倒序返回
-  tab: "bak",    // bak | rst
+  tab: "all",    // all | bak | rst
+  onlyFail: false,
   cur: null,     // 当前选中（桌面右侧详情 / 手机就地展开）
 });
 
@@ -1921,8 +1933,10 @@ function loadHistory(force) {
       hist.items = r.items || [];
       hist.loaded = true;
       if (!isNarrow.value && (force || !hist.cur)) {
-        const list = hist.tab === "bak" ? histBackups.value : histRestores.value;
-        hist.cur = list[0] || null;
+        hist.cur = histList.value[0] || null;
+      } else if (hist.cur) {
+        // 刷新后用新数据替换选中项，详情里的进度/状态跟着更新
+        hist.cur = hist.items.find((x) => x.kind === hist.cur.kind && x.id === hist.cur.id) || hist.cur;
       }
     } catch (e) {
       showToast(e.message || "读取历史失败", "bad");
@@ -1936,14 +1950,17 @@ function loadHistory(force) {
 
 const histBackups = computed(() => hist.items.filter((x) => x.kind === "backup"));
 const histRestores = computed(() => hist.items.filter((x) => x.kind === "restore"));
-const histList = computed(() => (hist.tab === "bak" ? histBackups.value : histRestores.value));
+const histList = computed(() => {
+  let l = hist.tab === "bak" ? histBackups.value : hist.tab === "rst" ? histRestores.value : hist.items;
+  if (hist.onlyFail) l = l.filter((x) => x.status === "failed");
+  return l;
+});
 
 // 切换分段时，右侧详情跟着换到该分段的第一条
 watch(
-  () => hist.tab,
+  () => hist.tab + "|" + hist.onlyFail,
   () => {
-    const l = hist.tab === "bak" ? histBackups.value : histRestores.value;
-    hist.cur = isNarrow.value ? null : l[0] || null;
+    hist.cur = isNarrow.value ? null : histList.value[0] || null;
   }
 );
 
@@ -2114,8 +2131,285 @@ async function ptrOnEnd() {
   ptr.dist = 0;
 }
 
+// ---------------------------------------------------------------------------
+// 概览统计（方案 B：备份页横幅 / 快照页、历史页统计卡）
+// 只用已有接口：任务配置 + /api/repos/summary + /api/history（都只读本地缓存）
+// ---------------------------------------------------------------------------
+const taskFilter = ref("all"); // all | run | warn
+
+function taskNeedsCare(t) {
+  return t.enabled !== false && (!!t.auth_warn || t.last_status === "failed");
+}
+const taskCounts = computed(() => ({
+  all: cfg.tasks.length,
+  run: cfg.tasks.filter((t) => t.last_status === "running").length,
+  warn: cfg.tasks.filter(taskNeedsCare).length,
+}));
+const taskQuery = ref("");
+const filteredTasks = computed(() => {
+  let list = cfg.tasks;
+  if (taskFilter.value === "run") list = list.filter((t) => t.last_status === "running");
+  else if (taskFilter.value === "warn") list = list.filter(taskNeedsCare);
+  const q = taskQuery.value.trim().toLowerCase();
+  if (q) {
+    list = list.filter((t) =>
+      [t.name, repoName(t.repo_id), ...(t.paths || [])].some((x) => String(x || "").toLowerCase().includes(q))
+    );
+  }
+  return list;
+});
+
+// 「⋯ → 查看快照」：切到快照页并展开该任务所在仓库
+async function openTaskSnaps(t) {
+  menuOpen.value = "";
+  sheet.show = false;
+  nav.value = "snap";
+  backToSnapList();
+  if (!rp.list.length) await loadRepoSummary();
+  const repo = rp.list.find((r) => r.id === t.repo_id);
+  if (!repo) { showToast("找不到这个任务对应的仓库", "bad"); return; }
+  rp.open[repo.id] = true;
+  if (!repoBox(repo.id).loaded) await loadRepoSnaps(repo);
+}
+
+// 「⋯ → 复制任务」：以原任务为模板新建（同目的地会沿用该仓库已有密码）
+function copyTask(t) {
+  openWizard(t);
+  wiz.editing = false;
+  wiz.copy = true;
+  wiz.form.id = "";
+  wiz.form.name = t.name + " 副本";
+  // 目的地解析不到已有仓库时（会新建仓库），必须让用户看到并保存新密码
+  if (!destRepo.value) wiz.copy = false;
+}
+
+// 删除确认弹窗（替代浏览器原生 confirm）
+const delDlg = reactive({ show: false, task: null, busy: false });
+
+// 快照表格：与同组上一份（更早）快照比较文件数 / 数据量
+function snapDelta(snaps, i) {
+  const cur = snaps[i], prev = snaps[i + 1];
+  if (!prev) return { first: true };
+  const fa = cur.summary ? cur.summary.total_files : null, fb = prev.summary ? prev.summary.total_files : null;
+  const ba = cur.summary ? cur.summary.total_bytes : null, bb = prev.summary ? prev.summary.total_bytes : null;
+  if (fa == null || fb == null) return { unknown: true };
+  const df = fa - fb, db = (ba || 0) - (bb || 0);
+  if (!df && !db) return { same: true };
+  const sign = (n) => (n > 0 ? "+" : n < 0 ? "−" : "±");
+  return {
+    files: df ? sign(df) + Math.abs(df).toLocaleString() + " 文件" : "",
+    bytes: db ? sign(db) + fmtBytes(Math.abs(db)) : "",
+    up: df > 0 || (df === 0 && db > 0),
+  };
+}
+function restoreSnapRow(s, r) {
+  snapCur.value = s;
+  snapCurRepo.value = r;
+  restoreFromSnap();
+}
+
+// 近 30 天的备份记录（历史接口按时间倒序）
+function within30d(time) {
+  const d = new Date((time || "").replace(" ", "T"));
+  return !isNaN(d) && Date.now() - d.getTime() <= 30 * 86400000;
+}
+const bak30 = computed(() => histBackups.value.filter((x) => within30d(x.time)));
+const rst30 = computed(() => histRestores.value.filter((x) => within30d(x.time)));
+const bak30Rate = computed(() => {
+  const done = bak30.value.filter((x) => x.status === "success" || x.status === "failed");
+  if (!done.length) return null;
+  return (done.filter((x) => x.status === "success").length / done.length) * 100;
+});
+
+// 历史页横幅文案：近 30 天有失败则转 warn
+const histHero = computed(() => {
+  const fails = bak30.value.filter((x) => x.status === "failed").length;
+  const done = bak30.value.filter((x) => x.status === "success" || x.status === "failed").length;
+  const ratio = done ? (done - fails) / done : 0;
+  const parts = [`共 ${bak30.value.length} 次备份`];
+  if (rst30.value.length) parts.push(`${rst30.value.length} 次还原`);
+  return {
+    tone: fails ? "warn" : "ok",
+    title: fails ? `${fails} 次备份未成功` : "近 30 天备份全部成功",
+    sub: parts.join(" · "),
+    ratio,
+  };
+});
+function fmtRate(v) {
+  if (v == null) return "—";
+  return v >= 99.95 ? "100" : v.toFixed(1);
+}
+
+const overview = computed(() => {
+  const tasks = cfg.tasks;
+  const running = tasks.find((t) => t.last_status === "running");
+  const care = tasks.filter(taskNeedsCare);
+  const healthy = tasks.filter((t) => t.enabled !== false && !taskNeedsCare(t)).length;
+  const lastOk = tasks.map((t) => t.last_done_at || "").filter(Boolean).sort().pop() || "";
+  let tone = "ok", title = "数据保护正常";
+  if (care.length) { tone = "warn"; title = `${care.length} 个任务需要关注`; }
+  else if (running) { tone = "run"; title = "正在备份"; }
+  const parts = [];
+  if (running) parts.push(`「${running.name}」备份中 ${progress.task_id === running.id ? progress.percent.toFixed(0) + "%" : ""}`.trim());
+  if (care.length) parts.push(care.map((t) => t.name).slice(0, 2).join("、") + (care.length > 2 ? " 等" : "") + " 上次备份未成功");
+  else parts.push(`${tasks.length} 个任务均按计划运行`);
+  if (lastOk) parts.push("最近成功备份 " + fmtNextRunOrShort(lastOk));
+  return {
+    tone, title, sub: parts.join(" · "),
+    ratio: tasks.length ? healthy / tasks.length : 0,
+    bytes: tasks.reduce((a, t) => a + (Number(t.last_bytes) || 0), 0),
+    snaps: rp.list.some((r) => r.cached) ? rp.list.reduce((a, r) => a + (r.count || 0), 0) : null,
+  };
+});
+// "2026-11-09 04:00:12" → "今天 04:00" / "11-02 07:40"
+function fmtNextRunOrShort(s) {
+  const d = new Date(s.replace(" ", "T"));
+  if (isNaN(d)) return fmtShort(s);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "今天 " + s.slice(11, 16);
+  return fmtShort(s);
+}
+
+// 任务最近 10 次结果条（旧 → 新，不足 10 次用灰格补齐）
+function taskSpark(t) {
+  const runs = histBackups.value.filter((x) => x.task_id === t.id).slice(0, 10).reverse();
+  const cls = (s) => (s === "success" ? "ok" : s === "failed" ? "f" : s === "running" ? "r" : "n");
+  const out = runs.map((x) => ({ c: cls(x.status), tip: `${x.time} ${histStatusTxt(x)}` }));
+  while (out.length < 10) out.unshift({ c: "e", tip: "" });
+  return out;
+}
+function taskTagCls(t) {
+  const c = statusInfo(t).cls;
+  return c === "success" ? "ok" : c === "failed" ? "warn" : c === "running" ? "run" : "gray";
+}
+
+// 快照页统计
+const snapOverview = computed(() => {
+  const list = rp.list;
+  return {
+    repos: list.length,
+    snaps: list.reduce((a, r) => a + (r.count || 0), 0),
+    tasks: list.reduce((a, r) => a + (r.task_count || 0), 0),
+    latest: list.map((r) => r.latest_time || "").filter(Boolean).sort().pop() || "",
+  };
+});
+
+// 快照页横幅文案：有仓库没有任何快照时转 warn
+const snapHero = computed(() => {
+  const list = rp.list;
+  const empty = list.filter((r) => !r.count);
+  const ratio = list.length ? (list.length - empty.length) / list.length : 0;
+  const latest = snapOverview.value.latest ? fmtSnapTime(snapOverview.value.latest) : "";
+  const parts = [`${list.length} 个仓库`, `${snapOverview.value.snaps} 个快照`];
+  if (latest) parts.push(`最近 ${latest}`);
+  if (empty.length) parts.unshift(`${empty.map((r) => r.name).slice(0, 2).join("、")}${empty.length > 2 ? " 等" : ""}还没有快照`);
+  return {
+    tone: "ok",
+    title: empty.length ? `${empty.length} 个仓库还没有快照` : "云端快照正常",
+    sub: parts.join(" · "),
+    ratio,
+  };
+});
+
+// 复制任务时若把目的地改到新目录（不再命中已有仓库），恢复为新建密码输入
+watch(destRepo, (r) => { if (wiz.copy && !r) wiz.copy = false; });
+
+// 还原向导：步骤条下方的已选摘要；已完成的步骤可点回
+const CONFLICT_TXT = { always: "全部覆盖", "if-changed": "仅覆盖有变化", never: "跳过已存在", rename: "保留两者" };
+function rstStepSummary(id) {
+  if (id === "task") return rst.task ? rst.task.name : "";
+  if (id === "snap") return rst.cur ? snapTime(rst.cur) : "";
+  if (id === "files") return rst.includes.length ? rst.includes.length + " 项" : "";
+  if (id === "dest") return rst.dest === "original" ? "原位置" : (rst.target || "新路径");
+  if (id === "conf") return CONFLICT_TXT[rst.conflict] || "";
+  return "";
+}
+function rstGoto(i) {
+  if (i < rstStep.value && i >= rstOffset.value) rstStep.value = i;
+}
+function rstCancel() {
+  snapView.value = rst.fromSnap && snapCur.value ? "detail" : "list";
+}
+
+// 历史详情：失败的还原一键带回向导（沿用当时的快照、内容、目的地与冲突策略）
+async function retryRestore(it) {
+  const t = cfg.tasks.find((x) => x.id === it.task_id);
+  if (!t) { showToast("关联的备份任务已被删除", "bad"); return; }
+  openRestoreWizard();
+  rst.task = t;
+  nav.value = "snap";
+  snapView.value = "restore";
+  rstStep.value = 1;
+  await loadRestoreSnaps(t);
+  const sid = it.snapshot || "";
+  const hit = sid && rst.snaps.find((x) => (x.short_id || "").startsWith(sid) || x.id.startsWith(sid) || sid.startsWith(x.short_id || "~"));
+  if (!hit) { showToast("原快照已不存在，请重新选择", "bad"); return; }
+  rst.cur = hit;
+  rst.includes = (it.includes || []).map((p) => ({ path: p, name: p.split("/").pop() || p, is_dir: true }));
+  if (it.dest === "custom" && it.target) { rst.dest = "custom"; rst.target = it.target; }
+  if (it.conflict) rst.conflict = it.conflict;
+  rstStep.value = rst.includes.length ? 4 : 2;
+}
+function histProgress(it) {
+  if (it.status !== "running") return null;
+  if (it.kind === "restore") return it.pct || 0;
+  return it.task_id === progress.task_id ? progress.percent : null;
+}
+
+// 日志抽屉：把一行结果拆成几个数字块（"12,846 个文件 · 13.5 GB · 用时 18 分"）
+const logStats = computed(() => {
+  const sm = logModal.summary;
+  if (!sm) return [];
+  const out = [];
+  if (sm.status === "running") out.push({ k: "进度", v: (sm.percent || 0).toFixed(1) + "%" });
+  for (const part of String(sm.one_line || "").split("·").map((x) => x.trim()).filter(Boolean)) {
+    let k = "";
+    if (/文件|项/.test(part)) k = "文件";
+    else if (/\d\s*(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)\b/i.test(part)) k = "数据量";
+    else if (/^用时/.test(part)) k = "用时";
+    out.push({ k: k || "结果", v: k === "用时" ? part.replace(/^用时\s*/, "") : part });
+  }
+  if (sm.speed) out.push({ k: "速度", v: sm.speed });
+  return out.slice(0, 4);
+});
+
+// 快照浏览（桌面）：全快照文件搜索
+const sdq = reactive({ q: "", items: [], loading: false, done: false });
+let sdqTimer = null;
+watch(() => sdq.q, (q) => {
+  clearTimeout(sdqTimer);
+  if (!q.trim()) { sdq.items = []; sdq.done = false; return; }
+  sdqTimer = setTimeout(sdSearch, 350);
+});
+async function sdSearch() {
+  const s = snapCur.value;
+  const q = sdq.q.trim();
+  if (!s || !s.task_id || !q) return;
+  sdq.loading = true;
+  try {
+    const sid = s.short_id || s.id;
+    const r = await api(`/api/tasks/${s.task_id}/files?snapshot=${encodeURIComponent(sid)}&q=${encodeURIComponent(q)}`);
+    if (q !== sdq.q.trim()) return;
+    sdq.items = r.loading ? [] : r.items || [];
+    sdq.done = !r.loading;
+    if (r.loading) showToast("目录清单还在读取中，稍后再搜");
+  } catch (e) { showToast(e.message, "bad"); }
+  sdq.loading = false;
+}
+watch(snapCur, () => { sdq.q = ""; sdq.items = []; sdq.done = false; });
+function sdBaseName(p) { return (p || "").split("/").pop() || p; }
+
+// 任务状态变化（跑完 / 失败）后顺手刷新历史，结果条和成功率跟着更新
+watch(
+  () => cfg.tasks.map((t) => t.id + ":" + t.last_status + ":" + (t.last_done_at || "")).join("|"),
+  (n, o) => { if (o && n !== o && hist.loaded) loadHistory(); }
+);
+
 onMounted(() => {
   loadAll();
+  // 备份页横幅要用到快照数与近 30 天成功率；两个接口都只读本地缓存，开销很小
+  loadRepoSummary();
+  loadHistory();
   // 后端每 8 秒同步一次平台授权表，这里每 15 秒对一下，界面自动跟着变
   scopeTimer = setInterval(syncScope, 15000);
   document.addEventListener("visibilitychange", onPageVisible);
@@ -2145,20 +2439,20 @@ onUnmounted(() => {
     <aside class="sidebar">
       <nav class="sb-nav">
         <button class="sb-item" :class="{ on: nav === 'tasks' }" @click="nav = 'tasks'">
-          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M4 5.5A2.5 2.5 0 0 1 6.5 3h3.67a2 2 0 0 1 1.41.59l1.42 1.41H19.5A2.5 2.5 0 0 1 22 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 4 17.5v-12Z"/></svg>
-          备份
+          <Icon name="folder" :size="18" />
+          备份任务<span class="sb-cnt" v-if="cfg.tasks.length">{{ cfg.tasks.length }}</span>
         </button>
         <button class="sb-item" :class="{ on: nav === 'snap' }" @click="nav = 'snap'">
-          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg>
+          <Icon name="stack-2" :size="18" />
           快照
         </button>
         <button class="sb-item" :class="{ on: nav === 'hist' }" @click="nav = 'hist'">
-          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7.2v5l3.1 1.9M20.6 12a8.6 8.6 0 1 1-2.5-6.1"/></svg>
-          历史
+          <Icon name="history" :size="18" />
+          历史<span class="sb-cnt run" v-if="taskCounts.run || runningRestores.length">{{ taskCounts.run + runningRestores.length }}</span>
         </button>
       </nav>
       <div class="sb-foot" v-if="status">
-        <div>蛋壳备份 v{{ status.version || "-" }}</div>
+        <div>量子密备 v{{ status.version || "-" }}</div>
         <div>restic {{ status.restic_version || "未找到" }}</div>
         <div>rclone {{ status.rclone_version || "未找到" }}</div>
       </div>
@@ -2169,100 +2463,121 @@ onUnmounted(() => {
       <main class="content">
         <!-- ==================== 备份任务（仿飞牛原生） ==================== -->
         <template v-if="nav === 'tasks'">
-          <!-- 桌面页头 -->
-          <div class="dhead">
-            <h1>{{ nav === 'tasks' ? '备份任务' : '' }}</h1>
-            <button class="btn primary" @click="openWizard(null)">
-              <span class="plus">＋</span> 创建新任务
-            </button>
-          </div>
-
-          <!-- 任务卡片列表 -->
-          <div class="task-list" v-if="cfg.tasks.length">
-            <div class="task-card" v-for="t in cfg.tasks" :key="t.id">
-              <!-- 第一行：图标 + 名称 + 状态 -->
-              <div class="tc-top">
-                <div class="tc-icon">
-                  <svg viewBox="0 0 48 48" width="40" height="40">
-                    <path fill="#5ca0ff" d="M4 12a4 4 0 0 1 4-4h10l4 5h18a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V12Z"/>
-                    <path fill="#3370ff" d="M4 17h40v21a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V17Z"/>
-                  </svg>
-                  <span class="badge" :class="'b-' + statusInfo(t).badge">
-                    <template v-if="statusInfo(t).badge === 'warn'">!</template>
-                    <template v-else-if="statusInfo(t).badge === 'minus'">–</template>
-                    <template v-else-if="statusInfo(t).badge === 'ok'">✓</template>
-                    <template v-else-if="statusInfo(t).badge === 'run'"><i class="mini-spin"></i></template>
-                  </span>
-                </div>
-                <div class="tc-title">
-                  <b>{{ t.name }}</b>
-                  <div class="tc-status" :class="statusInfo(t).cls">
-                    <span class="st-main">{{ statusInfo(t).text }}</span>
-                    <span class="st-detail" v-if="statusInfo(t).detail">{{ statusInfo(t).detail }}</span>
-                    <a class="st-link" @click.prevent="openLogs(t)">查看详情</a>
-                  </div>
-                </div>
-                <div class="tc-acts">
-                  <button class="icon-btn" v-if="t.last_status === 'running'" title="停止" @click="stopTask(t)">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
-                  </button>
-                  <button class="icon-btn" v-else-if="t.enabled !== false" title="立即备份" @click="runTask(t)">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5Z"/></svg>
-                  </button>
-                  <button class="icon-btn" title="还原" @click.stop="openRestore(t)">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 5.5V2.8L7.6 6.4 12 10V7.5a6.5 6.5 0 1 1-6.4 7.7"/></svg>
-                  </button>
-                  <button class="icon-btn" @click.stop="toggleMenu(t.id)">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></svg>
-                  </button>
-                  <!-- 下拉菜单 -->
-                  <div class="menu" v-if="menuOpen === t.id" @click.stop>
-                    <button @click="openLogs(t)">查看日志</button>
-                    <button @click="openWizard(t)">编辑任务</button>
-                    <button class="danger" @click="delTask(t)">删除任务</button>
-                  </div>
-                </div>
-              </div>
-              <!-- 第二行：来源 → 目的地 → 下次 -->
-              <div class="tc-grid">
-                <div class="tc-cell">
-                  <div class="cell-head">
-                    <svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="4" width="18" height="13" rx="2" fill="#8ab4f8"/><rect x="7" y="19" width="10" height="2" rx="1" fill="#c3c9d4"/><path fill="#5f6b7d" d="M7 8h10v2H7zM7 12h6v2H7z" opacity=".55"/></svg>
-                    <b>fnos（本地）</b>
-                  </div>
-                  <div class="cell-sub">{{ pathSummary(t) }}</div>
-                </div>
-                <div class="tc-arrow">
-                  <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="#9db8e8" stroke-width="2" stroke-linecap="round" d="M4 12h14m-5-5 5 5-5 5" stroke-dasharray="1 3"/><path fill="#9db8e8" d="M17 8.5 21.5 12 17 15.5z"/></svg>
-                </div>
-                <div class="tc-cell">
-                  <div class="cell-head">
-                    <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#8ab4f8" d="M7 18a5 5 0 0 1-.58-9.97 6.5 6.5 0 0 1 12.6 1.62A4.5 4.5 0 0 1 17.5 18H7Z"/></svg>
-                    <b>{{ repoName(t.repo_id) }}</b>
-                  </div>
-                  <div class="cell-sub mono">{{ destPath(repoObj(t.repo_id)) }}</div>
-                </div>
-                <div class="tc-cell next">
-                  <div class="cell-head"><b class="dim">下次</b></div>
-                  <div class="cell-sub">{{ t.next_run_at ? fmtNextRun(t.next_run_at) : "–" }}</div>
-                </div>
-              </div>
-
-              <!-- 第三行：运行中进度（仅当前任务） -->
-              <div class="tc-progress" v-if="t.id === progress.task_id">
-                <div class="pg-head">
-                  <span class="spin"></span> 正在备份
-                  <span class="pg-pct">{{ progress.percent.toFixed(1) }}%</span>
-                </div>
-                <div class="bar"><div class="bar-in" :style="{ width: progress.percent + '%' }"></div></div>
-                <div class="pg-meta">
-                  <span><span class="pg-k">开始时间</span>{{ fmtClock(progress.started_at) }}</span>
-                  <span><span class="pg-k">数据量</span>{{ fmtBytes(progress.bytes_done) }} / {{ fmtBytes(progress.total_bytes) }}</span>
-                  <span><span class="pg-k">预计完成</span>{{ etaText || "计算中…" }}</span>
-                  <span v-if="progress.error_count" class="pg-err">⚠ {{ progress.error_count }} 个错误</span>
-                </div>
+          <!-- 概览横幅（方案 B） -->
+          <div class="ov-hero" v-if="cfg.tasks.length" :class="'tone-' + overview.tone">
+            <div class="ov-ring">
+              <svg viewBox="0 0 96 96" class="ov-ring-svg">
+                <circle cx="48" cy="48" r="42" fill="none" class="ov-ring-bg" stroke-width="8"/>
+                <circle cx="48" cy="48" r="42" fill="none" class="ov-ring-fg" stroke-width="8" stroke-linecap="round"
+                  stroke-dasharray="264" :stroke-dashoffset="264 * (1 - overview.ratio)"/>
+              </svg>
+              <div class="ov-ring-c">
+                <Icon v-if="overview.tone === 'warn'" name="shield-exclamation" :size="32" />
+                <span v-else-if="overview.tone === 'run'" class="ov-spin"></span>
+                <Icon v-else name="shield-check" :size="32" />
               </div>
             </div>
+            <div class="ov-txt">
+              <h2>{{ overview.title }}</h2>
+              <p>{{ overview.sub }}</p>
+              <div class="ov-acts">
+                <button class="btn primary" @click="openWizard(null)"><Icon name="plus" :size="15" class="plus" /> 创建新任务</button>
+              </div>
+            </div>
+            <div class="ov-kpis">
+              <div class="ov-kpi"><span>已保护数据</span><b>{{ overview.bytes ? fmtBytes(overview.bytes) : "—" }}</b></div>
+              <div class="ov-kpi"><span>云端快照</span><b>{{ overview.snaps == null ? "—" : overview.snaps }}<small v-if="overview.snaps != null">个</small></b></div>
+              <div class="ov-kpi"><span>近 30 天成功率</span><b :class="{ ok: bak30Rate != null && bak30Rate >= 90 }">{{ fmtRate(bak30Rate) }}<small v-if="bak30Rate != null">%</small></b></div>
+            </div>
+          </div>
+
+          <!-- 任务表格（桌面） -->
+          <div class="panel task-panel" v-if="cfg.tasks.length">
+            <div class="panel-h">
+              <h3>备份任务</h3>
+              <div class="pseg">
+                <button :class="{ on: taskFilter === 'all' }" @click="taskFilter = 'all'">全部 {{ taskCounts.all }}</button>
+                <button :class="{ on: taskFilter === 'run' }" @click="taskFilter = 'run'">运行中 {{ taskCounts.run }}</button>
+                <button :class="{ on: taskFilter === 'warn' }" @click="taskFilter = 'warn'">需关注 {{ taskCounts.warn }}</button>
+              </div>
+              <label class="psearch">
+                <Icon name="search" :size="14" />
+                <input v-model="taskQuery" placeholder="搜索任务、目录或云盘" />
+                <i v-if="taskQuery" @click="taskQuery = ''">✕</i>
+              </label>
+            </div>
+            <table class="ttbl">
+              <thead>
+                <tr><th>任务</th><th>备份路线</th><th>状态</th><th>最近 10 次</th><th>下次运行</th><th class="r">操作</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in filteredTasks" :key="t.id" @click="openLogs(t)">
+                  <td>
+                    <div class="tt-name">
+                      <span class="tt-ic" :class="'c-' + taskTagCls(t)">
+                        <Icon name="folder" :size="26" />
+                      </span>
+                      <div class="tt-nm">
+                        <b :title="t.name">{{ t.name }}</b>
+                        <small>{{ pathSummary(t) || "未选择目录" }}<template v-if="t.last_bytes"> · {{ fmtBytes(t.last_bytes) }}</template></small>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="tt-route" :title="'fnos（本地） → ' + repoName(t.repo_id) + ' / ' + destPath(repoObj(t.repo_id))">
+                      <span class="chip2">fnos</span>
+                      <Icon name="arrow-narrow-right" :size="14" />
+                      <span class="chip2">{{ repoName(t.repo_id) }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="tt-prog" v-if="t.id === progress.task_id">
+                      <div class="tt-prog-t"><span><span class="spin"></span> 备份中</span><b>{{ progress.percent.toFixed(0) }}%</b></div>
+                      <div class="bar"><div class="bar-in" :style="{ width: progress.percent + '%' }"></div></div>
+                      <div class="tt-prog-s">{{ fmtBytes(progress.bytes_done) }} / {{ fmtBytes(progress.total_bytes) }}<template v-if="etaText"> · {{ etaText }}</template></div>
+                    </div>
+                    <span v-else class="tag2" :class="taskTagCls(t)" :title="statusInfo(t).detail || ''">
+                      <i class="d"></i>{{ statusInfo(t).text }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="spark" title="最近 10 次运行（旧 → 新）">
+                      <i v-for="(s, i) in taskSpark(t)" :key="i" :class="s.c" :title="s.tip"></i>
+                    </div>
+                  </td>
+                  <td class="num">{{ t.next_run_at ? fmtNextRun(t.next_run_at) : (t.enabled === false ? "已禁用" : "手动") }}</td>
+                  <td class="r" @click.stop>
+                    <div class="tc-acts">
+                      <button class="btn ghost sm" v-if="t.last_status === 'running'" @click="stopTask(t)"><Icon name="player-stop" :size="13" /> 停止</button>
+                      <template v-else>
+                        <button class="icon-btn" v-if="t.enabled !== false" title="立即备份" @click="runTask(t)">
+                          <Icon name="player-play" :size="16" />
+                        </button>
+                        <button class="icon-btn" title="还原" @click.stop="openRestore(t)">
+                          <Icon name="arrow-back-up" :size="16" />
+                        </button>
+                      </template>
+                      <button class="icon-btn" title="更多" @click.stop="toggleMenu(t.id)">
+                        <Icon name="dots" :size="16" />
+                      </button>
+                      <div class="menu" v-if="menuOpen === t.id" @click.stop>
+                        <button @click="openWizard(t)">编辑任务</button>
+                        <button @click="openLogs(t)">运行日志</button>
+                        <button @click="openTaskSnaps(t)">查看快照</button>
+                        <button @click="openRestore(t)">还原</button>
+                        <button @click="copyTask(t)">复制任务</button>
+                        <hr />
+                        <button class="danger" @click="delTask(t)">删除任务</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!filteredTasks.length" class="tt-empty">
+                  <td colspan="6">{{ taskQuery.trim() ? "没有匹配「" + taskQuery.trim() + "」的任务" : taskFilter === "warn" ? "没有需要关注的任务，一切正常" : "当前没有正在运行的任务" }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="panel-foot">点击任务行查看运行日志</div>
           </div>
 
           <!-- 手机卡片 -->
@@ -2270,10 +2585,7 @@ onUnmounted(() => {
             <div class="mcard" v-for="t in cfg.tasks" :key="'m' + t.id" @click="openSheet(t)">
               <div class="mc-top">
                 <div class="tc-icon">
-                  <svg viewBox="0 0 48 48" width="38" height="38">
-                    <path fill="#5ca0ff" d="M4 12a4 4 0 0 1 4-4h10l4 5h18a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V12Z"/>
-                    <path fill="#3370ff" d="M4 17h40v21a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V17Z"/>
-                  </svg>
+                  <Icon name="folder" :size="28" />
                   <span class="badge" :class="'b-' + statusInfo(t).badge">
                     <template v-if="statusInfo(t).badge === 'warn'">!</template>
                     <template v-else-if="statusInfo(t).badge === 'minus'">–</template>
@@ -2287,7 +2599,7 @@ onUnmounted(() => {
                     <span class="st-main">{{ statusInfo(t).text }}</span>
                   </div>
                 </div>
-                <button class="mc-more" @click.stop="openSheet(t)">⋯</button>
+                <button class="mc-more" @click.stop="openSheet(t)"><Icon name="dots" :size="17" /></button>
               </div>
               <div class="mc-row"><span>来源地</span><span>fnos（本地） · {{ pathSummary(t) }}</span></div>
               <div class="mc-row"><span>目的地</span><span>{{ repoName(t.repo_id) }} · {{ destPath(repoObj(t.repo_id)) }}</span></div>
@@ -2305,17 +2617,21 @@ onUnmounted(() => {
                   <span><span class="pg-k">开始时间</span>{{ fmtClock(progress.started_at) }}</span>
                   <span><span class="pg-k">数据量</span>{{ fmtBytes(progress.bytes_done) }} / {{ fmtBytes(progress.total_bytes) }}</span>
                   <span><span class="pg-k">预计完成</span>{{ etaText || "计算中…" }}</span>
-                  <span v-if="progress.error_count" class="pg-err">⚠ {{ progress.error_count }} 个错误</span>
+                  <span v-if="progress.error_count" class="pg-err"><Icon name="alert-triangle" :size="13" /> {{ progress.error_count }} 个错误</span>
                 </div>
               </div>
             </div>
           </div>
 
           <!-- 空态 -->
-          <div class="empty" v-if="!cfg.tasks.length">
-            <div class="empty-icon">📦</div>
-            <p>暂无备份任务</p>
-            <p class="hint">点击「创建新任务」：选择源目录 → 目标云盘仓库 → 备份计划</p>
+          <div class="panel ov-empty" v-if="!cfg.tasks.length">
+            <div class="ov-empty-ic">
+              <Icon name="shield-check" :size="56" />
+            </div>
+            <b>还没有备份任务</b>
+            <p>选择 NAS 上的文件夹，加密后定时备份到云盘，云端只存密文</p>
+            <button class="btn primary hide-m" @click="openWizard(null)"><Icon name="plus" :size="15" class="plus" /> 创建第一个任务</button>
+            <div class="ov-empty-steps"><span>① 选择要备份的目录</span><span>② 连接云盘并设置密码</span><span>③ 设定备份计划</span></div>
           </div>
 
           <!-- 手机操作面板 -->
@@ -2326,13 +2642,15 @@ onUnmounted(() => {
                 <button class="sheet-x" aria-label="关闭" @click="sheet.show = false">✕</button>
               </div>
               <template v-if="sheet.task && sheet.task.last_status === 'running'">
-                <button class="sheet-btn" @click="sheet.task && stopTask(sheet.task)">■ 停止备份</button>
+                <button class="sheet-btn" @click="sheet.task && stopTask(sheet.task)"><Icon name="player-stop" :size="16" />停止备份</button>
               </template>
               <template v-else-if="sheet.task && sheet.task.enabled !== false">
-                <button class="sheet-btn primary" @click="sheet.task && runTask(sheet.task)">▶ 立即备份</button>
+                <button class="sheet-btn primary" @click="sheet.task && runTask(sheet.task)"><Icon name="player-play" :size="16" />立即备份</button>
               </template>
               <button class="sheet-btn" @click="sheet.task && openLogs(sheet.task)">查看日志</button>
+              <button class="sheet-btn" @click="sheet.task && openTaskSnaps(sheet.task)">查看快照</button>
               <button class="sheet-btn" @click="sheet.task && openWizard(sheet.task)">编辑任务</button>
+              <button class="sheet-btn" @click="sheet.task && copyTask(sheet.task)">复制任务</button>
               <button class="sheet-btn danger" @click="sheet.task && delTask(sheet.task)">删除任务</button>
             </div>
           </div>
@@ -2347,10 +2665,34 @@ onUnmounted(() => {
           <template v-if="snapView === 'list'">
             <div class="dhead">
               <h1>快照</h1>
+              <span class="dhead-sub">每次备份都会在云端留下一个可还原的时间点</span>
               <div class="dhead-acts">
                 <button class="btn ghost" :disabled="rp.loading" @click="loadRepoSummary">
                   {{ rp.loading ? "读取中…" : "刷新" }}
                 </button>
+              </div>
+            </div>
+
+            <div class="ov-hero" v-if="rp.list.length" :class="'tone-' + snapHero.tone">
+              <div class="ov-ring">
+                <svg viewBox="0 0 96 96" class="ov-ring-svg">
+                  <circle cx="48" cy="48" r="42" fill="none" class="ov-ring-bg" stroke-width="8"/>
+                  <circle cx="48" cy="48" r="42" fill="none" class="ov-ring-fg" stroke-width="8" stroke-linecap="round"
+                    stroke-dasharray="264" :stroke-dashoffset="264 * (1 - snapHero.ratio)"/>
+                </svg>
+                <div class="ov-ring-c">
+                  <Icon :name="snapHero.tone === 'warn' ? 'alert-circle' : 'stack-2'" :size="32" />
+                </div>
+              </div>
+              <div class="ov-txt">
+                <h2>{{ snapHero.title }}</h2>
+                <p>{{ snapHero.sub }}</p>
+              </div>
+              <div class="ov-kpis">
+                <div class="ov-kpi"><span>云端仓库</span><b>{{ snapOverview.repos }}<small>个</small></b></div>
+                <div class="ov-kpi"><span>快照总数</span><b>{{ snapOverview.snaps }}<small>个</small></b></div>
+                <div class="ov-kpi"><span>关联任务</span><b>{{ snapOverview.tasks }}<small>个</small></b></div>
+                <div class="ov-kpi"><span>最近快照</span><b class="sm">{{ snapOverview.latest ? fmtSnapTime(snapOverview.latest) : "—" }}</b></div>
               </div>
             </div>
 
@@ -2360,13 +2702,15 @@ onUnmounted(() => {
               <span class="sn-run-t">正在还原 · {{ j.task_name }}</span>
               <div class="sn-run-bar"><i :style="{ width: (j.pct || 0) + '%' }"></i></div>
               <span class="sn-run-p">{{ Math.floor(j.pct || 0) }}%</span>
+              <a class="sn-run-go" @click="nav = 'hist'; hist.tab = 'rst'">查看</a>
             </div>
 
             <div class="sn-list" v-if="rp.list.length">
               <div class="sn-repo" v-for="r in rp.list" :key="r.id" :class="{ open: rp.open[r.id] }">
                 <div class="sn-head" @click="toggleRepo(r)">
                   <div class="sn-ic">
-                    <svg viewBox="0 0 24 24" width="21" height="21"><path fill="#3370ff" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg>
+                    <img v-if="cloudLogo(repoBrand(r))" class="sn-logo" :src="cloudLogo(repoBrand(r))" :alt="cloudLabel(repoBrand(r))" :title="cloudLabel(repoBrand(r))" />
+                    <Icon v-else :name="cloudIcon(repoBrand(r))" :size="28" color="var(--ic)" />
                   </div>
                   <div class="sn-body">
                     <div class="sn-name">
@@ -2379,8 +2723,12 @@ onUnmounted(() => {
                       <span>最近快照 <b>{{ r.latest_time ? fmtSnapTime(r.latest_time) : "—" }}</b></span>
                     </div>
                   </div>
+                  <div class="sn-stats">
+                    <div><span>关联任务</span><b>{{ r.task_count }}</b></div>
+                    <div><span>最近快照</span><b>{{ r.latest_time ? fmtSnapTime(r.latest_time) : "—" }}</b></div>
+                  </div>
                   <div class="sn-chev">
-                    <svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>
+                    <Icon name="chevron-right" :size="15" />
                   </div>
                 </div>
 
@@ -2400,22 +2748,36 @@ onUnmounted(() => {
                       <table class="sn-tbl">
                         <thead>
                           <tr>
-                            <th style="width:118px">时间</th>
-                            <th style="width:146px">描述</th>
-                            <th>根目录范围</th>
-                            <th style="width:152px">文件 / 大小</th>
-                            <th style="width:64px"></th>
+                            <th style="width:130px">时间</th>
+                            <th style="width:120px">来源</th>
+                            <th>较上一份</th>
+                            <th style="width:190px">文件 / 大小</th>
+                            <th style="width:110px"></th>
                           </tr>
                         </thead>
                         <tbody>
-                          <tr v-for="s in g.snaps" :key="s.id" @click="openSnapDetail(s, r)">
+                          <tr v-for="(s, si) in g.snaps" :key="s.id" @click="openSnapDetail(s, r)" :title="(s.paths || []).join('\n')">
                             <td class="t">{{ fmtSnapTime(s.time) }}</td>
-                            <td class="dim ellip-sm" :title="(s.tags || []).join('、')">{{ snapTagLabel(s) }}</td>
-                            <td class="mono dim ellip" :title="(s.paths || []).join('\n')">
-                              {{ (s.paths || [])[0] || "-" }}<template v-if="(s.paths || []).length > 1"> 等 {{ s.paths.length }} 项</template>
+                            <td>
+                              <span class="tag2 pur" v-if="si === g.snaps.length - 1">首份</span>
+                              <span class="tag2 gray" v-else :title="(s.tags || []).join('、')">{{ snapTagLabel(s) }}</span>
+                            </td>
+                            <td>
+                              <template v-for="d in [snapDelta(g.snaps, si)]" :key="'d' + s.id">
+                                <span class="dl dim" v-if="d.first">—</span>
+                                <span class="dl z" v-else-if="d.same">无变化</span>
+                                <span class="dl dim" v-else-if="d.unknown">—</span>
+                                <template v-else>
+                                  <span class="dl" :class="d.up ? 'a' : 'd'" v-if="d.files">{{ d.files }}</span>
+                                  <span class="dl" :class="d.up ? 'a' : 'd'" v-if="d.bytes">{{ d.bytes }}</span>
+                                </template>
+                              </template>
                             </td>
                             <td class="mono dim nowrap">{{ snapFs(s) }}</td>
-                            <td class="acts"><span class="sn-link">浏览</span></td>
+                            <td class="acts">
+                              <span class="sn-link">浏览</span>
+                              <template v-if="s.task_id"><i class="sn-sep">|</i><span class="sn-link" @click.stop="restoreSnapRow(s, r)">还原</span></template>
+                            </td>
                           </tr>
                         </tbody>
                       </table>
@@ -2452,7 +2814,7 @@ onUnmounted(() => {
             </div>
 
             <div class="empty" v-else>
-              <div class="empty-icon">🗄</div>
+              <div class="empty-icon"><Icon name="database" :size="54" /></div>
               <p>还没有云端仓库</p>
               <p class="hint">在「备份」页创建任务时会同时建立加密仓库</p>
             </div>
@@ -2470,6 +2832,9 @@ onUnmounted(() => {
 
             <div class="sd-card">
               <div class="sd-top">
+                <span class="sd-ic">
+                  <Icon name="stack-2" :size="32" />
+                </span>
                 <div class="sd-l">
                   <div class="sd-time">{{ snapCur ? (snapCur.time || "").slice(0, 19).replace("T", " ") : "" }}</div>
                   <div class="sd-sub">
@@ -2494,9 +2859,9 @@ onUnmounted(() => {
             <div class="sd-panel">
               <div class="sd-ph">与上一快照的差异</div>
               <div class="sd-diff" v-if="snapDiff">
-                <span class="add">+ {{ snapDiff.added || 0 }} 新增</span>
-                <span class="mod">~ {{ snapDiff.changed || 0 }} 修改</span>
-                <span class="del">− {{ snapDiff.removed || 0 }} 删除</span>
+                <span class="add" :class="{ z: !snapDiff.added }">+ {{ snapDiff.added || 0 }} 新增</span>
+                <span class="mod" :class="{ z: !snapDiff.changed }">~ {{ snapDiff.changed || 0 }} 修改</span>
+                <span class="del" :class="{ z: !snapDiff.removed }">− {{ snapDiff.removed || 0 }} 删除</span>
                 <span class="tot">共 {{ (snapDiff.added || 0) + (snapDiff.changed || 0) + (snapDiff.removed || 0) }} 个文件变动</span>
               </div>
               <div class="sd-diff" v-else>
@@ -2504,14 +2869,25 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 备份内容：桌面端内联展开树（方案 A） -->
-            <div class="sd-panel sd-tree" v-if="!isNarrow">
+            <!-- 备份内容：桌面端逐层进入的文件表格 + 搜索 + 底部操作栏 -->
+            <div class="sd-panel sd-files" v-if="!isNarrow">
               <div class="sd-ph">
-                备份内容 <span class="cnt">{{ sd.roots.length }} 个源目录</span>
-                <span class="sd-tree-acts">
-                  <a @click="sdSelectAll">全选</a>
-                  <a @click="sd.sel = []">清空</a>
-                </span>
+                <div class="fpath" v-if="!sdq.q.trim()">
+                  <a :class="{ cur: !sd.cur }" @click="sd.cur = ''">快照根目录</a>
+                  <template v-for="(c, i) in sdCrumb" :key="c.path">
+                    <span class="sl">/</span>
+                    <a :class="{ cur: i === sdCrumb.length - 1 }" @click="sdEnter(c.path)">{{ c.label }}</a>
+                  </template>
+                </div>
+                <div class="fpath" v-else>
+                  <b>搜索「{{ sdq.q.trim() }}」</b>
+                  <span class="cnt">{{ sdq.loading ? "搜索中…" : sdq.done ? sdq.items.length + (sdq.items.length >= 300 ? "+" : "") + " 个文件" : "" }}</span>
+                </div>
+                <label class="psearch">
+                  <Icon name="search" :size="14" />
+                  <input v-model="sdq.q" placeholder="在快照中搜索文件名" />
+                  <i v-if="sdq.q" @click="sdq.q = ''">✕</i>
+                </label>
               </div>
 
               <div class="sd-build" v-if="sd.building">
@@ -2523,28 +2899,78 @@ onUnmounted(() => {
               </div>
               <div class="sd-build err" v-if="sd.err"><b>读取失败</b><span>{{ sd.err }}</span></div>
 
-              <div class="sdt-list" v-if="sdFlat.length">
-                <div
-                  class="sdt-row"
-                  v-for="n in sdFlat"
-                  :key="n.path"
-                  :class="{ on: sdPicked(n.path), file: !n.is_dir }"
-                  :style="{ paddingLeft: 6 + n.depth * 18 + 'px' }"
-                  @click="n.is_dir ? sdToggleOpen(n.path) : sdToggle(n.path)"
-                >
-                  <span class="sdt-caret" :class="{ open: n.open, leaf: !n.hasKids }" @click.stop="n.hasKids ? sdToggleOpen(n.path) : null">▶</span>
-                  <svg class="sdt-ic" v-if="n.is_dir" viewBox="0 0 40 32" width="17" height="14"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
-                  <svg class="sdt-ic" v-else viewBox="0 0 24 24" width="14" height="14"><path fill="#e5e9f0" d="M6 2h9l5 5v15H6V2Z"/><path fill="#c9d2e0" d="M15 2l5 5h-5V2Z"/></svg>
-                  <span class="sdt-name" :class="{ sel: sdPicked(n.path) }">{{ n.name }}</span>
-                  <span class="sdt-meta" v-if="n.loading">读取中…</span>
-                  <span class="sdt-meta" v-else-if="!n.is_dir">{{ fmtBytes(n.size) }}</span>
-                  <span class="sdt-meta" v-else-if="n.loaded && !n.children.length">空目录</span>
-                  <span class="sdt-meta" v-else-if="n.loaded && n.truncated">共 {{ n.total }} 项</span>
-                  <span class="sdt-meta" v-else-if="n.loaded">{{ n.children.length }} 项</span>
-                  <span class="cbx" :class="{ on: sdPicked(n.path), half: sdHalf(n.path) }" @click.stop="sdToggle(n.path)">✓</span>
-                </div>
+              <!-- 目录浏览 -->
+              <table class="ftbl" v-if="!sdq.q.trim()">
+                <thead>
+                  <tr>
+                    <th class="c"><span class="cbx" :class="{ on: sdCurAll, half: sdCurPart }" title="选中当前目录全部" @click="sdToggleCur">✓</span></th>
+                    <th>名称</th>
+                    <th class="w">大小 / 项数</th>
+                    <th class="g"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="sd.cur" @click="sdUp()">
+                    <td></td>
+                    <td colspan="3"><span class="fn back"><Icon name="arrow-back-up" :size="14" /> 返回上一级</span></td>
+                  </tr>
+                  <tr v-for="n in sdItems" :key="n.path" :class="{ on: sdPicked(n.path) }" @click="n.is_dir ? sdEnter(n.path) : sdToggle(n.path)">
+                    <td class="c"><span class="cbx" :class="{ on: sdPicked(n.path), half: sdHalf(n.path) }" @click.stop="sdToggle(n.path)">✓</span></td>
+                    <td>
+                      <span class="fn">
+                        <Icon v-if="n.is_dir" name="folder" :size="20" color="var(--ic)" />
+                        <Icon v-else name="file" :size="20" color="var(--ic)" />
+                        <span class="nm" :class="{ sel: sdPicked(n.path) }">{{ n.name }}</span>
+                      </span>
+                    </td>
+                    <td class="w dim">
+                      <template v-if="!n.is_dir">{{ fmtBytes(n.size) }}</template>
+                      <template v-else-if="n.loading">读取中…</template>
+                      <template v-else-if="n.loaded">{{ n.truncated ? "共 " + n.total : n.children.length }} 项</template>
+                      <template v-else>—</template>
+                    </td>
+                    <td class="g"><span v-if="n.is_dir">›</span></td>
+                  </tr>
+                  <tr v-if="sdCurNode && sdCurNode.loading && !sdItems.length" class="emp"><td colspan="4"><i class="mini-spin"></i> 正在读取目录…</td></tr>
+                  <tr v-else-if="!sdItems.length && !sd.building && !sd.err" class="emp"><td colspan="4">{{ sd.cur ? "这个目录是空的" : "这个快照里没有可浏览的内容" }}</td></tr>
+                </tbody>
+              </table>
+              <div class="sdc-more" v-if="!sdq.q.trim() && sdCurNode && sdCurNode.truncated">
+                该目录共 {{ sdCurNode.total }} 项，只显示前 300 项。需要找具体文件时，用右上角搜索。
               </div>
-              <div class="sn-empty" v-if="!sdFlat.length && !sd.building && !sd.err">这个快照里没有可浏览的内容</div>
+
+              <!-- 搜索结果 -->
+              <table class="ftbl" v-if="sdq.q.trim()">
+                <thead><tr><th class="c"></th><th>名称</th><th>所在目录</th><th class="w">大小</th></tr></thead>
+                <tbody>
+                  <tr v-for="it in sdq.items" :key="it.path" :class="{ on: sdPicked(it.path) }" @click="sdToggle(it.path)">
+                    <td class="c"><span class="cbx" :class="{ on: sdPicked(it.path) }" @click.stop="sdToggle(it.path)">✓</span></td>
+                    <td>
+                      <span class="fn">
+                        <Icon name="file" :size="17" color="var(--ic)" />
+                        <span class="nm" :class="{ sel: sdPicked(it.path) }">{{ it.name }}</span>
+                      </span>
+                    </td>
+                    <td class="mono dim ellip" :title="it.parent">{{ it.parent }}</td>
+                    <td class="w dim">{{ fmtBytes(it.size) }}</td>
+                  </tr>
+                  <tr v-if="sdq.done && !sdq.items.length" class="emp"><td colspan="4">没有找到匹配的文件</td></tr>
+                </tbody>
+              </table>
+
+              <div class="sd-selbar">
+                <template v-if="sd.sel.length">
+                  <span class="cnt-t">已选 <b>{{ sd.sel.length }}</b> 项</span>
+                  <div class="sel-chips">
+                    <span v-for="p in sd.sel.slice(0, 6)" :key="p" :title="p">{{ sdBaseName(p) }}<i @click="sdToggle(p)">✕</i></span>
+                    <span v-if="sd.sel.length > 6" class="more">+{{ sd.sel.length - 6 }}</span>
+                  </div>
+                  <a class="clr" @click="sd.sel = []">清空</a>
+                </template>
+                <span v-else class="dim">勾选要还原的文件或目录；不勾选则还原整份快照</span>
+                <span class="sp"></span>
+                <button class="btn primary" :disabled="!snapCur || !snapCur.task_id" @click="sdRestore">{{ sd.sel.length ? "还原所选（" + sd.sel.length + " 项）" : "还原整份快照" }}</button>
+              </div>
             </div>
 
             <!-- 备份内容：手机端逐层下钻（方案 C） -->
@@ -2576,12 +3002,12 @@ onUnmounted(() => {
 
               <div class="sdc-list">
                 <div class="sdc-row" v-if="sd.cur" @click="sdUp()">
-                  <span class="sdc-back">↩</span>
+                  <span class="sdc-back"><Icon name="arrow-back-up" :size="16" /></span>
                   <span class="sdc-name" style="color:#6b7280">返回上一级</span>
                 </div>
                 <div class="sdc-row" v-for="n in sdItems" :key="n.path" :class="{ on: sdPicked(n.path) }" @click="n.is_dir ? sdEnter(n.path) : sdToggle(n.path)">
-                  <svg class="sdt-ic" v-if="n.is_dir" viewBox="0 0 40 32" width="19" height="15"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
-                  <svg class="sdt-ic" v-else viewBox="0 0 24 24" width="16" height="16"><path fill="#e5e9f0" d="M6 2h9l5 5v15H6V2Z"/><path fill="#c9d2e0" d="M15 2l5 5h-5V2Z"/></svg>
+                  <Icon class="sdt-ic" v-if="n.is_dir" name="folder" :size="20" color="var(--ic)" />
+                  <Icon class="sdt-ic" v-else name="file" :size="19" color="var(--ic)" />
                   <span class="sdc-name" :class="{ sel: sdPicked(n.path) }">{{ n.name }}</span>
                   <span class="sdc-size" v-if="!n.is_dir">{{ fmtBytes(n.size) }}</span>
                   <span class="sdc-go" v-if="n.is_dir">›</span>
@@ -2616,9 +3042,12 @@ onUnmounted(() => {
             <div class="rst-stepper">
               <template v-for="(st, i) in rstVisibleSteps" :key="st.id">
                 <div class="rst-step-line" v-if="i > 0" :class="{ done: i + rstOffset <= rstStep }"></div>
-                <div class="rst-step-dot" :class="{ on: i + rstOffset === rstStep, done: i + rstOffset < rstStep }">
+                <div class="rst-step-dot" :class="{ on: i + rstOffset === rstStep, done: i + rstOffset < rstStep }" @click="rstGoto(i + rstOffset)">
                   <span class="n">{{ i + rstOffset < rstStep ? "✓" : i + 1 }}</span>
-                  <span class="lb">{{ st.label }}</span>
+                  <span class="lbw">
+                    <span class="lb">{{ st.label }}</span>
+                    <small class="sm" v-if="i + rstOffset < rstStep && rstStepSummary(st.id)" :title="rstStepSummary(st.id)">{{ rstStepSummary(st.id) }}</small>
+                  </span>
                 </div>
               </template>
             </div>
@@ -2631,13 +3060,15 @@ onUnmounted(() => {
               <!-- 第 0 步：选任务 -->
               <div v-if="rstStep === 0">
                 <div class="rpick-list" v-if="cfg.tasks.length">
-                  <button class="rpick-item" v-for="t in cfg.tasks" :key="t.id" @click="selectTask(t)">
-                    <span class="rp-ic">↺</span>
+                  <button class="rpick-item" v-for="t in cfg.tasks" :key="t.id" :class="{ on: rst.task && rst.task.id === t.id }" @click="selectTask(t)">
+                    <span class="rp-ic" :class="'c-' + taskTagCls(t)">
+                      <Icon name="folder" :size="26" />
+                    </span>
                     <span class="rp-txt">
                       <b>{{ t.name }}</b>
-                      <small>{{ t.last_done_at ? "上次备份 " + fmtShort(t.last_done_at) : "从未备份" }}</small>
+                      <small>{{ repoName(t.repo_id) }} · {{ t.last_done_at ? "上次备份 " + fmtShort(t.last_done_at) : "从未备份" }}</small>
                     </span>
-                    <svg viewBox="0 0 24 24" width="16" height="16" class="rp-arrow"><path fill="none" stroke="#c0c4cc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></svg>
+                    <Icon name="chevron-right" :size="16" class="rp-arrow" />
                   </button>
                 </div>
                 <div class="empty" v-else>
@@ -2652,7 +3083,7 @@ onUnmounted(() => {
                   <em class="fld-hint">徽章 = 与上一份快照的差异</em>
                   <em class="snap-cache" v-if="rst.cachedAt" title="本地缓存快照列表，避免每次实时查云盘">缓存于 {{ rst.cachedAt.slice(5) }}</em>
                   <button type="button" class="snap-refresh" title="强制实时查询云盘并更新缓存" @click="loadRestoreSnaps(rst.task, true)" :disabled="rst.snapsLoading">
-                    <svg viewBox="0 0 24 24" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
+                    <Icon name="chevron-right" :size="13" />
                     刷新缓存
                   </button>
                 </div>
@@ -2672,11 +3103,11 @@ onUnmounted(() => {
               <!-- 第 2 步：选文件 -->
               <div v-else-if="rstStep === 2">
                 <button type="button" class="pick-files-btn" @click="openRstPick">
-                  <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg>
+                  <Icon name="folder" :size="17" />
                   {{ rst.includes.length ? "已选 " + rst.includes.length + " 项 · 点击修改" : "浏览快照文件…" }}
                 </button>
                 <div class="inc-tray" v-if="rst.includes.length">
-                  <span class="t" v-for="x in rst.includes" :key="x.path"><b>{{ x.is_dir ? "📁" : "📄" }} {{ x.name }}</b><i @click="removeInclude(x)">×</i></span>
+                  <span class="t" v-for="x in rst.includes" :key="x.path"><b><Icon :name="x.is_dir ? 'folder' : 'file'" :size="13" /> {{ x.name }}</b><i @click="removeInclude(x)">×</i></span>
                 </div>
                 <div class="pick-hint" v-else>
                   不选则还原整份快照<template v-if="rst.cur && (rst.cur.paths || []).length">，即 {{ rst.cur.paths.join("、") }}</template>
@@ -2685,9 +3116,17 @@ onUnmounted(() => {
 
               <!-- 第 3 步：目的地 -->
               <div v-else-if="rstStep === 3">
-                <div class="seg">
-                  <button type="button" :class="{ on: rst.dest === 'original' }" @click="rst.dest = 'original'">原位置</button>
-                  <button type="button" :class="{ on: rst.dest === 'custom' }" @click="rst.dest = 'custom'">新路径</button>
+                <div class="dest-opts">
+                  <button type="button" class="dest-opt" :class="{ on: rst.dest === 'original' }" @click="rst.dest = 'original'">
+                    <span class="ic c-blue"><Icon name="map-pin" :size="24" /></span>
+                    <span class="tx"><b>原位置</b><small>写回备份时的原始路径</small></span>
+                    <span class="rd"></span>
+                  </button>
+                  <button type="button" class="dest-opt" :class="{ on: rst.dest === 'custom' }" @click="rst.dest = 'custom'">
+                    <span class="ic c-green"><Icon name="folder" :size="24" /></span>
+                    <span class="tx"><b>新路径</b><small>还原到指定目录，更安全，不影响现有文件</small></span>
+                    <span class="rd"></span>
+                  </button>
                 </div>
                 <div class="dest-note" v-if="rst.dest === 'original'">
                   将写回原路径：{{ rst.includes.map((x) => x.path).join("；") }}
@@ -2722,14 +3161,15 @@ onUnmounted(() => {
             </div>
 
             <div class="rst-flow" v-if="rstStep === 4 && rst.cur && rst.includes.length">
-              <span class="rst-flow-node">📁 快照 {{ (rst.cur.short_id || rst.cur.id).slice(0, 8) }}</span>
+              <span class="rst-flow-node"><Icon name="folder" :size="14" /> 快照 {{ (rst.cur.short_id || rst.cur.id).slice(0, 8) }}</span>
               <i class="rst-flow-lk">──▶</i>
               <span class="rst-flow-node hi">{{ rst.dest === "original" ? "⌖ 原位置" : "➝ " + (rst.target || "新路径") }}</span>
             </div>
 
             <div class="sd-foot">
-              <button class="btn ghost" :disabled="!rstCanPrev" @click="rstPrev">上一步</button>
+              <button class="btn ghost hide-m" @click="rstCancel">取消</button>
               <div class="sp"></div>
+              <button class="btn ghost" :disabled="!rstCanPrev" @click="rstPrev">上一步</button>
               <button v-if="rstStep < 4" class="btn primary" :disabled="!rstStepReady(rstStep)" @click="rstNext">下一步</button>
               <button v-else class="btn primary" :disabled="!rstReady || rst.busy" @click="doRestore">{{ rst.busy ? "启动中…" : "开始还原" }}</button>
             </div>
@@ -2748,8 +3188,33 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <div class="ov-hero" v-if="hist.loaded" :class="'tone-' + histHero.tone">
+            <div class="ov-ring">
+              <svg viewBox="0 0 96 96" class="ov-ring-svg">
+                <circle cx="48" cy="48" r="42" fill="none" class="ov-ring-bg" stroke-width="8"/>
+                <circle cx="48" cy="48" r="42" fill="none" class="ov-ring-fg" stroke-width="8" stroke-linecap="round"
+                  stroke-dasharray="264" :stroke-dashoffset="264 * (1 - histHero.ratio)"/>
+              </svg>
+              <div class="ov-ring-c">
+                <Icon :name="histHero.tone === 'warn' ? 'alert-circle' : 'shield-check'" :size="32" />
+              </div>
+            </div>
+            <div class="ov-txt">
+              <h2>{{ histHero.title }}</h2>
+              <p>{{ histHero.sub }}</p>
+            </div>
+            <div class="ov-kpis">
+              <div class="ov-kpi"><span>近 30 天备份</span><b>{{ bak30.length }}<small>次</small></b></div>
+              <div class="ov-kpi"><span>成功率</span><b :class="{ ok: bak30Rate != null && bak30Rate >= 90 }">{{ fmtRate(bak30Rate) }}<small v-if="bak30Rate != null">%</small></b></div>
+              <div class="ov-kpi"><span>失败</span><b>{{ bak30.filter((x) => x.status === "failed").length }}<small>次</small></b></div>
+              <div class="ov-kpi"><span>近 30 天还原</span><b>{{ rst30.length }}<small>次</small></b></div>
+            </div>
+          </div>
           <div class="hist-bar">
             <div class="hist-seg">
+              <button :class="{ on: hist.tab === 'all' }" @click="hist.tab = 'all'">
+                全部<span class="n" v-if="hist.items.length">{{ hist.items.length }}</span>
+              </button>
               <button :class="{ on: hist.tab === 'bak' }" @click="hist.tab = 'bak'">
                 备份<span class="n" v-if="histBackups.length">{{ histBackups.length }}</span>
               </button>
@@ -2757,6 +3222,9 @@ onUnmounted(() => {
                 还原<span class="n" v-if="histRestores.length">{{ histRestores.length }}</span>
               </button>
             </div>
+            <label class="hist-fail" :class="{ on: hist.onlyFail }">
+              <input type="checkbox" v-model="hist.onlyFail" /> 仅看失败
+            </label>
           </div>
 
           <div class="hist-wrap" :class="{ narrow: isNarrow }">
@@ -2772,12 +3240,20 @@ onUnmounted(() => {
                   :class="{ on: histSel(it) }"
                   @click="pickHist(it)"
                 >
-                  <div class="hi-top">
-                    <span class="hi-st" :class="histStatusCls(it.status)">{{ histStatusTxt(it) }}</span>
-                    <span class="hi-nm">{{ histTitle(it) }}</span>
-                    <span class="hi-tm mono">{{ hhmm(it.time) }}</span>
+                  <div class="hi-row">
+                    <span class="hi-ic" :class="'k-' + histStatusCls(it.status)">
+                      <Icon v-if="it.kind === 'backup'" name="folder" :size="22" />
+                      <Icon v-else name="arrow-back-up" :size="22" />
+                    </span>
+                    <div class="hi-main">
+                      <div class="hi-top">
+                        <span class="hi-st" :class="histStatusCls(it.status)">{{ histStatusTxt(it) }}</span>
+                        <span class="hi-nm">{{ histTitle(it) }}</span>
+                        <span class="hi-tm mono">{{ it.kind === "backup" ? "备份" : "还原" }} · {{ hhmm(it.time) }}</span>
+                      </div>
+                      <div class="hi-sub" v-if="it.one_line">{{ it.one_line }}</div>
+                    </div>
                   </div>
-                  <div class="hi-sub" v-if="it.one_line">{{ it.one_line }}</div>
 
                   <!-- 手机：点开就地展开 -->
                   <div class="hi-open" v-if="isNarrow && histSel(it)">
@@ -2790,25 +3266,31 @@ onUnmounted(() => {
                     <div class="hi-ops">
                       <button class="btn ghost sm" v-if="it.kind === 'backup'" @click.stop="openHistLog(it)">查看完整日志</button>
                       <button class="btn ghost sm danger" v-else-if="it.status === 'running'" @click.stop="stopRestore(it)">停止还原</button>
+                      <button class="btn primary sm" v-if="it.kind === 'restore' && it.status === 'failed'" @click.stop="retryRestore(it)">重新还原</button>
                     </div>
                   </div>
                 </div>
               </template>
 
               <div class="sn-empty" v-if="!hist.loading && !histGroups.length">
-                <p>{{ hist.tab === "bak" ? "还没有备份记录" : "还没有还原记录" }}</p>
-                <p class="hint">{{ hist.tab === "bak" ? "跑一次备份，这里就会出现记录" : "在「快照」里点开任意快照，就能发起还原" }}</p>
+                <p>{{ hist.onlyFail ? "没有失败记录" : hist.tab === "bak" ? "还没有备份记录" : hist.tab === "rst" ? "还没有还原记录" : "还没有任何记录" }}</p>
+                <p class="hint" v-if="!hist.onlyFail">{{ hist.tab === "rst" ? "在「快照」里点开任意快照，就能发起还原" : "跑一次备份，这里就会出现记录" }}</p>
               </div>
             </div>
 
             <!-- 桌面：右侧详情 -->
             <div class="hist-det" v-if="!isNarrow">
               <template v-if="hist.cur">
-                <div class="hd-top">
+                <div class="hd-tags">
                   <span class="hi-st" :class="histStatusCls(hist.cur.status)">{{ histStatusTxt(hist.cur) }}</span>
-                  <b>{{ histTitle(hist.cur) }}</b>
+                  <span class="hi-st gray">{{ hist.cur.kind === "backup" ? "备份" : "还原" }}</span>
                 </div>
-                <div class="hd-time">{{ hist.cur.time || "—" }}</div>
+                <div class="hd-top"><b>{{ histTitle(hist.cur) }}</b></div>
+                <div class="hd-time">{{ hist.cur.time || "—" }}<template v-if="hist.cur.one_line"> · {{ hist.cur.one_line }}</template></div>
+                <div class="hd-prog" v-if="histProgress(hist.cur) != null">
+                  <div class="bar"><div class="bar-in" :style="{ width: histProgress(hist.cur) + '%' }"></div></div>
+                  <b>{{ histProgress(hist.cur).toFixed(0) }}%</b>
+                </div>
                 <div class="hi-kv" v-for="r in histKVs(hist.cur)" :key="r.k">
                   <span class="k">{{ r.k }}</span><span class="v mono">{{ r.v }}</span>
                 </div>
@@ -2818,6 +3300,7 @@ onUnmounted(() => {
                 <div class="hd-foot">
                   <button class="btn ghost" v-if="hist.cur.kind === 'backup'" @click="openHistLog(hist.cur)">查看完整日志</button>
                   <button class="btn ghost danger" v-else-if="hist.cur.status === 'running'" @click="stopRestore(hist.cur)">停止还原</button>
+                  <button class="btn primary" v-if="hist.cur.kind === 'restore' && hist.cur.status === 'failed'" @click="retryRestore(hist.cur)">重新还原</button>
                 </div>
               </template>
               <div class="sn-empty" v-else><p>选一条记录查看详情</p></div>
@@ -2831,7 +3314,7 @@ onUnmounted(() => {
     <div class="mask" v-if="wiz.show">
       <div class="modal tall">
         <div class="modal-head sheet-head">
-          <h3>{{ wiz.editing ? "编辑任务" : "新建备份任务" }}</h3>
+          <h3>{{ wiz.editing ? "编辑任务" : wiz.copy ? "复制任务" : "新建备份任务" }}</h3>
           <button class="x" @click="closeWizard">✕</button>
         </div>
         <div class="modal-body single">
@@ -2844,17 +3327,17 @@ onUnmounted(() => {
           <!-- 备份来源地 -->
           <div class="sec">
             <div class="sec-head">
-              <b>备份来源地</b>
+              <b><i class="sec-n">1</i>备份来源地</b>
               <button class="link-btn" @click="openSrcEdit">设置</button>
             </div>
             <div class="sec-card">
               <div class="src-row">
-                <div class="src-ico">🖥️</div>
+                <div class="src-ico"><Icon name="device-desktop" :size="20" /></div>
                 <div><b>fnos</b><span class="sec-sub">本地设备</span></div>
               </div>
               <div class="src-paths" v-if="wiz.form.paths.length">
                 <div class="src-path" v-for="(p, i) in wiz.form.paths" :key="p">
-                  <span>📁 {{ shortPath(p) }}</span>
+                  <span><Icon name="folder" :size="14" color="var(--ic)" /> {{ shortPath(p) }}</span>
                   <b class="rm" @click="removePath(i)">✕</b>
                 </div>
               </div>
@@ -2864,13 +3347,15 @@ onUnmounted(() => {
 
           <!-- 备份目的地：两步式（选云端 → 选/新建目录） -->
           <div class="sec">
-            <div class="sec-head"><b>备份目的地</b><button type="button" class="link-btn" @click="openRepo(null)">新增云端</button></div>
-            <div class="sec-card">
+            <div class="sec-head"><b><i class="sec-n">2</i>备份目的地</b><button type="button" class="link-btn" @click="openRepo(null)">新增云端</button></div>
+            <div class="sec-card dest-card">
+              <div class="dest-grid">
               <div class="fld">
                 <span>① 选择云端</span>
                 <button type="button" class="cloud-pick-btn" @click="openCloudPick">
                   <template v-if="destRepo">
-                    <span class="cpb-badge" :class="badgeCls(destRepo.cloud)">{{ badgeTxt(destRepo.cloud) }}</span>
+                    <img v-if="cloudLogo(repoBrand(destRepo))" class="cpb-logo" :src="cloudLogo(repoBrand(destRepo))" :alt="cloudLabel(repoBrand(destRepo))" />
+                    <Icon v-else :name="cloudIcon(repoBrand(destRepo))" :size="20" />
                     <span class="cpb-txt">
                       <b>{{ destRepo.name }}</b>
                       <small>{{ destRepo.cloud === "webdav" ? (destRepo.dav_user ? destRepo.dav_user + "@" : "") + (destRepo.dav_url || "WebDAV").replace(/^https?:\/\//, "") : (destRepo.uri || "").replace(/^rclone:/, "") }}</small>
@@ -2887,24 +3372,26 @@ onUnmounted(() => {
                   <i class="chev-r">›</i>
                 </button>
               </div>
+              </div>
               <div class="fld">
                 <span>③ 加密密码</span>
-                <div class="pwrow" v-if="!wiz.editing">
+                <div class="pwrow" v-if="!wiz.editing && !wiz.copy">
                   <input :type="wiz.form.showPass ? 'text' : 'password'" v-model="wiz.form.password" autocomplete="new-password" placeholder="自动生成，也可手动填写" />
                   <button type="button" class="eye" @click="wiz.form.showPass = !wiz.form.showPass">
-                    <svg v-if="wiz.form.showPass" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <Icon v-if="wiz.form.showPass" name="eye-off" :size="16" />
+                    <Icon v-else name="eye" :size="16" />
                   </button>
                   <button type="button" class="btn ghost sm" @click="genWizPw">生成</button>
                 </div>
                 <div class="pwrow" v-else>
                   <input type="password" value="••••••••" disabled readonly />
                   <button type="button" class="btn ghost sm" @click="copyRepoPw">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <Icon name="copy" :size="14" />
                     复制
                   </button>
                 </div>
-                <div class="hint-box" v-if="!wiz.editing">仓库密码只能设置一次，保存后不可修改，请妥善保管；忘记密码将无法恢复数据。</div>
+                <div class="hint-box" v-if="!wiz.editing && !wiz.copy">仓库密码只能设置一次，保存后不可修改，请妥善保管；忘记密码将无法恢复数据。</div>
+                <div class="pw-note" v-else-if="wiz.copy">目的地与原任务相同，沿用该仓库已有的密码；改到新目录时可重新设置。</div>
               </div>
               <div class="flow-line" v-if="destReady && wiz.form.paths.length">
                 <span class="node">fnos 本地</span><i class="lk">──▶</i>
@@ -2915,7 +3402,7 @@ onUnmounted(() => {
 
           <!-- 备份设置 -->
           <div class="sec">
-            <div class="sec-head"><b>备份设置</b></div>
+            <div class="sec-head"><b><i class="sec-n">3</i>备份设置</b></div>
             <div class="sec-card">
 
               <!-- 备份规则（预设开关） -->
@@ -3025,8 +3512,15 @@ onUnmounted(() => {
           <div class="hint-box">首次备份为全量上传，速度取决于云盘限速；后续增量备份只上传变化部分。</div>
         </div>
 
-        <div class="modal-foot">
-          <button class="btn primary block" @click="wizSave" :disabled="!wizReady || wiz.saving">{{ wiz.saving ? "保存中…" : (wiz.editing ? "保存" : "创建任务") }}</button>
+        <div class="modal-foot wiz-foot">
+          <button class="btn ghost hide-m" @click="closeWizard" :disabled="wiz.saving">取消</button>
+          <template v-if="wiz.editing">
+            <button class="btn primary" @click="wizSave()" :disabled="!wizReady || wiz.saving">{{ wiz.saving ? "保存中…" : "保存" }}</button>
+          </template>
+          <template v-else>
+            <button class="btn ghost" @click="wizSave()" :disabled="!wizReady || wiz.saving">{{ wiz.saving ? "保存中…" : "创建任务" }}</button>
+            <button class="btn primary" @click="wizSave(true)" :disabled="!wizReady || wiz.saving">创建并立即备份</button>
+          </template>
         </div>
       </div>
     </div>
@@ -3057,8 +3551,8 @@ onUnmounted(() => {
               <div class="pwrow">
                 <input :type="repoModal.form.showPass ? 'text' : 'password'" v-model="repoModal.form.dav_pass" @input="davTest.msg = ''" autocomplete="new-password" placeholder="WebDAV 密码" />
                 <button type="button" class="eye" @click="repoModal.form.showPass = !repoModal.form.showPass">
-                  <svg v-if="repoModal.form.showPass" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                  <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <Icon v-if="repoModal.form.showPass" name="eye-off" :size="16" />
+                  <Icon v-else name="eye" :size="16" />
                 </button>
               </div>
             </label>
@@ -3069,6 +3563,16 @@ onUnmounted(() => {
                 <span v-if="davTest.msg" :class="davTest.ok ? 'tst-ok' : 'tst-bad'">{{ davTest.msg }}</span>
               </div>
             </div>
+            <label class="fld">
+              <span>服务商</span>
+              <select v-model="repoModal.form.brand">
+                <option v-for="o in BRAND_OPTIONS" :key="o[0]" :value="o[0]">{{ o[1] }}</option>
+              </select>
+              <div class="fld-hint">
+                <template v-if="repoModal.form.brand === 'auto'">按地址与目录自动识别，当前识别为「{{ autoBrandHint }}」</template>
+                <template v-else>已手动指定，列表里固定显示该标识</template>
+              </div>
+            </label>
           </template>
           <template v-else-if="repoModal.form.cloud !== 'other'">
             <div class="fld">
@@ -3093,8 +3597,8 @@ onUnmounted(() => {
     </div>
 
     <!-- ======================== 日志抽屉 ======================== -->
-    <div class="mask" v-if="logModal.show">
-      <div class="modal wide">
+    <div class="mask drawer-mask" v-if="logModal.show" @click.self="closeLogs">
+      <div class="modal wide log-drawer">
         <div class="modal-head">
           <h3>运行日志 — {{ logModal.task ? logModal.task.name : "" }}</h3>
           <label class="auto-lb"><input type="checkbox" v-model="logModal.auto" /> 自动刷新</label>
@@ -3121,6 +3625,9 @@ onUnmounted(() => {
           <span class="hint" v-if="!logModal.runs.length">暂无历史运行</span>
         </div>
 
+        <div class="log-stats" v-if="logStats.length">
+          <div v-for="(x, i) in logStats" :key="i"><span>{{ x.k }}</span><b>{{ x.v }}</b></div>
+        </div>
         <!-- 精简结果视图 -->
         <div class="log-card" v-if="logModal.summary">
           <div class="log-head">
@@ -3163,13 +3670,13 @@ onUnmounted(() => {
         <div class="modal-body">
           <div class="src-sum"><span>备份来源地</span><span>共 {{ srcEdit.paths.length }} 个目录</span></div>
           <div class="sec-card">
-            <div class="src-row host"><span class="host-ic">🗄️</span><b>fnos（本地）</b></div>
+            <div class="src-row host"><span class="host-ic"><Icon name="server" :size="22" /></span><b>fnos（本地）</b></div>
             <div class="src-path" v-for="(p, i) in srcEdit.paths" :key="p">
-              <svg class="mini-fold" viewBox="0 0 40 32" width="26" height="21"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+              <Icon class="mini-fold" name="folder" :size="24" />
               <span class="sp-name">{{ dispPath(p) }}</span>
               <b class="rm" @click="srcEdit.paths.splice(i, 1)">✕</b>
             </div>
-            <button class="add-path" @click="openBrowser">＋ 添加文件路径</button>
+            <button class="add-path" @click="openBrowser"><Icon name="plus" :size="14" /> 添加文件路径</button>
           </div>
         </div>
         <div class="modal-foot pair">
@@ -3191,7 +3698,7 @@ onUnmounted(() => {
               <!-- 已授权的根目录列表：不管授权了 1 个还是多个，都先在这里列出来 -->
               <template v-if="!browser.path">
                 <div class="frow big" v-for="r in USER_ROOTS" :key="r" :class="{ dis: srcEdit.paths.includes(r) }" @click="pickPath(r)">
-                  <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                  <Icon class="fold-ic" name="folder" :size="30" />
                   <span class="nm"><b>{{ scopeRootName(r) }}</b><span class="sub">{{ r }} · 整行点选，或点 › 进入子目录</span></span>
                   <i class="chev" @click.stop="browseTo(r)">›</i>
                 </div>
@@ -3199,11 +3706,11 @@ onUnmounted(() => {
               </template>
               <template v-else>
                 <div class="frow big" @click="browseTo(parentPath())">
-                  <span class="fold-ic back">↩</span>
+                  <span class="fold-ic back"><Icon name="arrow-back-up" :size="20" /></span>
                   <span class="nm"><b>{{ atScopeRoot() ? "返回授权目录列表" : "返回上一级" }}</b></span>
                 </div>
               <div class="frow big" v-for="d in browser.dirs" :key="d.name" :class="{ dis: srcEdit.paths.includes(pathFull(d)) }" @click="pickSrc(d)">
-                <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                <Icon class="fold-ic" name="folder" :size="30" />
                 <span class="nm">
                   <b>{{ d.name }}</b>
                   <span class="sub">存储空间1 {{ fmtMtime(d.mtime) }}</span>
@@ -3250,11 +3757,11 @@ onUnmounted(() => {
           </div>
           <div class="dir-list">
             <div class="frow big" v-if="cloudBrowser.path" @click="browseCloud(cloudParent())">
-              <span class="fold-ic back">↩</span>
+              <span class="fold-ic back"><Icon name="arrow-back-up" :size="20" /></span>
               <span class="nm"><b>返回上一级</b></span>
             </div>
             <div class="frow big" v-for="d in cloudBrowser.dirs" :key="d" @click="pickCloudDir(d)">
-              <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+              <Icon class="fold-ic" name="folder" :size="30" />
               <span class="nm"><b>{{ d }}</b><span class="sub">点选为云端目录，右侧 › 进入</span></span>
               <i class="chev" @click.stop="browseCloud(cloudBrowser.path ? cloudBrowser.path + '/' + d : d)">›</i>
             </div>
@@ -3297,27 +3804,46 @@ onUnmounted(() => {
     <!-- 手机底部导航（仿飞牛虚拟机 App） -->
     <nav class="bnav">
       <button :class="{ on: nav === 'tasks' }" @click="nav = 'tasks'">
-        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4.2l1.8 1.8h7A2 2 0 0 1 20.5 8.3v9.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6.5Z"/></svg>
+        <Icon name="folder" :size="23" />
         <span>备份</span>
       </button>
       <button :class="{ on: nav === 'snap' }" @click="nav = 'snap'">
-        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 2.8 2.6 7.7 12 12.6l9.4-4.9L12 2.8ZM2.6 11.9l9.4 4.9 9.4-4.9-2.2-1.2L12 14.2l-7.2-3.5-2.2 1.2Zm0 4.3 9.4 4.9 9.4-4.9-2.2-1.2L12 18.5l-7.2-3.5-2.2 1.2Z"/></svg>
+        <Icon name="stack-2" :size="23" />
         <span>快照</span>
       </button>
       <button :class="{ on: nav === 'hist' }" @click="nav = 'hist'">
-        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 7.2v5l3.1 1.9M20.6 12a8.6 8.6 0 1 1-2.5-6.1"/></svg>
+        <Icon name="history" :size="23" />
         <span>历史</span>
       </button>
     </nav>
 
     <!-- 手机悬浮新建按钮：只在备份页出现 -->
     <button class="fab" v-if="nav === 'tasks'" aria-label="新建" @click.stop="openWizard(null)">
-      <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
+      <Icon name="plus" :size="26" />
     </button>
+
+    <!-- 删除任务确认 -->
+    <div class="mask top2" v-if="delDlg.show" @click.self="!delDlg.busy && (delDlg.show = false)">
+      <div class="modal del-dlg">
+        <div class="modal-body">
+          <div class="del-ic">
+            <Icon name="trash" :size="24" />
+          </div>
+          <h3>删除任务「{{ delDlg.task ? delDlg.task.name : "" }}」？</h3>
+          <p>任务配置和备份计划会被移除。<br />云端已有的快照会保留，仍可在「快照」中浏览和还原。</p>
+        </div>
+        <div class="modal-foot pair">
+          <button class="btn ghost" :disabled="delDlg.busy" @click="delDlg.show = false">取消</button>
+          <button class="btn danger-fill" :disabled="delDlg.busy" @click="doDelTask">{{ delDlg.busy ? "删除中…" : "删除" }}</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Toast -->
     <transition name="fade">
-      <div class="toast" :class="toast.type" v-if="toast.show">{{ toast.msg }}</div>
+      <div class="toast" :class="toast.type" v-if="toast.show">
+        <i class="toast-ic">{{ toast.type === "bad" ? "!" : "✓" }}</i>{{ toast.msg }}
+      </div>
     </transition>
 
     <!-- ==================== 还原 · 文件选择器 ==================== -->
@@ -3361,12 +3887,12 @@ onUnmounted(() => {
 
           <div class="dir-list">
             <div class="frow big" v-if="rstPick.dir" @click="loadRstDir(pickUpDir())">
-              <span class="fold-ic back">↩</span>
+              <span class="fold-ic back"><Icon name="arrow-back-up" :size="20" /></span>
               <span class="nm"><b>返回上一级</b></span>
             </div>
             <div class="frow big" v-for="it in rstPick.items" :key="it.path" :class="{ sel: isPicked(it.path), dir: it.is_dir }" @click="it.is_dir ? loadRstDir(it.path) : togglePick(it)">
-              <svg class="fold-ic" v-if="it.is_dir" viewBox="0 0 40 32" width="30" height="24"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
-              <svg class="fold-ic" v-else viewBox="0 0 24 24" width="22" height="22"><path fill="#e5e9f0" d="M6 2h9l5 5v15H6V2Z"/><path fill="#c9d2e0" d="M15 2l5 5h-5V2Z"/></svg>
+              <Icon class="fold-ic" v-if="it.is_dir" name="folder" :size="30" color="var(--ic)" />
+              <Icon class="fold-ic" v-else name="file" :size="22" color="var(--ic)" />
               <span class="nm">
                 <b>{{ it.name }}<i v-if="it.badge === 'add'" class="dif add">+ 新增</i><i v-else-if="it.badge === 'mod'" class="dif mod">~ 修改</i></b>
               </span>
@@ -3410,18 +3936,18 @@ onUnmounted(() => {
           <div class="dir-list">
             <template v-if="!tb.path">
               <div class="frow big" v-for="r in USER_ROOTS" :key="r" @click="browseTarget(r)">
-                <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                <Icon class="fold-ic" name="folder" :size="30" />
                 <span class="nm"><b>{{ scopeRootName(r) }}</b><span class="sub">{{ r }}</span></span>
                 <i class="chev" @click.stop="browseTarget(r)">›</i>
               </div>
             </template>
             <template v-else>
               <div class="frow big" @click="tbUp">
-                <span class="fold-ic back">↩</span>
+                <span class="fold-ic back"><Icon name="arrow-back-up" :size="20" /></span>
                 <span class="nm"><b>{{ isScopeRoot(tb.path) ? "返回授权目录列表" : "返回上一级" }}</b></span>
               </div>
               <div class="frow big" v-for="d in tb.dirs" :key="d.name" @click="browseTarget(tb.path.replace(/\/$/, '') + '/' + d.name)">
-                <svg class="fold-ic" viewBox="0 0 40 32" width="36" height="29"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V6Z"/><path fill="#8ec7ff" d="M2 12h36v14a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V12Z"/></svg>
+                <Icon class="fold-ic" name="folder" :size="30" />
                 <span class="nm"><b>{{ d.name }}</b><span class="sub" v-if="d.count >= 0">{{ d.count }} 项</span></span>
               </div>
             </template>
@@ -3451,7 +3977,7 @@ onUnmounted(() => {
     <!-- 选择云端：卡片式弹层（方案A，参考飞牛备份来源地样式） -->
     <CloudPicker
       :show="cloudPick.show"
-      :repos="cfg.repos"
+      :repos="pickerRepos"
       :fetch-pw="fetchRepoPw"
       :toast="showToast"
       @update:show="cloudPick.show = $event"
@@ -3468,6 +3994,21 @@ html.scroll-locked,
 html.scroll-locked body {
   overflow: hidden !important;
   overscroll-behavior: none;
+}
+
+/* 尊重系统「减少动态效果」设置；加载指示器保留旋转，否则会被误读成卡死。
+   放在非 scoped 块里，才能覆盖到 CloudPicker / BDrop 等子组件 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .mini-spin, .ov-spin, .spin {
+    animation-duration: 1.1s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 </style>
 
@@ -4145,17 +4686,10 @@ html.scroll-locked body {
 .cloud-pick-btn:hover { border-color: #3370ff; background: #fbfcff; }
 .cloud-pick-btn .ph { color: #9ca3af; font-size: 14px; flex: 1; }
 .cloud-pick-btn .chev-r { color: #c2c7d0; font-style: normal; font-size: 18px; flex-shrink: 0; }
-.cpb-badge {
-  width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0;
-}
+.cpb-logo { max-width: 32px; max-height: 26px; object-fit: contain; flex-shrink: 0; display: block; }
 .cpb-txt { flex: 1; min-width: 0; }
 .cpb-txt b { display: block; font-size: 13.5px; font-weight: 600; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cpb-txt small { display: block; font-size: 12px; color: #8b9098; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.b-ty { background: linear-gradient(140deg, #4aa8ff, #1668e3); }
-.b-115 { background: linear-gradient(140deg, #3ec777, #14944b); }
-.b-dav { background: linear-gradient(140deg, #939bab, #5d6675); }
-.b-other { background: linear-gradient(140deg, #939bab, #5d6675); }
 /* 云端目录：大面包屑 + 底部工具栏（方案C） */
 .crumbC {
   display: flex; align-items: center; gap: 6px; padding: 9px 12px;
@@ -4234,6 +4768,7 @@ html.scroll-locked body {
   font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a;
   border-radius: 8px; padding: 10px 12px; margin-top: 10px;
 }
+.fld-hint { font-size: 11.5px; color: var(--t3); line-height: 1.6; margin-top: 6px; }
 
 /* ==================== 日志 ==================== */
 .runs-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 10px; align-items: center; }
@@ -4607,6 +5142,483 @@ html.scroll-locked body {
 .sn-rst .seg { max-width: 300px; margin: 0 auto; }
 .sn-rst .conf-grid { max-width: 640px; grid-template-columns: repeat(3, 1fr); }
 
+/* =====================================================================
+   方案 B · 概览仪表盘（飞牛原生风格统一层）
+   放在响应式块之前：桌面生效，手机规则仍可覆盖
+   ===================================================================== */
+.page {
+  --c-blue: #3370ff; --c-blue-h: #2b5fe0; --c-blue-50: #eef4ff; --c-blue-100: #dce7ff;
+  --c-green: #18a058; --c-green-50: #e8f7ee;
+  --c-orange: #f08a24; --c-orange-50: #fff3e6;
+  --c-red: #e5484d; --c-red-50: #fdecec;
+  --c-purple: #7b61ff; --c-purple-50: #f1ecff;
+  --t1: #1f2329; --t2: #4e5969; --t3: #86909c; --t4: #c0c6cf;
+  --ln: #eef0f3; --ln2: #e5e6eb;
+  --ic: #1f2329;
+  color: var(--t1);
+}
+.num { font-variant-numeric: tabular-nums; }
+.content { max-width: 1200px; padding: 24px 32px 60px; }
+.dhead h1 { font-size: 20px; }
+
+/* 侧边栏 */
+.sb-item { border-radius: 8px; padding: 9px 12px; color: var(--t2); font-family: inherit; }
+.sb-item.on { background: var(--c-blue-50); color: var(--c-blue); }
+.sb-cnt { margin-left: auto; font-size: 12px; color: var(--t3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.sb-item.on .sb-cnt { color: var(--c-blue); }
+.sb-cnt.run { background: var(--c-blue); color: #fff !important; border-radius: 9px; padding: 0 6px; line-height: 17px; font-size: 11px; }
+
+/* 按钮：飞牛式描边次按钮 */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid transparent; border-radius: 6px; padding: 6px 15px; font-size: 13px; line-height: 18px;
+  font-family: inherit; white-space: nowrap; transition: background .15s, border-color .15s, color .15s;
+}
+.btn:hover { opacity: 1; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: var(--c-blue); border-color: var(--c-blue); }
+.btn.primary:hover:not(:disabled) { background: var(--c-blue-h); border-color: var(--c-blue-h); }
+.btn.ghost { background: #fff; border-color: #dcdfe6; color: var(--t1); }
+.btn.ghost:hover:not(:disabled) { border-color: var(--c-blue); color: var(--c-blue); }
+.btn.ghost.danger { color: var(--c-red); }
+.btn.ghost.danger:hover:not(:disabled) { border-color: var(--c-red); color: var(--c-red); }
+.btn.sm { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+.icon-btn { width: 30px; height: 30px; border-radius: 6px; color: var(--t2); }
+.icon-btn:hover { background: #f2f3f5; color: var(--c-blue); }
+.menu { border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(15, 23, 42, .14); top: 34px; }
+.menu button { border-radius: 5px; padding: 7px 12px; font-family: inherit; }
+
+/* 通用面板 */
+.panel { background: #fff; border-radius: 12px; margin-bottom: 16px; }
+.panel-h { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid var(--ln); }
+.panel-h h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.panel-foot { padding: 10px 20px; font-size: 12px; color: var(--t3); border-top: 1px solid var(--ln); }
+.pseg { display: inline-flex; background: #f2f3f5; border-radius: 6px; padding: 2px; }
+.pseg button {
+  border: none; background: transparent; padding: 3px 12px; border-radius: 4px; font-size: 12px;
+  color: var(--t2); cursor: pointer; font-family: inherit; font-variant-numeric: tabular-nums;
+}
+.pseg button.on { background: #fff; color: var(--t1); font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+
+/* 统计卡 */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+.kpi { background: #fff; border-radius: 12px; padding: 16px 18px; display: flex; align-items: center; gap: 14px; min-width: 0; }
+.kpi > div { min-width: 0; }
+.kpi > div > span { display: block; font-size: 12px; color: var(--t3); }
+.kpi b { display: block; font-size: 20px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kpi b.sm { font-size: 16px; }
+.kpi b small { font-size: 12px; font-weight: 400; color: var(--t3); margin-left: 3px; }
+.kpi-ic { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex: none; }
+.c-blue { background: var(--c-blue-50); color: var(--c-blue); }
+.c-green { background: var(--c-green-50); color: var(--c-green); }
+.c-orange { background: var(--c-orange-50); color: var(--c-orange); }
+.c-red { background: var(--c-red-50); color: var(--c-red); }
+.c-purple { background: var(--c-purple-50); color: var(--c-purple); }
+
+/* 备份页 · 概览横幅 */
+.ov-hero {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 26px;
+  background: linear-gradient(120deg, #fff 0%, #f4f8ff 60%, #e9f1ff 100%);
+  border-radius: 12px; padding: 22px 26px; margin-bottom: 16px;
+  --tone: var(--c-green); --tone-bg: #dce7ff;
+}
+.ov-hero.tone-warn { --tone: var(--c-orange); --tone-bg: #fde7cf; background: linear-gradient(120deg, #fff 0%, #fffaf3 60%, #fff1e0 100%); }
+.ov-hero.tone-run { --tone: var(--c-blue); }
+.ov-hero::after {
+  content: ""; position: absolute; right: -60px; top: -60px; width: 240px; height: 240px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(51, 112, 255, .10), transparent 70%); pointer-events: none;
+}
+.ov-ring { position: relative; width: 96px; height: 96px; flex: none; }
+.ov-ring-svg { width: 96px; height: 96px; transform: rotate(-90deg); }
+.ov-ring-bg { stroke: var(--tone-bg); }
+.ov-ring-fg { stroke: var(--tone); transition: stroke-dashoffset .6s; }
+.ov-ring-c { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--tone); }
+.ov-spin { width: 26px; height: 26px; border: 3px solid var(--c-blue-100); border-top-color: var(--c-blue); border-radius: 50%; animation: rot .9s linear infinite; }
+.ov-txt { position: relative; z-index: 1; min-width: 0; }
+.ov-txt h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.ov-txt p { margin: 6px 0 0; font-size: 13px; color: var(--t2); line-height: 1.6; }
+.ov-acts { margin-top: 12px; display: flex; gap: 8px; }
+.ov-kpis { margin-left: auto; display: flex; position: relative; z-index: 1; flex: none; }
+.ov-kpi { padding: 0 24px; border-left: 1px solid #dfe6f3; }
+.ov-kpi:first-child { border-left: none; }
+.ov-kpi span { display: block; font-size: 12px; color: var(--t3); white-space: nowrap; }
+.ov-kpi b { display: block; font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ov-kpi b.ok { color: var(--c-green); }
+.ov-kpi b.sm { font-size: 16px; }
+.ov-kpi b small { font-size: 12px; font-weight: 400; color: var(--t3); margin-left: 2px; }
+
+/* 备份页 · 任务表格 */
+.ttbl { width: 100%; border-collapse: collapse; }
+.ttbl th { text-align: left; font-weight: 400; font-size: 12px; color: var(--t3); padding: 9px 16px; background: #fafbfc; white-space: nowrap; }
+.ttbl th:first-child, .ttbl td:first-child { padding-left: 20px; }
+.ttbl th:last-child, .ttbl td:last-child { padding-right: 16px; }
+.ttbl td { padding: 13px 16px; border-top: 1px solid var(--ln); vertical-align: middle; font-size: 13px; }
+.ttbl tbody tr { cursor: pointer; }
+.ttbl tbody tr:hover td { background: #f8faff; }
+.ttbl .r { text-align: right; }
+.ttbl .tc-acts { justify-content: flex-end; }
+.tt-empty td { text-align: center; color: var(--t3); padding: 36px 0; cursor: default; }
+.tt-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.tt-ic { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex: none; }
+.tt-ic.c-ok { background: var(--c-green-50); color: var(--c-green); }
+.tt-ic.c-warn { background: var(--c-orange-50); color: var(--c-orange); }
+.tt-ic.c-run { background: var(--c-blue-50); color: var(--c-blue); }
+.tt-ic.c-gray { background: #f2f3f5; color: var(--t3); }
+.tt-nm { min-width: 0; }
+.tt-nm b { display: block; font-weight: 500; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-nm small { display: block; font-size: 12px; color: var(--t3); margin-top: 2px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-route { display: flex; align-items: center; gap: 6px; color: var(--t4); }
+.chip2 { background: #f5f7fa; border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--t2); white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.tag2 {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 4px;
+  font-size: 12px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+}
+.tag2 .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.tag2.ok { background: var(--c-green-50); color: var(--c-green); }
+.tag2.warn { background: var(--c-orange-50); color: var(--c-orange); }
+.tag2.run { background: var(--c-blue-50); color: var(--c-blue); }
+.tag2.gray { background: #f2f3f5; color: var(--t2); }
+.tt-prog { width: 170px; }
+.tt-prog-t { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--c-blue); margin-bottom: 5px; }
+.tt-prog-t span { display: inline-flex; align-items: center; gap: 5px; }
+.tt-prog-t b { font-variant-numeric: tabular-nums; }
+.tt-prog .spin { width: 10px; height: 10px; border-width: 2px; }
+.tt-prog .bar { height: 6px; margin: 0; background: var(--c-blue-100); }
+.tt-prog-s { font-size: 11px; color: var(--t3); margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spark { display: flex; gap: 3px; align-items: center; height: 22px; }
+.spark i { width: 6px; height: 18px; border-radius: 2px; background: var(--c-green); opacity: .85; }
+.spark i.f { background: var(--c-red); }
+.spark i.r { background: var(--c-blue); }
+.spark i.n { background: var(--t4); }
+.spark i.e { background: #eef0f3; opacity: 1; }
+
+/* 备份页 · 空态 */
+.ov-empty { text-align: center; padding: 64px 20px; }
+.ov-empty-ic { width: 88px; height: 88px; border-radius: 24px; background: var(--c-blue-50); color: var(--c-blue); margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; }
+.ov-empty b { display: block; font-size: 17px; font-weight: 600; }
+.ov-empty p { margin: 8px 0 22px; font-size: 13px; color: var(--t3); }
+.ov-empty-steps { display: flex; justify-content: center; gap: 36px; margin-top: 36px; font-size: 12px; color: var(--t3); flex-wrap: wrap; }
+
+/* 快照页 */
+.sn-list { gap: 16px; }
+.sn-repo, .sn-repo.open { box-shadow: none; }
+.sn-head { padding: 16px 20px; }
+.sn-ic { width: 44px; height: 44px; }
+.sn-logo { max-width: 42px; max-height: 30px; object-fit: contain; display: block; }
+.sn-name { font-size: 15px; }
+.sn-pill { font-size: 12px; font-weight: 400; padding: 0 8px; line-height: 20px; border-radius: 4px; }
+.sn-pill.ok { background: var(--c-green-50); color: var(--c-green); }
+.sn-pill.gray { background: #f2f3f5; color: var(--t2); }
+.sn-pill.blue { background: var(--c-blue-50); color: var(--c-blue); }
+.sn-meta { display: none; }
+.sn-stats { display: flex; gap: 28px; margin-right: 6px; flex: none; }
+.sn-stats div { text-align: right; }
+.sn-stats span { display: block; font-size: 12px; color: var(--t3); }
+.sn-stats b { display: block; font-size: 14px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.sn-grp-h { padding: 12px 20px 8px; border-top: 1px solid var(--ln); }
+.sn-grp:first-child .sn-grp-h { border-top: none; }
+.sn-dot { width: 8px; height: 8px; }
+.sn-tbl { font-size: 13px; }
+.sn-tbl th { font-weight: 400; font-size: 12px; color: var(--t3); padding: 9px 20px; background: #fafbfc; border-color: var(--ln); }
+.sn-tbl td { padding: 12px 20px; border-color: var(--ln); }
+.sn-tbl tbody tr:hover td { background: #f8faff; }
+.sn-link { font-weight: 400; font-size: 13px; }
+.sn-foot { padding: 10px 20px; background: #fafbfc; font-size: 12px; color: var(--t3); border-color: var(--ln); }
+.sn-run { border: 1px solid var(--c-blue-100); box-shadow: none; padding: 11px 16px; margin-bottom: 16px; font-size: 13px; }
+.sn-run-t { font-weight: 500; }
+
+/* 快照详情 */
+.sd-bar { font-size: 13px; margin-bottom: 14px; }
+.sd-back { font-weight: 500; font-size: 13px; }
+.sd-card, .sd-panel { box-shadow: none; margin-bottom: 16px; }
+.sd-card { padding: 20px 24px; }
+.sd-top { align-items: center; gap: 16px; }
+.sd-ic {
+  width: 52px; height: 52px; border-radius: 12px; flex: none; color: #fff;
+  background: linear-gradient(135deg, #8a7bff, #7b61ff); box-shadow: 0 6px 14px rgba(123, 97, 255, .28);
+  display: flex; align-items: center; justify-content: center;
+}
+.sd-time { font-size: 18px; font-weight: 600; }
+.sd-kv { margin-top: 18px; padding-top: 16px; border-color: var(--ln); }
+.sd-kv span { font-size: 12px; color: var(--t3); }
+.sd-kv b { font-size: 16px; }
+.sd-ph { padding: 14px 20px; font-size: 14px; color: var(--t1); border-color: var(--ln); }
+.sd-diff { padding: 14px 20px; gap: 10px; }
+.sd-diff .add, .sd-diff .mod, .sd-diff .del { font-size: 12px; font-weight: 500; padding: 2px 10px; border-radius: 4px; }
+.sd-diff .add { background: var(--c-green-50); color: var(--c-green); }
+.sd-diff .mod { background: var(--c-blue-50); color: var(--c-blue); }
+.sd-diff .del { background: var(--c-red-50); color: var(--c-red); }
+.sd-diff .z { background: #f2f3f5; color: var(--t3); }
+.sdt-list { padding: 4px 12px 12px; }
+.sdt-row { padding: 7px 8px 7px 6px; border-radius: 6px; }
+.sdt-row:hover { background: #f8faff; }
+.sdt-row.on { background: var(--c-blue-50); }
+.cbx { width: 16px; height: 16px; border-radius: 4px; border-width: 1.5px; font-size: 10px; }
+.cbx.half { opacity: .55; }
+
+/* 还原向导 */
+.sn-rst { max-width: 900px; }
+.sn-rst .rst-stepper { padding: 20px 28px; margin-bottom: 16px; box-shadow: none; justify-content: space-between; }
+.sn-rst .rst-step-dot { flex-direction: row; gap: 8px; min-width: 0; }
+.sn-rst .rst-step-dot .n { width: 28px; height: 28px; font-size: 13px; background: #f2f3f5; color: var(--t3); }
+.sn-rst .rst-step-dot .lb { font-size: 13px; color: var(--t3); }
+.sn-rst .rst-step-dot.on .n { background: var(--c-blue); color: #fff; box-shadow: 0 0 0 4px var(--c-blue-50); }
+.sn-rst .rst-step-dot.on .lb { color: var(--t1); font-weight: 600; }
+.sn-rst .rst-step-dot.done .n { background: var(--c-blue-50); color: var(--c-blue); }
+.sn-rst .rst-step-dot.done .lb { color: var(--t2); }
+.sn-rst .rst-step-line { flex: 1; width: auto; height: 2px; margin: 13px 12px 0; background: var(--ln); }
+.sn-rst .rst-step-line.done { background: var(--c-blue); }
+.sn-rst .rst-step-title { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+.sn-rst .sd-panel.pad { padding: 22px 26px; }
+.rpick-item { border-radius: 10px; }
+.rpick-item:hover { border-color: var(--c-blue); background: #f7faff; }
+.conf-card { border-width: 1px; border-color: var(--ln2); }
+.conf-card.on { box-shadow: 0 0 0 3px var(--c-blue-50); }
+.snap-timeline { border-color: var(--ln); border-radius: 10px; max-height: 300px; }
+.snap-row { padding: 11px 14px; border-color: var(--ln); }
+.snap-row.on { background: var(--c-blue-50); }
+.pick-files-btn { font-weight: 500; border-radius: 10px; padding: 16px; }
+.seg { background: #f2f3f5; border-radius: 6px; padding: 2px; }
+.seg button { border-radius: 4px; padding: 6px 10px; }
+.seg button.on { color: var(--t1); font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+
+/* 历史页 */
+.hist-seg { background: #f2f3f5; border-radius: 6px; padding: 2px; flex: 0 1 240px; }
+.hist-seg button { border-radius: 4px; padding: 5px 0; font-weight: 500; }
+.hist-seg button.on { color: var(--t1); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+.hist-seg .n { background: transparent; color: var(--t3); padding: 0; }
+.hist-seg button.on .n { background: transparent; color: var(--t3); }
+.hist-bar { margin-bottom: 4px; }
+.hist-wrap { gap: 16px; }
+.hist-det { width: 380px; padding: 20px; box-shadow: none; }
+.hist-day { font-size: 12px; font-weight: 500; color: var(--t3); }
+.hist-item { border-radius: 10px; padding: 12px 16px; box-shadow: none; }
+.hist-item:hover { border-color: var(--c-blue-100); }
+.hist-item.on { border-color: var(--c-blue); background: #f8faff; box-shadow: 0 0 0 3px var(--c-blue-50); }
+.hi-nm { font-weight: 500; font-size: 14px; }
+.hi-st { font-size: 12px; font-weight: 400; padding: 0 8px; line-height: 20px; border-radius: 4px; }
+.hi-st.ok { background: var(--c-green-50); color: var(--c-green); }
+.hi-st.bad { background: var(--c-red-50); color: var(--c-red); }
+.hi-st.run { background: var(--c-blue-50); color: var(--c-blue); }
+.hd-top b { font-size: 16px; }
+.hi-kv { font-size: 13px; line-height: 1.6; padding: 7px 0; border-bottom: 1px dashed var(--ln); }
+.hi-kv .k { width: 64px; color: var(--t3); }
+.hi-kv .v { color: var(--t1); }
+.hi-tl .n { font-size: 12px; }
+
+/* 弹窗 */
+.mask { background: rgba(15, 23, 42, .38); }
+.modal { border-radius: 12px; box-shadow: 0 20px 50px rgba(15, 23, 42, .25); }
+.modal-head { padding: 16px 20px; border-bottom: 1px solid var(--ln); }
+.modal-head h3 { font-size: 16px; font-weight: 600; }
+.x { border-radius: 6px; color: var(--t3); }
+.x:hover { background: #f2f3f5; color: var(--t1); }
+.modal-body { padding: 16px 20px; }
+.modal-foot { border-color: var(--ln); justify-content: flex-end; }
+.fld > span { color: var(--t2); }
+.fld input[type="text"], .fld input:not([type]), .fld input[type="password"],
+.fld input[type="time"], .fld input[type="number"], .fld select, .fld textarea {
+  border-color: #dcdfe6; border-radius: 6px; font-size: 13px; padding: 8px 11px; outline: none; font-family: inherit;
+}
+.fld input:focus, .fld select:focus, .fld textarea:focus { border-color: var(--c-blue); box-shadow: 0 0 0 3px var(--c-blue-50); }
+.sec-card { border-color: var(--ln); border-radius: 10px; }
+.sec-head b { font-size: 14px; font-weight: 600; }
+.chips2 button, .keep-chips button { border-radius: 6px; font-family: inherit; }
+.chips2 button.on, .keep-chips button.on { font-weight: 500; background: var(--c-blue-50); }
+.sched-seg { background: #f2f3f5; border-radius: 6px; padding: 2px; }
+.sched-seg button { border-radius: 4px; padding: 6px 0; }
+.sched-seg button.on { color: var(--t1); font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+.rule-prev { border-radius: 8px; }
+.run-chip { border-radius: 4px; background: #f2f3f5; border-color: transparent; color: var(--t2); }
+.run-chip.on { background: var(--c-blue); color: #fff; }
+.run-chip.current { border-radius: 4px; border-color: transparent; background: var(--c-blue-50); }
+.log-card { border-color: var(--ln); border-radius: 10px; }
+.log-box { background: #1f2329; border-radius: 8px; }
+.lg-chip { font-size: 12px; font-weight: 400; border-radius: 4px; }
+.toast { border-radius: 8px; font-size: 13px; }
+.dlg { border-radius: 12px; }
+.dlg .drow button { border-radius: 6px; }
+
+/* ---------- 方案 B 补齐：搜索 / 快照表格 / 文件表格 / 向导 / 历史 / 弹窗 ---------- */
+.psearch {
+  margin-left: auto; height: 30px; width: 220px; border: 1px solid var(--ln2); border-radius: 6px;
+  display: flex; align-items: center; gap: 6px; padding: 0 10px; color: var(--t4); background: #fff; cursor: text;
+}
+.psearch:focus-within { border-color: var(--c-blue); box-shadow: 0 0 0 3px var(--c-blue-50); }
+.psearch input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font: inherit; font-size: 12px; color: var(--t1); }
+.psearch i { font-style: normal; font-size: 11px; color: var(--t3); cursor: pointer; }
+.menu hr { border: none; border-top: 1px solid var(--ln); margin: 4px 0; }
+.tag2.pur { background: var(--c-purple-50); color: var(--c-purple); }
+.dhead { gap: 12px; justify-content: flex-start; }
+.dhead .dhead-acts { margin-left: auto; }
+.dhead > .btn.primary { margin-left: auto; }
+.dhead-sub { font-size: 13px; color: var(--t3); }
+
+/* 快照表格：较上一份 */
+.dl { display: inline-block; font-size: 12px; padding: 0 6px; line-height: 20px; border-radius: 4px; margin-right: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dl.a { background: var(--c-green-50); color: var(--c-green); }
+.dl.d { background: var(--c-red-50); color: var(--c-red); }
+.dl.z { background: #f2f3f5; color: var(--t3); }
+.dl.dim { padding: 0; color: var(--t4); }
+.sn-sep { font-style: normal; color: var(--ln2); margin: 0 8px; }
+.sn-run-go { color: var(--c-blue); cursor: pointer; margin-left: 4px; white-space: nowrap; }
+
+/* 快照详情：标题区内联统计（桌面），顶部还原按钮移到底部操作栏 */
+.sd-card { display: flex; align-items: center; gap: 20px; }
+.sd-card .sd-top { flex: 1; min-width: 0; }
+.sd-card .sd-acts { display: none; }
+.sd-card .sd-kv { display: flex; margin: 0; padding: 0; border: none; flex: none; }
+.sd-card .sd-kv > div { padding: 0 20px; border-left: 1px solid var(--ln); }
+.sd-card .sd-kv > div:first-child { border-left: none; }
+
+/* 快照详情：文件表格 */
+.sd-files { overflow: visible; }
+.sd-files .sd-ph { gap: 12px; }
+.fpath { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 400; flex-wrap: wrap; min-width: 0; }
+.fpath a { color: var(--t2); padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.fpath a:hover { background: #f2f3f5; color: var(--c-blue); }
+.fpath a.cur { color: var(--t1); font-weight: 500; cursor: default; background: none; }
+.fpath .sl { color: var(--t4); }
+.fpath b { font-weight: 500; }
+.fpath .cnt { font-size: 12px; color: var(--t3); margin-left: 6px; }
+.ftbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ftbl th { text-align: left; font-weight: 400; font-size: 12px; color: var(--t3); padding: 9px 12px; background: #fafbfc; }
+.ftbl td { padding: 10px 12px; border-top: 1px solid var(--ln); }
+.ftbl tbody tr { cursor: pointer; }
+.ftbl tbody tr:hover td { background: #f8faff; }
+.ftbl tbody tr.on td { background: var(--c-blue-50); }
+.ftbl .c { width: 44px; padding-left: 20px; padding-right: 0; }
+.ftbl .w { width: 140px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ftbl .g { width: 36px; color: var(--t4); font-size: 16px; text-align: center; }
+.ftbl .dim { color: var(--t3); }
+.ftbl .ellip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ftbl .cbx { margin: 0; }
+.ftbl .emp td { text-align: center; color: var(--t3); padding: 28px 0; cursor: default; }
+.ftbl .emp td .mini-spin { vertical-align: -1px; }
+.fn { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.fn .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }
+.fn .nm.sel { color: var(--c-blue); font-weight: 500; }
+.fn.back { color: var(--t3); }
+.sd-files .sdc-more { margin: 8px 16px; }
+.sd-selbar {
+  position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: 12px;
+  padding: 12px 20px; background: #fff; border-top: 1px solid var(--ln);
+  border-radius: 0 0 12px 12px; box-shadow: 0 -4px 12px rgba(15, 23, 42, .04); font-size: 13px;
+}
+.sd-selbar .cnt-t b { color: var(--c-blue); }
+.sd-selbar .sp { flex: 1; }
+.sd-selbar .dim { color: var(--t3); }
+.sel-chips { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.sel-chips span { background: var(--c-blue-50); color: var(--c-blue); border-radius: 4px; padding: 2px 8px; font-size: 12px; display: inline-flex; gap: 6px; align-items: center; max-width: 180px; }
+.sel-chips span i { font-style: normal; cursor: pointer; opacity: .7; }
+.sel-chips span.more { background: #f2f3f5; color: var(--t2); }
+.sd-selbar .clr { font-size: 12px; color: var(--c-blue); cursor: pointer; }
+
+/* 还原向导：步骤摘要 / 任务卡 / 目的地卡 */
+.sn-rst .rst-step-dot { cursor: default; }
+.sn-rst .rst-step-dot.done { cursor: pointer; }
+.sn-rst .rst-step-dot.done:hover .lb { color: var(--c-blue); }
+.lbw { display: flex; flex-direction: column; min-width: 0; }
+.lbw .sm { font-size: 11px; color: var(--t3); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.sn-rst .rpick-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0; max-height: none; }
+.rpick-item { padding: 14px 16px; gap: 14px; }
+.rpick-item.on { border-color: var(--c-blue); background: #f7faff; box-shadow: 0 0 0 3px var(--c-blue-50); }
+.rp-ic { width: 40px; height: 40px; }
+.rp-ic.c-ok { background: var(--c-green-50); color: var(--c-green); }
+.rp-ic.c-warn { background: var(--c-orange-50); color: var(--c-orange); }
+.rp-ic.c-run { background: var(--c-blue-50); color: var(--c-blue); }
+.rp-ic.c-gray { background: #f2f3f5; color: var(--t3); }
+.dest-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.dest-opt {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px; text-align: left; font-family: inherit;
+  border: 1px solid var(--ln2); border-radius: 10px; background: #fff; cursor: pointer; transition: .15s;
+}
+.dest-opt:hover { border-color: var(--c-blue); }
+.dest-opt.on { border-color: var(--c-blue); background: #f7faff; box-shadow: 0 0 0 3px var(--c-blue-50); }
+.dest-opt .ic { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex: none; }
+.dest-opt .tx { flex: 1; min-width: 0; }
+.dest-opt b { display: block; font-size: 14px; font-weight: 500; color: var(--t1); }
+.dest-opt small { display: block; font-size: 12px; color: var(--t3); margin-top: 3px; }
+.dest-opt .rd { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid #c9cdd4; flex: none; position: relative; }
+.dest-opt.on .rd { border-color: var(--c-blue); }
+.dest-opt.on .rd::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--c-blue); }
+.sn-rst .dest-note, .sn-rst .target-row { margin-top: 0; }
+.sn-rst .sd-foot { gap: 10px; }
+
+/* 历史：失败筛选 / 列表图标 / 详情 */
+.hist-bar { gap: 12px; }
+.hist-fail { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--t2); cursor: pointer; user-select: none; }
+.hist-fail input { accent-color: var(--c-red); margin: 0; }
+.hist-fail.on { color: var(--c-red); }
+.hi-row { display: flex; align-items: center; gap: 12px; }
+.hi-ic { width: 32px; height: 32px; border-radius: 8px; flex: none; display: flex; align-items: center; justify-content: center; }
+.hi-ic.k-ok { background: var(--c-green-50); color: var(--c-green); }
+.hi-ic.k-bad { background: var(--c-red-50); color: var(--c-red); }
+.hi-ic.k-run { background: var(--c-blue-50); color: var(--c-blue); }
+.hi-ic.k-gray { background: #f2f3f5; color: var(--t3); }
+.hi-main { flex: 1; min-width: 0; }
+.hd-tags { display: flex; gap: 6px; margin-bottom: 10px; }
+.hd-top { margin-bottom: 4px; }
+.hd-prog { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.hd-prog .bar { flex: 1; margin: 0; height: 6px; background: var(--c-blue-100); }
+.hd-prog b { font-size: 12px; color: var(--c-blue); font-variant-numeric: tabular-nums; }
+
+/* 任务向导：编号分区 / 目的地双列 / 底部三按钮 */
+.sec-head b { display: inline-flex; align-items: center; gap: 8px; }
+.sec-n {
+  width: 22px; height: 22px; border-radius: 6px; background: var(--c-blue-50); color: var(--c-blue);
+  font-style: normal; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center;
+}
+.dest-card { padding: 14px 16px 4px; }
+.dest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.dest-card > .fld, .dest-grid > .fld { margin-bottom: 12px; }
+.dest-card .flow-line { margin: 0 -16px; }
+.pw-note { font-size: 12px; color: var(--t3); margin-top: 6px; line-height: 1.6; }
+.modal.tall { width: 640px; }
+.wiz-foot { gap: 10px; }
+
+/* 日志：右侧抽屉 + 数字块 */
+.drawer-mask { justify-content: flex-end; align-items: stretch; padding: 0; }
+.modal.log-drawer { width: 600px; max-width: 100%; height: 100vh; max-height: none; border-radius: 12px 0 0 12px; animation: drawerin .2s ease-out; }
+@keyframes drawerin { from { transform: translateX(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+.log-drawer .modal-head { gap: 12px; }
+.log-drawer .modal-head h3 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-drawer .runs-list { padding: 12px 20px; border-bottom: 1px solid var(--ln); background: #fafbfc; }
+.log-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 16px 20px 4px; }
+.log-stats div { background: #f7f8fa; border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.log-stats span { display: block; font-size: 12px; color: var(--t3); }
+.log-stats b { display: block; font-size: 15px; font-weight: 600; margin-top: 3px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-drawer .log-card { margin-top: 12px; }
+
+/* 删除确认 */
+.modal.del-dlg { width: 420px; }
+.del-dlg .modal-body { text-align: center; padding: 26px 24px 8px; }
+.del-ic { width: 52px; height: 52px; border-radius: 50%; background: var(--c-red-50); color: var(--c-red); margin: 0 auto 14px; display: flex; align-items: center; justify-content: center; }
+.del-dlg h3 { margin: 0; font-size: 16px; font-weight: 600; word-break: break-all; }
+.del-dlg p { margin: 8px 0 0; font-size: 13px; color: var(--t3); line-height: 1.7; }
+.del-dlg .modal-foot { border-top: none; justify-content: center; padding-bottom: 22px; }
+.del-dlg .modal-foot .btn { flex: 0 0 120px; }
+.btn.danger-fill { background: var(--c-red); border-color: var(--c-red); color: #fff; }
+.btn.danger-fill:hover:not(:disabled) { background: #d23c41; border-color: #d23c41; }
+
+/* 选择目录 / 还原文件选择器：行样式对齐表格 */
+.frow { border-color: var(--ln); padding: 10px 8px; border-radius: 0; }
+.frow:hover { background: #f8faff; }
+.frow.big.sel { background: var(--c-blue-50); }
+.crumbC { border-radius: 8px; background: #fafbfc; border: 1px solid var(--ln); }
+.dir-list { border-color: var(--ln); border-radius: 8px; }
+.pk-build, .sd-build { border-radius: 8px; }
+
+/* 提示条：顶部白底 + 图标 */
+.toast {
+  top: 24px; bottom: auto; background: #fff; color: var(--t1); border-radius: 8px;
+  padding: 10px 16px; display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .16); max-width: calc(100vw - 32px);
+}
+.toast.bad { background: #fff; color: var(--t1); }
+.toast-ic { width: 18px; height: 18px; border-radius: 50%; background: var(--c-green); color: #fff; font-style: normal; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; }
+.toast.bad .toast-ic { background: var(--c-red); }
+
 /* ==================== 响应式：≤768px 切换为原生手机布局 ==================== */
 @media (max-width: 768px) {
   .page { display: block; background: #f2f4f7; }
@@ -4736,7 +5748,7 @@ html.scroll-locked body {
   .ws-t { font-size: 11px; }
   /* 快照 Tab：仓库卡 + 快照卡片 */
   .sn-head { padding: 13px 14px; gap: 11px; }
-  .sn-ic { width: 34px; height: 34px; border-radius: 9px; }
+  .sn-ic { width: 38px; height: 38px; border-radius: 9px; }
   .sn-name { font-size: 13.5px; gap: 7px; }
   .sn-meta { gap: 13px; margin-top: 6px; }
   .sn-tbl { display: none; }
@@ -4792,5 +5804,134 @@ html.scroll-locked body {
   .sn-rst .conf-card .conf-tx b { font-size: 14px; }
   .sn-rst .conf-card .conf-rd { top: 50%; right: 12px; transform: translateY(-50%); }
 
+
+  /* ===== 方案 B · 手机适配 ===== */
+  .task-panel { display: none; }
+  .ov-hero { padding: 16px; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+  .ov-hero::after { display: none; }
+  .ov-ring, .ov-ring-svg { width: 60px; height: 60px; }
+  .ov-ring-c svg { width: 26px; height: 26px; }
+  .ov-spin { width: 20px; height: 20px; }
+  .ov-txt { flex: 1; }
+  .ov-txt h2 { font-size: 17px; }
+  .ov-txt p { font-size: 12px; margin-top: 4px; }
+  .ov-acts { display: none; }
+  .ov-kpis { margin-left: 0; width: 100%; padding-top: 12px; border-top: 1px solid #e3e9f5; }
+  .ov-kpi { flex: 1; padding: 0 10px; }
+  .ov-kpi:first-child { padding-left: 0; }
+  .ov-kpi b { font-size: 16px; }
+  .ov-kpi span { font-size: 11px; }
+  .ov-empty { padding: 44px 16px; }
+  .ov-empty-steps { flex-direction: column; gap: 8px; margin-top: 20px; }
+  .kpis { grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .kpi { padding: 12px; gap: 10px; }
+  .kpi-ic { width: 34px; height: 34px; border-radius: 9px; }
+  .kpi-ic svg { width: 17px; height: 17px; }
+  .kpi b { font-size: 17px; }
+  .kpi b.sm { font-size: 14px; }
+  .sn-stats { display: none; }
+  .sn-meta { display: flex; }
+  .sn-list { gap: 11px; }
+  .sd-ic { display: none; }
+  .hist-det { width: auto; }
+  .btn.sm { padding: 5px 10px; }
+  .modal-foot { justify-content: stretch; }
+  .sn-rst .rst-step-dot { flex-direction: column; gap: 4px; }
+  .sn-rst .rst-step-dot .lb { font-size: 10.5px; }
+  .sn-rst .rst-step-dot .n { width: 22px; height: 22px; font-size: 12px; }
+  .sn-rst .rst-step-dot.on .n { box-shadow: none; }
+  .sn-rst .rst-step-line { flex: 0 0 14px; margin: 10px 0 0; }
+  .sn-rst .sd-panel.pad { padding: 14px; }
+  /* ===== 方案 B 补齐 · 手机 ===== */
+  .dhead-sub { display: none; }
+  .psearch { width: 140px; }
+  .sd-card { display: block; }
+  .sd-card .sd-acts { display: flex; }
+  .sd-card .sd-kv { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--ln); }
+  .sd-card .sd-kv > div { padding: 0; border-left: none; }
+  .lbw .sm { display: none; }
+  .sn-rst .rpick-list, .dest-opts { grid-template-columns: 1fr; }
+  .hist-bar { flex-wrap: wrap; }
+  .hist-fail { margin-left: auto; }
+  .dest-grid { grid-template-columns: 1fr; }
+  .modal.tall { width: 100%; }
+  .wiz-foot .btn { flex: 1 1 0; min-width: 0; padding: 12px 8px; border-radius: 12px; font-size: 14px; }
+  .drawer-mask { align-items: flex-end; }
+  .modal.log-drawer { width: 100%; height: 92vh; border-radius: 16px 16px 0 0; animation: sheetup .22s ease-out; }
+  .log-stats { grid-template-columns: 1fr 1fr; }
+  .modal.del-dlg { width: 100%; }
+  .toast { top: calc(12px + env(safe-area-inset-top)); }
+
 }
+
+/* =====================================================================
+   图标统一：无底色 + 单一墨色
+   所有内容区图标去掉底色块，颜色一律取 --ic（墨黑），不随备份状态变化；
+   状态信息只由右侧状态标签表达。
+   ===================================================================== */
+.tt-ic, .hi-ic, .rp-ic, .sn-ic, .sd-ic, .ic, .ov-empty-ic, .ov-ring-c,
+.fold-ic, .src-ico, .host-ic, .sdt-ic, .mini-fold,
+.tc-icon, .empty-icon { background: none; box-shadow: none; color: var(--ic); }
+/* 带状态色的容器：同样清空底色，只留尺寸和图标 */
+.tt-ic.c-ok, .tt-ic.c-warn, .tt-ic.c-run, .tt-ic.c-gray,
+.hi-ic.k-ok, .hi-ic.k-bad, .hi-ic.k-run, .hi-ic.k-gray,
+.rp-ic.c-ok, .rp-ic.c-warn, .rp-ic.c-run, .rp-ic.c-gray,
+.ic.c-blue, .ic.c-green, .ic.c-orange, .ic.c-red, .ic.c-purple,
+.fold-ic.back, .dest-opt .ic { background: none; box-shadow: none; color: var(--ic); }
+/* 图标本体兜底：即使容器没写颜色也统一 */
+.page .tt-ic svg, .page .hi-ic svg, .page .rp-ic svg, .page .sn-ic svg, .page .sd-ic svg,
+.page .ic svg, .page .ov-empty-ic svg, .page .ov-ring-c svg,
+.page .fold-ic svg, .page .src-ico svg, .page .host-ic svg,
+.page .sdt-ic svg, .page .tc-icon svg, .page .empty-icon svg { color: var(--ic); }
+
+/* =====================================================================
+   动效层
+   原则：只动 transform / opacity；微交互 100ms、小元素 180ms；
+   进场快出慢停 cubic-bezier(.16,1,.3,1)，退场先慢后快（本版仅入场）。
+   ===================================================================== */
+@keyframes mask-in {
+  from { opacity: 0; }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(6px) scale(.96); }
+}
+@keyframes toast-in {
+  /* Toast 自身靠 translateX(-50%) 居中，关键帧里必须带上，否则动画期间会横向跳位 */
+  from { opacity: 0; transform: translate(-50%, -8px) scale(.98); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes drop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
+/* 遮罩淡入；带自己动画的 sheet / drawer 只淡遮罩，不碰面板 */
+.mask { animation: mask-in .16s ease-out; }
+.mask > .modal:not(.log-drawer) { animation: modal-in .18s cubic-bezier(.16, 1, .3, 1); }
+
+.toast { animation: toast-in .18s cubic-bezier(.16, 1, .3, 1); }
+
+/* 仓库行展开：内容淡入并轻微下移，高度不做动画（需要 JS 测高，留到下一档） */
+.sn-drop { animation: drop-in .2s cubic-bezier(.16, 1, .3, 1); }
+
+/* 按压反馈：瞬时缩放，不加 transition，按下即响应、松开即回弹 */
+.btn:active:not(:disabled),
+.sb-item:active,
+.run-chip:active,
+.hist-toggle:active,
+.eye:active,
+.x:active,
+.dest-opt:active {
+  transform: scale(.97);
+}
+/* 步骤点是整列容器，只缩里面那个 22px 的圆 */
+.rst-step-dot:active .n { transform: scale(.88); }
+
+/* 窄屏弹窗本来就是底部上滑的 sheet，用回它自己的动画，
+   否则会被上面那条 specificity 更高的 modal-in 压成居中缩放 */
+@media (max-width: 768px) {
+  .mask > .modal:not(.log-drawer) { animation: sheetup .22s ease-out; }
+}
+/* 侧栏是整块，缩得再轻一点（FAB 在移动端已有自己的 scale(.94)，这里不覆盖） */
+.sb-item:active { transform: scale(.98); }
+
 </style>

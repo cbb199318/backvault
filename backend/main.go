@@ -579,7 +579,10 @@ type Repo struct {
 	DavUser   string `json:"dav_user,omitempty"`   // 账号
 	DavPass   string `json:"dav_pass,omitempty"`   // 密码（输出时掩码）
 	DavVendor string `json:"dav_vendor,omitempty"` // other / owncloud / nextcloud / sharepoint
-	Inited    bool   `json:"inited,omitempty"`     // restic init 已成功完成
+	// 品牌标识：用户手动指定时优先于自动识别（auto / tianyi / y115 / baidu / aliyun / openlist / webdav）
+	// 主要用于 WebDAV 走 OpenList 中转、仓库名里看不出上游网盘的场景
+	Brand  string `json:"brand,omitempty"`
+	Inited bool   `json:"inited,omitempty"` // restic init 已成功完成
 }
 
 type Task struct {
