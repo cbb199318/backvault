@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>量子密备 · 双轨单向箭头版</title>
+<style>
+  :root{--bg:#0b1020;--panel:#141a2e;--line:rgba(255,255,255,.08);--txt:#e8ecf7;--dim:#8b96b4}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);padding:40px 32px 72px;
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif;-webkit-font-smoothing:antialiased}
+  h1{font-size:22px;font-weight:600;margin:0 0 8px}
+  .sub{color:var(--dim);font-size:13px;line-height:1.8;margin-bottom:30px;max-width:760px}
+  .row{display:flex;gap:22px;flex-wrap:wrap}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:24px;width:300px}
+  .card.pick{border-color:rgba(86,216,248,.45);box-shadow:0 0 0 1px rgba(86,216,248,.16) inset}
+  .tag{font-size:11px;color:#7fd4f2;letter-spacing:1.4px;margin-bottom:14px}
+  .hero{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+  .hero img{width:118px;height:118px;display:block}
+  .hero .name{font-size:15px;font-weight:600;margin-bottom:6px}
+  .hero .desc{font-size:12px;color:var(--dim);line-height:1.7}
+  .sizes{display:flex;align-items:flex-end;gap:14px;padding-top:16px;border-top:1px solid var(--line)}
+  .sizes span{font-size:10px;color:#5d6785;display:block;text-align:center;margin-top:6px}
+  .big{display:flex;gap:26px;align-items:center;background:rgba(255,255,255,.03);
+    border:1px solid var(--line);border-radius:20px;padding:26px;margin-bottom:26px;flex-wrap:wrap}
+  .big img{width:190px;height:190px}
+  .big .txt{font-size:12.5px;color:var(--dim);line-height:1.9;max-width:420px}
+  .big .txt b{color:#e8ecf7;font-size:13.5px;display:block;margin-bottom:6px}
+  .light{background:#f2f4f9;border-radius:22px;padding:26px 28px;margin-top:30px;color:#1a2233}
+  .light .tag{color:#2b57e8}
+  .bar{margin-top:28px;padding:14px 18px;background:rgba(86,216,248,.07);
+    border:1px solid rgba(86,216,248,.2);border-radius:14px;font-size:12.5px;color:#a9d9ee;line-height:1.75}
+</style>
+</head>
+<body>
+  <h1>量子密备 · 双轨改单向箭头</h1>
+  <div class="sub">两段弧改成顺时针单向前进箭头，读起来就是「同步 / 备份在跑」；四周加了 4 角星和小圆点做星空点缀，颜色按远近做了深浅，不抢主体。</div>
+
+  <div class="big">
+    <img src="C3-noband-1024.png" alt="C3">
+    <div class="txt">
+      <b>推荐：无腰封版</b>
+      顺时针双箭头绕一圈，中间白色钥匙孔点题「密」。星点大小和亮度都做了层次：近处的亮青、远处的暗蓝，缩到 32px 会自然退成背景噪点，不会糊住主体。
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card pick">
+      <div class="tag">无腰封 · 主推</div>
+      <div class="hero">
+        <img src="C3-noband-256.png" alt="">
+        <div>
+          <div class="name">星空双箭头</div>
+          <div class="desc">图形铺满画面，飞牛外框显示名称。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C3-noband-128.png" width="64"><span>64</span></div>
+        <div><img src="C3-noband-128.png" width="48"><span>48</span></div>
+        <div><img src="C3-noband-64.png" width="32"><span>32</span></div>
+        <div><img src="C3-noband-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">有腰封 · 备选</div>
+      <div class="hero">
+        <img src="C3-band-256.png" alt="">
+        <div>
+          <div class="name">星空双箭头 + 密备</div>
+          <div class="desc">带名称，单独截图也认得出是什么。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C3-band-128.png" width="64"><span>64</span></div>
+        <div><img src="C3-band-128.png" width="48"><span>48</span></div>
+        <div><img src="C3-band-64.png" width="32"><span>32</span></div>
+        <div><img src="C3-band-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">上一版 · 对照</div>
+      <div class="hero">
+        <img src="C2-noband-256.png" alt="">
+        <div>
+          <div class="name">原来的双轨</div>
+          <div class="desc">无箭头、无星点，方向感弱一些。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C2-noband-128.png" width="64"><span>64</span></div>
+        <div><img src="C2-noband-128.png" width="48"><span>48</span></div>
+        <div><img src="C2-noband-64.png" width="32"><span>32</span></div>
+        <div><img src="C2-noband-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="light">
+    <div class="tag">浅色桌面下</div>
+    <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <img src="C3-noband-256.png" width="72" style="border-radius:22%">
+      <img src="C3-noband-128.png" width="52" style="border-radius:22%">
+      <img src="C3-noband-64.png" width="34" style="border-radius:22%">
+      <img src="C3-noband-32.png" width="22" style="border-radius:22%">
+      <span style="width:20px"></span>
+      <img src="C3-band-256.png" width="72" style="border-radius:22%">
+      <img src="C3-band-128.png" width="52" style="border-radius:22%">
+      <img src="C3-band-64.png" width="34" style="border-radius:22%">
+      <img src="C3-band-32.png" width="22" style="border-radius:22%">
+    </div>
+  </div>
+
+  <div class="bar">要是觉得星点太多，我可以减到 4 颗只留四个角；要是想让同步感更强，还能把箭头再加长一点、或者两段弧错开做「接力」效果。</div>
+</body>
+</html>

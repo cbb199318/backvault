@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>量子密备 · 图标方案对比</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#141a2e; --line:rgba(255,255,255,.08);
+    --txt:#e8ecf7; --dim:#8b96b4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif;
+    padding:40px 32px 80px;-webkit-font-smoothing:antialiased}
+  h1{font-size:22px;font-weight:600;margin:0 0 6px;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:34px;line-height:1.7}
+  .row{display:flex;gap:22px;flex-wrap:wrap}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;
+    padding:26px 24px 22px;width:300px}
+  .card.pick{border-color:rgba(86,216,248,.45);box-shadow:0 0 0 1px rgba(86,216,248,.18) inset}
+  .tag{font-size:11px;color:#7fd4f2;letter-spacing:1.4px;text-transform:uppercase;margin-bottom:14px}
+  .hero{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+  .hero img{width:112px;height:112px;display:block}
+  .hero .name{font-size:15px;font-weight:600;margin-bottom:6px}
+  .hero .desc{font-size:12px;color:var(--dim);line-height:1.65}
+  .sizes{display:flex;align-items:flex-end;gap:14px;padding-top:16px;border-top:1px solid var(--line)}
+  .sizes img{display:block;border-radius:22%}
+  .sizes span{font-size:10px;color:#5d6785;display:block;text-align:center;margin-top:6px}
+  .light{background:#f2f4f9;border-radius:24px;padding:30px;margin-top:34px;color:#1a2233}
+  .light .tag{color:#2b57e8}
+  .light .sizes{border-top:1px solid rgba(0,0,0,.08)}
+  .light .sizes span{color:#7a839a}
+  .light .sub{color:#6b7490}
+  .ref{display:flex;align-items:center;gap:18px;background:rgba(255,255,255,.03);
+    border:1px dashed rgba(255,255,255,.14);border-radius:18px;padding:18px 20px;margin-bottom:34px}
+  .ref img{width:88px;height:88px;border-radius:20%}
+  .ref div{font-size:12px;color:var(--dim);line-height:1.8}
+  .bar{display:flex;align-items:center;gap:10px;margin-top:30px;padding:14px 18px;
+    background:rgba(86,216,248,.07);border:1px solid rgba(86,216,248,.2);border-radius:14px;
+    font-size:12.5px;color:#a9d9ee;line-height:1.7}
+</style>
+</head>
+<body>
+  <h1>量子密备 · 图标方案</h1>
+  <div class="sub">按你给的 QKD 图标风格重做：深藏青 squircle + 底部亮蓝色带 + 白色粗体「密备」，上方抽象图形。三个方案都出了 1024/256/128/64/32 全套。</div>
+
+  <div class="ref">
+    <img src="reference.png" alt="参考">
+    <div><b style="color:#e8ecf7">参考风格</b><br>深藏青底 · 底部色带承载名称 · 亮蓝/青色抽象图形 · 高对比扁平矢量</div>
+  </div>
+
+  <div class="row">
+    <div class="card pick">
+      <div class="tag">方案 A · 推荐</div>
+      <div class="hero">
+        <img src="A-orbit-256.png" alt="A">
+        <div>
+          <div class="name">量子轨道 + 锁孔</div>
+          <div class="desc">青色圆环像量子轨道，环上白点是粒子；环内白色钥匙孔点明「密」；左下角渐隐小方块呼应参考图的像素元素。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="A-orbit-128.png" width="64"><span>64</span></div>
+        <div><img src="A-orbit-128.png" width="48"><span>48</span></div>
+        <div><img src="A-orbit-64.png" width="32"><span>32</span></div>
+        <div><img src="A-orbit-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">方案 B</div>
+      <div class="hero">
+        <img src="B-hex-256.png" alt="B">
+        <div>
+          <div class="name">六边密匣</div>
+          <div class="desc">六边形是密码学里最常见的符号（哈希网格/晶体），青色描边 + 内凹底色，中心钥匙孔。稳重、偏工程感。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="B-hex-128.png" width="64"><span>64</span></div>
+        <div><img src="B-hex-128.png" width="48"><span>48</span></div>
+        <div><img src="B-hex-64.png" width="32"><span>32</span></div>
+        <div><img src="B-hex-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">方案 C</div>
+      <div class="hero">
+        <img src="C-pixel-256.png" alt="C">
+        <div>
+          <div class="name">双轨 · 极简</div>
+          <div class="desc">两道对称弧像电子轨道，中间一枚大钥匙孔。元素最少，小尺寸下最清晰，也最像系统级图标。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C-pixel-128.png" width="64"><span>64</span></div>
+        <div><img src="C-pixel-128.png" width="48"><span>48</span></div>
+        <div><img src="C-pixel-64.png" width="32"><span>32</span></div>
+        <div><img src="C-pixel-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="light">
+    <div class="tag">浅色桌面下</div>
+    <div class="row">
+      <div style="display:flex;align-items:center;gap:14px">
+        <img src="A-orbit-256.png" width="72" style="border-radius:22%">
+        <img src="A-orbit-128.png" width="52" style="border-radius:22%">
+        <img src="A-orbit-64.png" width="34" style="border-radius:22%">
+        <img src="A-orbit-32.png" width="22" style="border-radius:22%">
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <img src="B-hex-256.png" width="72" style="border-radius:22%">
+        <img src="B-hex-128.png" width="52" style="border-radius:22%">
+        <img src="B-hex-64.png" width="34" style="border-radius:22%">
+        <img src="B-hex-32.png" width="22" style="border-radius:22%">
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <img src="C-pixel-256.png" width="72" style="border-radius:22%">
+        <img src="C-pixel-128.png" width="52" style="border-radius:22%">
+        <img src="C-pixel-64.png" width="34" style="border-radius:22%">
+        <img src="C-pixel-32.png" width="22" style="border-radius:22%">
+      </div>
+    </div>
+  </div>
+
+  <div class="bar">深色和浅色桌面都试过了，20~32px 下 A/C 的文字还能认出来，B 的六边形在小尺寸更清楚。定哪一版我再出 fpk 需要的 png 集并替换到包里。</div>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>量子密备 · 去掉腰封方案</title>
+<style>
+  :root{--bg:#0b1020;--panel:#141a2e;--line:rgba(255,255,255,.08);--txt:#e8ecf7;--dim:#8b96b4}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);padding:40px 32px 72px;
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif;-webkit-font-smoothing:antialiased}
+  h1{font-size:22px;font-weight:600;margin:0 0 8px}
+  .sub{color:var(--dim);font-size:13px;line-height:1.8;margin-bottom:32px}
+  .row{display:flex;gap:22px;flex-wrap:wrap}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:26px 24px 22px;width:300px}
+  .card.pick{border-color:rgba(86,216,248,.45);box-shadow:0 0 0 1px rgba(86,216,248,.16) inset}
+  .tag{font-size:11px;color:#7fd4f2;letter-spacing:1.4px;margin-bottom:16px}
+  .hero{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+  .hero img{width:116px;height:116px;display:block}
+  .hero .name{font-size:15px;font-weight:600;margin-bottom:6px}
+  .hero .desc{font-size:12px;color:var(--dim);line-height:1.7}
+  .sizes{display:flex;align-items:flex-end;gap:14px;padding-top:16px;border-top:1px solid var(--line)}
+  .sizes span{font-size:10px;color:#5d6785;display:block;text-align:center;margin-top:6px}
+  .cmp{margin-top:36px;background:rgba(255,255,255,.03);border:1px solid var(--line);
+    border-radius:18px;padding:22px 24px}
+  .cmp h2{font-size:13px;font-weight:600;margin:0 0 16px;color:#b9c3dc}
+  .cmp .line{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .cmp img{border-radius:22%}
+  .cmp .lab{font-size:10.5px;color:#5d6785;text-align:center;margin-top:6px}
+  .light{background:#f2f4f9;border-radius:24px;padding:28px 30px;margin-top:34px;color:#1a2233}
+  .light .tag{color:#2b57e8}
+  .bar{display:flex;align-items:center;gap:10px;margin-top:30px;padding:14px 18px;
+    background:rgba(86,216,248,.07);border:1px solid rgba(86,216,248,.2);border-radius:14px;
+    font-size:12.5px;color:#a9d9ee;line-height:1.75}
+</style>
+</head>
+<body>
+  <h1>量子密备 · 去掉腰封</h1>
+  <div class="sub">腰封去掉后图形放大到画面中央，名称靠桌面外框显示。三版同尺寸重出，另附腰封/无腰封对照。</div>
+
+  <div class="row">
+    <div class="card pick">
+      <div class="tag">方案 A · 环锁</div>
+      <div class="hero">
+        <img src="A2-noband-256.png" alt="A2">
+        <div>
+          <div class="name">青环 + 钥匙孔</div>
+          <div class="desc">整枚青环居中，环下方压了一层柔和投影做出厚度，右下白点保留量子感。最接近参考图的环形态。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="A2-noband-128.png" width="64"><span>64</span></div>
+        <div><img src="A2-noband-128.png" width="48"><span>48</span></div>
+        <div><img src="A2-noband-64.png" width="32"><span>32</span></div>
+        <div><img src="A2-noband-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">方案 B · 六边密匣</div>
+      <div class="hero">
+        <img src="B2-noband-256.png" alt="B2">
+        <div>
+          <div class="name">六边形 + 钥匙孔</div>
+          <div class="desc">去掉小点后更干净，六边形描边在小尺寸下轮廓最稳，适合桌面上和别的图标混排。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="B2-noband-128.png" width="64"><span>64</span></div>
+        <div><img src="B2-noband-128.png" width="48"><span>48</span></div>
+        <div><img src="B2-noband-64.png" width="32"><span>32</span></div>
+        <div><img src="B2-noband-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">方案 C · 双轨</div>
+      <div class="hero">
+        <img src="C2-noband-256.png" alt="C2">
+        <div>
+          <div class="name">双弧 + 钥匙孔</div>
+          <div class="desc">左右两道弧留出开口，中间钥匙孔最大。元素最少，缩到 20px 也还能看出是个锁孔。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C2-noband-128.png" width="64"><span>64</span></div>
+        <div><img src="C2-noband-128.png" width="48"><span>48</span></div>
+        <div><img src="C2-noband-64.png" width="32"><span>32</span></div>
+        <div><img src="C2-noband-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cmp">
+    <h2>有腰封 / 无腰封 对照（128px）</h2>
+    <div class="line">
+      <div><img src="A-orbit-128.png" width="80"><div class="lab">A 有腰封</div></div>
+      <div><img src="A2-noband-128.png" width="80"><div class="lab">A 无腰封</div></div>
+      <div style="width:1px;height:70px;background:rgba(255,255,255,.1)"></div>
+      <div><img src="B-hex-128.png" width="80"><div class="lab">B 有腰封</div></div>
+      <div><img src="B2-noband-128.png" width="80"><div class="lab">B 无腰封</div></div>
+      <div style="width:1px;height:70px;background:rgba(255,255,255,.1)"></div>
+      <div><img src="C-pixel-128.png" width="80"><div class="lab">C 有腰封</div></div>
+      <div><img src="C2-noband-128.png" width="80"><div class="lab">C 无腰封</div></div>
+    </div>
+  </div>
+
+  <div class="light">
+    <div class="tag">浅色桌面下</div>
+    <div class="line" style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+      <img src="A2-noband-256.png" width="72" style="border-radius:22%">
+      <img src="A2-noband-128.png" width="52" style="border-radius:22%">
+      <img src="A2-noband-64.png" width="34" style="border-radius:22%">
+      <img src="A2-noband-32.png" width="22" style="border-radius:22%">
+      <span style="width:14px"></span>
+      <img src="B2-noband-256.png" width="72" style="border-radius:22%">
+      <img src="B2-noband-128.png" width="52" style="border-radius:22%">
+      <img src="B2-noband-64.png" width="34" style="border-radius:22%">
+      <img src="B2-noband-32.png" width="22" style="border-radius:22%">
+      <span style="width:14px"></span>
+      <img src="C2-noband-256.png" width="72" style="border-radius:22%">
+      <img src="C2-noband-128.png" width="52" style="border-radius:22%">
+      <img src="C2-noband-64.png" width="34" style="border-radius:22%">
+      <img src="C2-noband-32.png" width="22" style="border-radius:22%">
+    </div>
+  </div>
+
+  <div class="bar">去掉腰封后名称完全依赖飞牛外框显示，好处是图形更大更醒目，坏处是单独分享图标时看不出叫什么。我个人还是偏 A 或 C。</div>
+</body>
+</html>

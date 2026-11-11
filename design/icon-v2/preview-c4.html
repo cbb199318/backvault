@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>量子密备 · 左右双轨</title>
+<style>
+  :root{--bg:#0b1020;--panel:#141a2e;--line:rgba(255,255,255,.08);--txt:#e8ecf7;--dim:#8b96b4}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);padding:40px 32px 72px;
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif;-webkit-font-smoothing:antialiased}
+  h1{font-size:22px;font-weight:600;margin:0 0 8px}
+  .sub{color:var(--dim);font-size:13px;line-height:1.8;margin-bottom:28px;max-width:780px}
+  .big{display:flex;gap:28px;align-items:center;background:rgba(255,255,255,.03);
+    border:1px solid var(--line);border-radius:20px;padding:26px;margin-bottom:26px;flex-wrap:wrap}
+  .big img{width:200px;height:200px}
+  .big .txt{font-size:12.5px;color:var(--dim);line-height:1.95;max-width:430px}
+  .big .txt b{color:#e8ecf7;font-size:13.5px;display:block;margin-bottom:6px}
+  .row{display:flex;gap:22px;flex-wrap:wrap}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:24px;width:300px}
+  .card.pick{border-color:rgba(86,216,248,.45);box-shadow:0 0 0 1px rgba(86,216,248,.16) inset}
+  .tag{font-size:11px;color:#7fd4f2;letter-spacing:1.4px;margin-bottom:14px}
+  .hero{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+  .hero img{width:118px;height:118px;display:block}
+  .hero .name{font-size:15px;font-weight:600;margin-bottom:6px}
+  .hero .desc{font-size:12px;color:var(--dim);line-height:1.7}
+  .sizes{display:flex;align-items:flex-end;gap:14px;padding-top:16px;border-top:1px solid var(--line)}
+  .sizes span{font-size:10px;color:#5d6785;display:block;text-align:center;margin-top:6px}
+  .strip{display:flex;gap:20px;align-items:center;background:rgba(255,255,255,.03);
+    border:1px solid var(--line);border-radius:18px;padding:20px 24px;margin-top:26px;flex-wrap:wrap}
+  .strip .lab{font-size:10.5px;color:#5d6785;text-align:center;margin-top:6px}
+  .light{background:#f2f4f9;border-radius:22px;padding:26px 28px;margin-top:26px;color:#1a2233}
+  .light .tag{color:#2b57e8}
+  .bar{margin-top:26px;padding:14px 18px;background:rgba(86,216,248,.07);
+    border:1px solid rgba(86,216,248,.2);border-radius:14px;font-size:12.5px;color:#a9d9ee;line-height:1.75}
+</style>
+</head>
+<body>
+  <h1>量子密备 · 左右双轨</h1>
+  <div class="sub">两段弧改成左右分列：左轨从下往上、右轨从上往下，末端都带圆角箭头，连起来就是顺时针一圈，读起来是「同步 / 备份在跑」。轨道已加粗到 0.052（原 0.040），小尺寸更压得住。</div>
+
+  <div class="big">
+    <img src="C4-noband-1024.png" alt="C4">
+    <div class="txt">
+      <b>左右双轨 · 加粗版</b>
+      轨道线宽从 0.040 加到 0.052（约 +30%），箭头随之略收，避免头部过大。左轨青色、右轨亮蓝，两个箭头分别在左上和右下形成对角呼应。中间白色钥匙孔按标准比例重做：圆头 + 略宽的长柄。缩到 32px 仍能看出「一圈箭头 + 锁孔」。
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card pick">
+      <div class="tag">无腰封 · 主推</div>
+      <div class="hero">
+        <img src="C4-noband-256.png" alt="">
+        <div>
+          <div class="name">左右双轨 + 锁孔</div>
+          <div class="desc">图形铺满，飞牛外框显示名称。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C4-noband-128.png" width="64"><span>64</span></div>
+        <div><img src="C4-noband-128.png" width="48"><span>48</span></div>
+        <div><img src="C4-noband-64.png" width="32"><span>32</span></div>
+        <div><img src="C4-noband-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">备选 · 中间换挂锁</div>
+      <div class="hero">
+        <img src="C4-lock-256.png" alt="">
+        <div>
+          <div class="name">左右双轨 + 挂锁</div>
+          <div class="desc">小尺寸下比锁孔更清楚，一眼看出是「加密」。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C4-lock-128.png" width="64"><span>64</span></div>
+        <div><img src="C4-lock-128.png" width="48"><span>48</span></div>
+        <div><img src="C4-lock-64.png" width="32"><span>32</span></div>
+        <div><img src="C4-lock-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tag">有腰封</div>
+      <div class="hero">
+        <img src="C4-band-256.png" alt="">
+        <div>
+          <div class="name">左右双轨 + 密备</div>
+          <div class="desc">带名称，单独截图也认得出。</div>
+        </div>
+      </div>
+      <div class="sizes">
+        <div><img src="C4-band-128.png" width="64"><span>64</span></div>
+        <div><img src="C4-band-128.png" width="48"><span>48</span></div>
+        <div><img src="C4-band-64.png" width="32"><span>32</span></div>
+        <div><img src="C4-band-32.png" width="20"><span>20</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div><img src="C4-noband-128.png" width="72" style="border-radius:22%"><div class="lab">锁孔 128</div></div>
+    <div><img src="C4-noband-64.png" width="48" style="border-radius:22%"><div class="lab">64</div></div>
+    <div><img src="C4-noband-32.png" width="32" style="border-radius:22%"><div class="lab">32</div></div>
+    <div style="width:1px;height:70px;background:rgba(255,255,255,.1)"></div>
+    <div><img src="C4-lock-128.png" width="72" style="border-radius:22%"><div class="lab">挂锁 128</div></div>
+    <div><img src="C4-lock-64.png" width="48" style="border-radius:22%"><div class="lab">64</div></div>
+    <div><img src="C4-lock-32.png" width="32" style="border-radius:22%"><div class="lab">32</div></div>
+  </div>
+
+  <div class="light">
+    <div class="tag">浅色桌面下</div>
+    <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <img src="C4-noband-256.png" width="72" style="border-radius:22%">
+      <img src="C4-noband-128.png" width="52" style="border-radius:22%">
+      <img src="C4-noband-64.png" width="34" style="border-radius:22%">
+      <img src="C4-noband-32.png" width="22" style="border-radius:22%">
+      <span style="width:18px"></span>
+      <img src="C4-lock-256.png" width="72" style="border-radius:22%">
+      <img src="C4-lock-128.png" width="52" style="border-radius:22%">
+      <img src="C4-lock-64.png" width="34" style="border-radius:22%">
+      <img src="C4-lock-32.png" width="22" style="border-radius:22%">
+    </div>
+  </div>
+
+  <div class="bar">我建议：桌面图标用挂锁版（20~32px 最清楚），需要带名字的场合用腰封版。你定一版，我就打成 fpk 图标集并替换。</div>
+</body>
+</html>

@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>量子密备 · 全流程界面预览</title>
+<script src="icons.js"></script>
+<style>
+/* ============ 预览外壳 ============ */
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html,body{margin:0;height:100%}
+body{background:#e9edf3;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#1f2937}
+.pv-top{height:56px;background:#0f172a;color:#e2e8f5;display:flex;align-items:center;gap:18px;padding:0 20px;position:sticky;top:0;z-index:50}
+.pv-brand{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;letter-spacing:.2px}
+.pv-brand i{width:9px;height:9px;border-radius:50%;background:#3ddc97;box-shadow:0 0 0 3px rgba(61,220,151,.18)}
+.pv-tag{font-size:11.5px;color:#8fa2c4;border:1px solid #2a3a57;border-radius:6px;padding:3px 8px}
+.pv-seg{display:flex;background:#1b2740;border-radius:8px;padding:3px;margin-left:auto}
+.pv-seg button{border:0;background:transparent;color:#9db0d0;font-size:12.5px;padding:5px 14px;border-radius:6px;cursor:pointer;font-family:inherit}
+.pv-seg button.on{background:#3370ff;color:#fff}
+.pv-body{display:flex;height:calc(100vh - 56px)}
+.pv-rail{width:232px;flex:none;background:#fff;border-right:1px solid #e2e8f0;overflow:auto;padding:14px 10px 40px}
+.pv-grp{font-size:11px;color:#9aa6ba;letter-spacing:.6px;padding:14px 10px 6px;font-weight:600}
+.pv-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;color:#465569;cursor:pointer;line-height:1.35}
+.pv-item:hover{background:#f4f7fb}
+.pv-item.on{background:#eef4ff;color:#3370ff;font-weight:500}
+.pv-item em{font-style:normal;font-size:10.5px;color:#a7b2c4;margin-left:auto;font-variant-numeric:tabular-nums}
+.pv-item.on em{color:#7ba3ff}
+.pv-stage{flex:1;overflow:auto;padding:26px 28px 70px;display:flex;justify-content:center;align-items:flex-start}
+.pv-screen{display:none;width:100%;justify-content:center}
+.pv-screen.on{display:flex}
+.pv-cap{font-size:12px;color:#7b8798;margin:0 0 12px;text-align:center}
+
+/* ============ 应用外壳 ============ */
+.app{width:1180px;min-height:760px;background:#f2f4f7;border-radius:14px;overflow:hidden;display:flex;
+  box-shadow:0 18px 50px -18px rgba(15,23,42,.35),0 0 0 1px rgba(15,23,42,.06);position:relative}
+.sb{width:200px;flex:none;background:#fff;border-right:1px solid #ebedf0;display:flex;flex-direction:column}
+.sb-logo{display:flex;align-items:center;gap:9px;padding:18px 18px 6px;font-size:14px;font-weight:600;color:#1f2937}
+.sb-logo .mk{width:26px;height:26px;border-radius:8px;background:linear-gradient(150deg,#1b2a52,#0c1428);display:flex;align-items:center;justify-content:center;color:#7fe3d0}
+.sb-nav{display:flex;flex-direction:column;gap:2px;padding:14px 10px 8px}
+.sb-item{display:flex;align-items:center;gap:10px;border:0;background:transparent;padding:9px 12px;border-radius:9px;
+  font-size:14px;color:#4b5563;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+.sb-item:hover{background:#f5f7fa}
+.sb-item.on{background:#eef4ff;color:#3370ff;font-weight:500}
+.sb-cnt{margin-left:auto;font-size:11px;background:#eef0f3;color:#7b8798;border-radius:20px;padding:1px 7px;font-variant-numeric:tabular-nums}
+.sb-item.on .sb-cnt{background:#dbe7ff;color:#3370ff}
+.sb-cnt.run{background:#fdecec;color:#e5484d}
+.sb-foot{margin-top:auto;padding:14px 18px;font-size:11px;color:#b0b7c3;line-height:1.8}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.content{max-width:980px;width:100%;margin:0 auto;padding:24px 28px 44px}
+
+/* 通用 */
+.i{display:inline-flex;align-items:center;justify-content:center;flex:none}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid transparent;border-radius:6px;
+  padding:6px 14px;font-size:13px;line-height:18px;font-family:inherit;cursor:pointer;white-space:nowrap;background:#fff}
+.btn.primary{background:#3370ff;color:#fff}
+.btn.ghost{border-color:#dfe3ea;color:#374151;background:#fff}
+.btn.ghost:hover{border-color:#3370ff;color:#3370ff}
+.btn.sm{padding:4px 10px;font-size:12px}
+.icon-btn{width:28px;height:28px;border:0;background:transparent;border-radius:6px;color:#6b7280;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center}
+.icon-btn:hover{background:#f1f4f9;color:#3370ff}
+.link{color:#3370ff;cursor:pointer;font-size:12.5px}
+.dhead{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.dhead h1{margin:0;font-size:20px;font-weight:600}
+.dhead-sub{font-size:13px;color:#8b9098}
+.dhead .acts{margin-left:auto;display:flex;gap:8px}
+
+/* 概览横幅 */
+.ov-hero{display:flex;align-items:center;gap:26px;background:linear-gradient(120deg,#fff 0%,#f4f8ff 60%,#e9f1ff 100%);
+  border-radius:12px;padding:20px 24px;margin-bottom:16px;position:relative;overflow:hidden}
+.ov-hero::after{content:"";position:absolute;right:-60px;top:-70px;width:220px;height:220px;border-radius:50%;
+  background:radial-gradient(circle,rgba(51,112,255,.09),transparent 68%)}
+.ov-hero.warn{background:linear-gradient(120deg,#fff 0%,#fffaf3 60%,#fff1e0 100%)}
+.ov-ring{width:88px;height:88px;position:relative;flex:none}
+.ov-ring svg{transform:rotate(-90deg)}
+.ov-ring .bg{stroke:#dfe7f8}
+.ov-ring .fg{stroke:#3370ff;transition:stroke-dashoffset .6s}
+.ov-hero.warn .ov-ring .fg{stroke:#f59e0b}
+.ov-ring-c{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#3370ff}
+.ov-hero.warn .ov-ring-c{color:#d97706}
+.ov-txt h2{margin:0 0 5px;font-size:17px;font-weight:600}
+.ov-txt p{margin:0;font-size:12.5px;color:#6b7280;line-height:1.6}
+.ov-acts{margin-top:12px}
+.ov-kpis{margin-left:auto;display:flex;align-items:center}
+.ov-kpi{padding:0 22px;border-left:1px solid #dfe6f3}
+.ov-kpi:first-child{border-left:0}
+.ov-kpi span{display:block;font-size:12px;color:#8b9098;white-space:nowrap}
+.ov-kpi b{display:block;font-size:22px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+.ov-kpi b.ok{color:#16803a}
+.ov-kpi b small{font-size:12px;font-weight:400;color:#8b9098;margin-left:2px}
+
+/* 面板 */
+.panel{background:#fff;border-radius:12px;margin-bottom:16px;overflow:hidden}
+.panel-h{display:flex;align-items:center;gap:14px;padding:13px 20px;border-bottom:1px solid #f0f1f3}
+.panel-h h3{margin:0;font-size:15px;font-weight:600}
+.panel-foot{padding:9px 20px;font-size:12px;color:#8b9098;border-top:1px solid #f0f1f3}
+.pseg{display:inline-flex;background:#f2f3f5;border-radius:6px;padding:2px}
+.pseg button{border:0;background:transparent;padding:3px 11px;border-radius:4px;font-size:12px;color:#6b7280;cursor:pointer;font-family:inherit}
+.pseg button.on{background:#fff;color:#3370ff;font-weight:500;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+.psearch{margin-left:auto;display:flex;align-items:center;gap:6px;border:1px solid #e5e9f0;border-radius:6px;padding:0 9px;height:30px;color:#9aa3b2;background:#fff}
+.psearch input{border:0;outline:0;font-size:12.5px;width:170px;font-family:inherit;background:transparent;color:#374151}
+.psearch i{cursor:pointer;font-style:normal;color:#b6bec9}
+
+/* 任务表 */
+.ttbl{width:100%;border-collapse:collapse}
+.ttbl th{text-align:left;font-weight:400;font-size:12px;color:#8b9098;padding:9px 14px;background:#fafbfc;white-space:nowrap}
+.ttbl th:first-child,.ttbl td:first-child{padding-left:20px}
+.ttbl th:last-child,.ttbl td:last-child{padding-right:16px;text-align:right}
+.ttbl td{padding:12px 14px;border-top:1px solid #f0f1f3;font-size:13px;vertical-align:middle}
+.ttbl tbody tr{cursor:pointer}
+.ttbl tbody tr:hover td{background:#f8faff}
+.tt-name{display:flex;align-items:center;gap:11px}
+.tt-ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;background:#eef4ff;color:#3370ff}
+.tt-ic.c-ok{background:#e8f4ec;color:#16803a}
+.tt-ic.c-warn{background:#fdf1e3;color:#d97706}
+.tt-ic.c-gray{background:#f2f4f7;color:#9aa3b2}
+.tt-nm{min-width:0}
+.tt-nm b{display:block;font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+.tt-nm small{display:block;font-size:11.5px;color:#9aa3b2;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.tt-route{display:flex;align-items:center;gap:6px;color:#b0b7c3}
+.chip2{background:#f5f7fa;border-radius:4px;padding:2px 8px;font-size:12px;color:#4b5563;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+.tag2{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:4px;font-size:12px;white-space:nowrap}
+.tag2 .d{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.tag2.ok{background:#e8f4ec;color:#16803a}
+.tag2.warn{background:#fdf1e3;color:#b45309}
+.tag2.run{background:#eef4ff;color:#3370ff}
+.tag2.gray{background:#f2f4f7;color:#7b8798}
+.tag2.pur{background:#f1edff;color:#6b46e5}
+.spark{display:flex;gap:3px;align-items:center;height:22px}
+.spark i{width:6px;height:18px;border-radius:2px;background:#22c55e;opacity:.85}
+.spark i.f{background:#e5484d}
+.spark i.r{background:#3370ff}
+.spark i.n{background:#c7cdd8}
+.spark i.e{background:#eef0f3}
+.tt-prog{min-width:150px}
+.tt-prog-t{display:flex;align-items:center;gap:7px;font-size:12px;color:#4b5563}
+.tt-prog-t b{margin-left:auto;color:#3370ff;font-variant-numeric:tabular-nums}
+.bar{height:6px;background:#e8efff;border-radius:6px;overflow:hidden;margin:7px 0 5px}
+.bar-in{height:100%;background:#3370ff;border-radius:6px}
+.tt-prog-s{font-size:11px;color:#9aa3b2}
+.spin{width:12px;height:12px;border:2px solid #bfd7ff;border-top-color:#3370ff;border-radius:50%;display:inline-block;animation:rot .9s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.tc-acts{display:inline-flex;align-items:center;gap:2px}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.kpi{background:#fff;border-radius:12px;padding:15px 18px;display:flex;align-items:center;gap:13px;min-width:0}
+.kpi>div>span{display:block;font-size:12px;color:#8b9098}
+.kpi b{display:block;font-size:20px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi b.sm{font-size:15px}
+.kpi b small{font-size:12px;font-weight:400;color:#8b9098;margin-left:3px}
+.kpi-ic{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
+.c-blue{background:#eef4ff;color:#3370ff}
+.c-green{background:#e8f4ec;color:#16803a}
+.c-orange{background:#fdf1e3;color:#d97706}
+.c-red{background:#fdecec;color:#e5484d}
+.c-purple{background:#f1edff;color:#7c5cff}
+
+/* 快照列表 */
+.sn-list{display:flex;flex-direction:column;gap:10px}
+.sn-repo{background:#fff;border-radius:12px;border:1px solid transparent;overflow:hidden}
+.sn-repo.open{border-color:#dbe6ff;box-shadow:0 4px 16px -8px rgba(51,112,255,.28)}
+.sn-head{display:flex;align-items:center;gap:14px;padding:15px 18px;cursor:pointer}
+.sn-head:hover{background:#fafcff}
+.sn-ic{width:38px;height:38px;border-radius:10px;background:#eef4ff;color:#3370ff;display:flex;align-items:center;justify-content:center;flex:none}
+.sn-body{flex:1;min-width:0}
+.sn-name{font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px}
+.sn-pill{font-size:11px;font-weight:400;border-radius:20px;padding:1px 8px}
+.sn-pill.ok{background:#e8f4ec;color:#16803a}
+.sn-pill.gray{background:#f2f4f7;color:#8b9098}
+.sn-pill.blue{background:#eef4ff;color:#3370ff}
+.sn-path{font-size:11.5px;color:#9aa3b2;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sn-meta{display:flex;gap:16px;font-size:11.5px;color:#9aa3b2;margin-top:5px}
+.sn-meta b{color:#4b5563;font-weight:500}
+.sn-stats{display:flex;gap:26px;padding-right:6px}
+.sn-stats div span{display:block;font-size:11px;color:#9aa3b2}
+.sn-stats div b{display:block;font-size:13.5px;font-weight:500;margin-top:2px;font-variant-numeric:tabular-nums}
+.sn-chev{color:#b0b7c3;display:flex;transition:transform .2s}
+.sn-repo.open .sn-chev{transform:rotate(90deg);color:#3370ff}
+.sn-drop{border-top:1px solid #f0f3f8;background:#fcfdff;padding:6px 18px 14px}
+.sn-grp{margin-top:12px}
+.sn-grp-h{display:flex;align-items:center;gap:8px;padding:8px 2px}
+.sn-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.sn-gn{font-size:13px;font-weight:500}
+.sn-gp{color:#9aa3b2;font-size:11.5px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sn-gc{margin-left:auto;font-size:11.5px;color:#9aa3b2}
+.sn-tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden}
+.sn-tbl th{font-weight:400;font-size:11.5px;color:#9aa3b2;text-align:left;padding:7px 12px;background:#fafbfc}
+.sn-tbl td{padding:9px 12px;border-top:1px solid #f4f6fa;font-size:12.5px}
+.sn-tbl tbody tr{cursor:pointer}
+.sn-tbl tbody tr:hover td{background:#f8faff}
+.sn-tbl td.t{font-variant-numeric:tabular-nums;color:#374151}
+.sn-link{color:#3370ff;cursor:pointer;font-size:12.5px}
+.sn-sep{color:#e2e6ee;font-style:normal;margin:0 7px}
+.dl{display:inline-block;font-size:12px;padding:0 6px;line-height:20px;border-radius:4px;margin-right:4px;font-variant-numeric:tabular-nums}
+.dl.a{background:#e8f4ec;color:#16803a}
+.dl.d{background:#fdecec;color:#c22a2f}
+.dl.z{color:#9aa3b2}
+.dl.dim{color:#c2c9d4}
+.sn-foot{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11.5px;color:#9aa3b2}
+.sn-foot .btn{margin-left:auto}
+.sn-run{display:flex;align-items:center;gap:12px;background:#eef4ff;border:1px solid #dbe6ff;border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:13px;color:#1e3a8a}
+.sn-run-bar{flex:1;height:6px;background:#d6e3ff;border-radius:6px;overflow:hidden;max-width:340px}
+.sn-run-bar i{display:block;height:100%;background:#3370ff;border-radius:6px}
+.sn-run-go{color:#3370ff;cursor:pointer;font-size:12.5px}
+
+/* 快照详情 */
+.sd-bar{display:flex;align-items:center;gap:8px;font-size:13px;color:#8b9098;margin-bottom:14px}
+.sd-back{background:0;border:0;color:#3370ff;font-size:13px;cursor:pointer;font-family:inherit;padding:0}
+.sd-crumb{color:#374151}
+.sd-crumb.cur{font-weight:600;color:#111827}
+.sd-card{background:#fff;border-radius:12px;padding:18px 20px;margin-bottom:14px}
+.sd-top{display:flex;align-items:center;gap:14px}
+.sd-ic{width:46px;height:46px;border-radius:12px;background:#f1edff;color:#7c5cff;display:flex;align-items:center;justify-content:center;flex:none}
+.sd-time{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.sd-sub{display:flex;align-items:center;gap:9px;font-size:12px;color:#8b9098;margin-top:4px}
+.sd-acts{margin-left:auto}
+.sd-kv{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;padding-top:15px;border-top:1px solid #f0f1f3}
+.sd-kv span{display:block;font-size:11.5px;color:#9aa3b2}
+.sd-kv b{display:block;font-size:14px;font-weight:500;margin-top:3px}
+.sd-panel{background:#fff;border-radius:12px;margin-bottom:14px;overflow:hidden}
+.sd-ph{display:flex;align-items:center;gap:12px;padding:12px 18px;font-size:13px;font-weight:500;border-bottom:1px solid #f0f1f3}
+.fpath{display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:400;color:#9aa3b2;flex-wrap:wrap}
+.fpath a{color:#3370ff;cursor:pointer}
+.fpath a.cur{color:#374151;font-weight:500;cursor:default}
+.fpath .sl{color:#d5dae3}
+.fpath .cnt{color:#9aa3b2;font-size:12px;margin-left:6px}
+.sd-diff{display:flex;align-items:center;gap:8px;padding:14px 18px;font-size:12.5px}
+.sd-diff .add{background:#e8f4ec;color:#16803a;border-radius:5px;padding:3px 9px}
+.sd-diff .mod{background:#fdf1e3;color:#b45309;border-radius:5px;padding:3px 9px}
+.sd-diff .del{background:#fdecec;color:#c22a2f;border-radius:5px;padding:3px 9px}
+.sd-diff .z{opacity:.45}
+.sd-diff .tot{color:#9aa3b2;margin-left:4px}
+.ftbl{width:100%;border-collapse:collapse}
+.ftbl th{font-weight:400;font-size:11.5px;color:#9aa3b2;text-align:left;padding:8px 14px;background:#fafbfc}
+.ftbl th.c{width:38px;padding-left:18px}
+.ftbl th.w{width:150px;white-space:nowrap}
+.ftbl th.g{width:34px}
+.ftbl td{padding:9px 14px;border-top:1px solid #f4f6fa;font-size:13px}
+.ftbl td.c{padding-left:18px;width:38px}
+.ftbl tbody tr{cursor:pointer}
+.ftbl tbody tr:hover td{background:#f8faff}
+.ftbl tbody tr.on td{background:#f4f8ff}
+.cbx{width:16px;height:16px;border:1.5px solid #d3d9e3;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:10px;color:transparent;background:#fff}
+.cbx.on{background:#3370ff;border-color:#3370ff;color:#fff}
+.cbx.half{background:#3370ff;border-color:#3370ff;color:#fff}
+.fn{display:inline-flex;align-items:center;gap:9px}
+.fn .nm.sel{color:#3370ff}
+.fn.back{color:#3370ff;font-size:12.5px}
+.ftbl td.w{color:#9aa3b2;font-size:12px;white-space:nowrap}
+.ftbl td.g{color:#c2c9d4}
+.sd-selbar{display:flex;align-items:center;gap:12px;padding:11px 18px;border-top:1px solid #f0f1f3;background:#fcfdff;font-size:12.5px;color:#9aa3b2}
+.sd-selbar .cnt-t{color:#374151}
+.sd-selbar .cnt-t b{color:#3370ff}
+.sel-chips{display:flex;gap:6px;flex-wrap:wrap}
+.sel-chips span{background:#eef4ff;color:#3370ff;border-radius:5px;padding:2px 7px;font-size:11.5px;display:inline-flex;align-items:center;gap:5px}
+.sel-chips i{font-style:normal;cursor:pointer;opacity:.6}
+.sd-selbar .sp{flex:1}
+
+/* 历史 */
+.hist-bar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.hist-seg{display:inline-flex;background:#fff;border-radius:8px;padding:3px;gap:2px}
+.hist-seg button{border:0;background:transparent;font-size:13px;color:#6b7280;padding:5px 14px;border-radius:6px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px}
+.hist-seg button.on{background:#eef4ff;color:#3370ff;font-weight:500}
+.hist-seg .n{font-size:11px;color:#a7b2c4}
+.hist-seg button.on .n{color:#7ba3ff}
+.hist-fail{margin-left:auto;font-size:12.5px;color:#6b7280;display:flex;align-items:center;gap:6px}
+.hist-wrap{display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start}
+.hist-list{background:#fff;border-radius:12px;padding:6px 0 10px}
+.hist-day{display:flex;align-items:center;gap:10px;font-size:11.5px;color:#9aa3b2;padding:10px 18px 6px}
+.hist-day i{flex:1;height:1px;background:#f2f4f8}
+.hist-item{padding:11px 18px;border-left:2px solid transparent;cursor:pointer}
+.hist-item:hover{background:#fafcff}
+.hist-item.on{background:#f6f9ff;border-left-color:#3370ff}
+.hi-row{display:flex;gap:11px;align-items:flex-start}
+.hi-ic{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex:none}
+.hi-ic.k-ok{background:#e8f4ec;color:#16803a}
+.hi-ic.k-fail{background:#fdecec;color:#e5484d}
+.hi-ic.k-run{background:#eef4ff;color:#3370ff}
+.hi-main{flex:1;min-width:0}
+.hi-top{display:flex;align-items:center;gap:9px;font-size:13px}
+.hi-st{font-size:11px;border-radius:4px;padding:1px 6px;background:#e8f4ec;color:#16803a}
+.hi-st.fail{background:#fdecec;color:#c22a2f}
+.hi-st.run{background:#eef4ff;color:#3370ff}
+.hi-st.gray{background:#f2f4f7;color:#7b8798}
+.hi-nm{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hi-tm{margin-left:auto;color:#a7b2c4;font-size:11.5px}
+.hi-sub{font-size:12px;color:#9aa3b2;margin-top:3px;padding-left:1px}
+.hist-det{background:#fff;border-radius:12px;padding:18px;position:sticky;top:0}
+.hd-tags{display:flex;gap:6px;margin-bottom:10px}
+.hd-top b{font-size:15px;font-weight:600}
+.hd-time{font-size:12px;color:#9aa3b2;margin-top:5px}
+.hd-prog{display:flex;align-items:center;gap:10px;margin:12px 0 4px}
+.hd-prog .bar{flex:1;margin:0}
+.hd-prog b{color:#3370ff;font-size:12.5px}
+.hi-kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:8px 0;border-bottom:1px dashed #f2f4f8}
+.hi-kv .k{color:#9aa3b2}
+.hi-kv .v{color:#374151;text-align:right;word-break:break-all}
+.hi-tl{margin-top:12px;border-left:2px solid #f0f3f8;padding-left:12px;display:flex;flex-direction:column;gap:9px}
+.hi-tl .n{font-size:12px;color:#4b5563;position:relative;line-height:1.5}
+.hi-tl .n::before{content:"";position:absolute;left:-17px;top:6px;width:6px;height:6px;border-radius:50%;background:#dbe3f0}
+.hi-tl .n i{color:#a7b2c4;font-style:normal;margin-right:7px;font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.hd-foot{margin-top:14px;display:flex;gap:8px}
+
+/* 弹窗 */
+.mask{position:absolute;inset:0;background:rgba(17,24,39,.42);display:flex;align-items:center;justify-content:center;z-index:20;backdrop-filter:blur(1.5px)}
+.modal{background:#fff;border-radius:14px;width:560px;max-height:88%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px -20px rgba(15,23,42,.4)}
+.modal.tall{height:88%}
+.modal.wide{width:760px}
+.modal-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #f0f1f3}
+.modal-head h3{margin:0;font-size:15.5px;font-weight:600;flex:1}
+.modal-head .x{border:0;background:transparent;color:#9aa3b2;font-size:15px;cursor:pointer;line-height:1}
+.modal-body{padding:16px 20px;overflow:auto;flex:1}
+.modal-body.single{display:flex;flex-direction:column;gap:16px}
+.modal-foot{display:flex;align-items:center;gap:10px;justify-content:flex-end;padding:13px 20px;border-top:1px solid #f0f1f3;background:#fcfdff}
+.fld{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:#4b5563}
+.fld>span{color:#6b7280}
+.fld input,.fld textarea{border:1px solid #e2e6ee;border-radius:7px;padding:8px 11px;font-size:13px;font-family:inherit;outline:0;color:#1f2937;background:#fff}
+.fld input:focus{border-color:#3370ff;box-shadow:0 0 0 3px rgba(51,112,255,.1)}
+.fld input::placeholder{color:#b6bec9}
+.sec-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.sec-head b{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+.sec-n{width:18px;height:18px;border-radius:50%;background:#eef4ff;color:#3370ff;font-size:11px;font-style:normal;
+  display:inline-flex;align-items:center;justify-content:center;font-weight:600}
+.sec-head .link-btn{margin-left:auto;border:0;background:0;color:#3370ff;font-size:12.5px;cursor:pointer;font-family:inherit}
+.sec-card{background:#fbfcfe;border:1px solid #eef1f6;border-radius:10px;padding:13px 15px;display:flex;flex-direction:column;gap:12px}
+.src-row{display:flex;align-items:center;gap:11px;font-size:13px}
+.src-row .src-ico{width:34px;height:34px;border-radius:9px;background:#eef4ff;color:#3370ff;display:flex;align-items:center;justify-content:center}
+.src-row b{display:block;font-size:13.5px;font-weight:500}
+.sec-sub{font-size:11.5px;color:#9aa3b2}
+.src-paths{display:flex;flex-direction:column;gap:6px}
+.src-path{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #eef1f6;border-radius:7px;padding:7px 10px;font-size:12.5px;color:#374151}
+.src-path span{display:flex;align-items:center;gap:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src-path .rm{margin-left:auto;color:#b6bec9;cursor:pointer;font-weight:400}
+.dest-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cloud-pick-btn,.dir-pick-btn{display:flex;align-items:center;gap:10px;border:1px solid #e2e6ee;background:#fff;border-radius:8px;
+  padding:9px 11px;font-size:13px;font-family:inherit;cursor:pointer;text-align:left;color:#1f2937;min-height:52px}
+.cpb-badge{width:30px;height:30px;border-radius:8px;background:#eef4ff;color:#3370ff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex:none}
+.cpb-txt{min-width:0}
+.cpb-txt b{display:block;font-size:13px;font-weight:500}
+.cpb-txt small{display:block;font-size:11px;color:#9aa3b2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}
+.cloud-pick-btn .ph,.dir-pick-btn .ph{color:#b6bec9}
+.chev-r{margin-left:auto;color:#c2c9d4;font-style:normal}
+.pwrow{display:flex;gap:8px;align-items:center}
+.pwrow input{flex:1}
+.eye{width:34px;height:34px;border:1px solid #e2e6ee;border-radius:7px;background:#fff;color:#8b9098;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.hint-box{background:#f6f9ff;border:1px solid #e4edff;border-radius:8px;padding:9px 12px;font-size:11.5px;color:#5b7bbd;line-height:1.65}
+.opt-row{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid #f4f6fa;font-size:13px;cursor:pointer}
+.opt-row:last-child{border-bottom:0}
+.opt-row em{margin-left:auto;font-style:normal;font-size:12px;color:#9aa3b2}
+.arr{width:7px;height:7px;border-right:1.6px solid #b6bec9;border-bottom:1.6px solid #b6bec9;transform:rotate(45deg);margin-right:3px}
+.arr.up{transform:rotate(-135deg)}
+.opt-body{padding:4px 2px 12px;display:flex;flex-direction:column;gap:11px}
+.chips2{display:flex;flex-wrap:wrap;gap:7px}
+.chips2 button{border:1px solid #e2e6ee;background:#fff;border-radius:6px;padding:4px 11px;font-size:12px;color:#4b5563;cursor:pointer;font-family:inherit}
+.chips2 button.on{border-color:#3370ff;background:#eef4ff;color:#3370ff}
+.keep-chips{display:flex;gap:7px}
+.keep-chips button{border:1px solid #e2e6ee;background:#fff;border-radius:6px;padding:5px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;color:#4b5563}
+.keep-chips button.on{border-color:#3370ff;background:#eef4ff;color:#3370ff}
+.sched-seg{display:inline-flex;background:#f2f3f5;border-radius:7px;padding:2px;align-self:flex-start}
+.sched-seg button{border:0;background:transparent;padding:4px 12px;font-size:12.5px;border-radius:5px;cursor:pointer;font-family:inherit;color:#6b7280}
+.sched-seg button.on{background:#fff;color:#3370ff;font-weight:500;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+.sched-inline{font-size:13px;color:#4b5563;display:flex;align-items:center;gap:8px}
+.sched-inline input{width:64px;border:1px solid #e2e6ee;border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit}
+.flow-line{display:flex;align-items:center;gap:9px;font-size:12px;color:#9aa3b2}
+.flow-line .node{background:#fff;border:1px solid #e2e6ee;border-radius:6px;padding:4px 9px;color:#4b5563}
+.flow-line .node.hi{border-color:#3370ff;color:#3370ff;background:#f7faff}
+.flow-line .lk{color:#c2c9d4;letter-spacing:-1px}
+.wiz-foot{justify-content:flex-end}
+
+/* 抽屉 */
+.drawer-mask{align-items:stretch;justify-content:flex-end}
+.log-drawer{height:100%;border-radius:0;max-height:none;width:720px}
+.log-tabs{display:flex;gap:4px;padding:10px 20px 0;border-bottom:1px solid #f0f1f3}
+.log-tabs button{border:0;background:0;font-size:13px;color:#6b7280;padding:7px 12px;border-bottom:2px solid transparent;cursor:pointer;font-family:inherit}
+.log-tabs button.on{color:#3370ff;border-bottom-color:#3370ff;font-weight:500}
+.log-body{padding:14px 20px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.85;color:#374151;overflow:auto;flex:1;background:#fbfcfe}
+.log-line{display:flex;gap:12px;white-space:pre-wrap;word-break:break-all}
+.log-line i{color:#a7b2c4;font-style:normal;flex:none}
+.log-line.err{color:#c22a2f}
+.log-line.ok{color:#16803a}
+.log-line .lv{flex:none;width:44px;color:#9aa3b2}
+
+/* 手机 */
+.phone{width:390px;background:#f2f4f7;border-radius:34px;overflow:hidden;position:relative;
+  box-shadow:0 20px 50px -16px rgba(15,23,42,.4),0 0 0 10px #101828,0 0 0 11px #2b3648;min-height:760px;display:flex;flex-direction:column}
+.ph-status{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:600;color:#1f2937;background:#f2f4f7}
+.ph-status .r{display:flex;gap:5px;align-items:center;color:#1f2937}
+.ph-head{display:flex;align-items:center;gap:10px;padding:6px 18px 12px}
+.ph-head h1{margin:0;font-size:19px;font-weight:600}
+.ph-head .acts{margin-left:auto;display:flex;gap:6px}
+.ph-body{flex:1;overflow:auto;padding:0 14px 88px}
+.mcard{background:#fff;border-radius:14px;padding:14px 15px 13px;margin-bottom:11px;box-shadow:0 1px 3px rgba(16,24,40,.05)}
+.mc-top{display:flex;align-items:flex-start;gap:12px}
+.mc-icon{width:40px;height:40px;border-radius:11px;background:#eef4ff;color:#3370ff;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
+.mc-badge{position:absolute;right:-4px;bottom:-3px;width:16px;height:16px;border-radius:50%;background:#22c55e;border:2px solid #fff;
+  color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.mc-badge.warn{background:#f59e0b}
+.mc-badge.run{background:#3370ff}
+.mc-badge.gray{background:#9ca3af}
+.mc-title{flex:1;min-width:0}
+.mc-title b{display:block;font-size:15px;font-weight:600}
+.mc-status{font-size:12px;color:#16803a;margin-top:3px;display:flex;align-items:center;gap:5px}
+.mc-status.warn{color:#b45309}
+.mc-status.run{color:#3370ff}
+.mc-status.gray{color:#8b9098}
+.mc-more{border:0;background:0;color:#b0b7c3;font-size:16px;cursor:pointer;line-height:1;padding:0 2px}
+.mc-row{display:flex;gap:12px;font-size:12.5px;padding:7px 0;border-bottom:1px solid #f6f7fa}
+.mc-row:last-of-type{border-bottom:0}
+.mc-row span:first-child{color:#9aa3b2;width:62px;flex:none}
+.mc-row span:last-child{color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-prog{margin-top:10px;padding-top:11px;border-top:1px solid #f6f7fa}
+.mc-prog .h{display:flex;align-items:center;gap:7px;font-size:12.5px;color:#4b5563}
+.mc-prog .h b{margin-left:auto;color:#3370ff;font-size:13px}
+.mc-prog .meta{display:flex;flex-wrap:wrap;gap:3px 16px;font-size:11.5px;color:#9aa3b2;margin-top:7px}
+.mc-prog .meta em{font-style:normal;color:#c2c9d4;margin-right:3px}
+.bnav{position:absolute;left:0;right:0;bottom:0;height:64px;background:rgba(255,255,255,.96);border-top:1px solid #eceff4;
+  display:flex;align-items:center;justify-content:space-around;padding-bottom:6px;backdrop-filter:blur(8px)}
+.bnav button{border:0;background:0;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;color:#9aa3b2;cursor:pointer;font-family:inherit}
+.bnav button.on{color:#3370ff}
+.m-dhead{display:flex;align-items:center;gap:8px;padding:8px 4px 12px;font-size:13px;color:#9aa3b2}
+.m-dhead b{color:#111827;font-size:15px}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:18px 18px 0 0;padding:8px 14px 28px;box-shadow:0 -8px 30px rgba(15,23,42,.14)}
+.sheet-h{width:38px;height:4px;background:#e5e9f0;border-radius:4px;margin:4px auto 12px}
+.sheet-btn{display:flex;align-items:center;gap:10px;width:100%;border:0;background:#f8fafc;border-radius:11px;padding:12px 14px;
+  font-size:14px;color:#1f2937;margin-bottom:8px;cursor:pointer;font-family:inherit;text-align:left}
+.sheet-btn.primary{background:#3370ff;color:#fff;justify-content:center}
+.sheet-btn.danger{color:#e5484d;background:#fdf2f2;justify-content:center}
+.sheet-btn.ghost{justify-content:center}
+</style>
+</head>
+<body>
+<div class="pv-top">
+  <div class="pv-brand"><i></i>量子密备 · 全流程界面预览</div>
+  <span class="pv-tag">方案 C · Tabler 图标</span>
+  <span class="pv-tag">Mock 数据 · 仅预览</span>
+  <div class="pv-seg">
+    <button class="on" data-mode="desk">桌面端</button>
+    <button data-mode="mob">手机端</button>
+  </div>
+</div>
+
+<div class="pv-body">
+  <aside class="pv-rail" id="rail"></aside>
+  <main class="pv-stage" id="stage">
+
+    <!-- ================= 1 备份任务 ================= -->
+    <section class="pv-screen on" data-screen="tasks">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+
+          <div class="ov-hero">
+            <div class="ov-ring">
+              <svg width="88" height="88" viewBox="0 0 88 88">
+                <circle class="bg" cx="44" cy="44" r="37" fill="none" stroke-width="7"/>
+                <circle class="fg" cx="44" cy="44" r="37" fill="none" stroke-width="7" stroke-linecap="round"
+                        stroke-dasharray="232" stroke-dashoffset="28"/>
+              </svg>
+              <div class="ov-ring-c"><span class="i" data-ic="shield-check" data-sz="30"></span></div>
+            </div>
+            <div class="ov-txt">
+              <h2>所有任务运行正常</h2>
+              <p>4 个任务 · 3 个已启用 · 下次运行 今天 03:00</p>
+              <div class="ov-acts"><button class="btn primary"><span class="i" data-ic="plus" data-sz="15"></span>创建新任务</button></div>
+            </div>
+            <div class="ov-kpis">
+              <div class="ov-kpi"><span>已保护数据</span><b>2.4 TB</b></div>
+              <div class="ov-kpi"><span>云端快照</span><b>128<small>个</small></b></div>
+              <div class="ov-kpi"><span>近 30 天成功率</span><b class="ok">96<small>%</small></b></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-h">
+              <h3>备份任务</h3>
+              <div class="pseg">
+                <button class="on">全部 4</button>
+                <button>运行中 1</button>
+                <button>需关注 1</button>
+              </div>
+              <label class="psearch">
+                <span class="i" data-ic="search" data-sz="14"></span>
+                <input placeholder="搜索任务、目录或云盘">
+              </label>
+            </div>
+            <table class="ttbl">
+              <thead><tr><th>任务</th><th>备份路线</th><th>状态</th><th>最近 10 次</th><th>下次运行</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><div class="tt-name">
+                    <span class="tt-ic"><span class="i" data-ic="folder" data-sz="19"></span></span>
+                    <div class="tt-nm"><b>相册备份</b><small>/vol1/1000/Photos · 1.8 TB</small></div>
+                  </div></td>
+                  <td><div class="tt-route"><span class="chip2">fnos</span>
+                    <span class="i" data-ic="arrow-narrow-right" data-sz="15"></span>
+                    <span class="chip2">天翼云盘</span></div></td>
+                  <td><span class="tag2 ok"><i class="d"></i>成功</span></td>
+                  <td><div class="spark"><i></i><i></i><i></i><i></i><i></i><i class="f"></i><i></i><i></i><i></i><i></i></div></td>
+                  <td class="mono" style="color:#6b7280">明天 03:00</td>
+                  <td><div class="tc-acts">
+                    <button class="icon-btn" title="立即备份"><span class="i" data-ic="player-play" data-sz="15"></span></button>
+                    <button class="icon-btn" title="还原"><span class="i" data-ic="arrow-back-up" data-sz="15"></span></button>
+                    <button class="icon-btn" title="更多"><span class="i" data-ic="dots" data-sz="15"></span></button>
+                  </div></td>
+                </tr>
+                <tr>
+                  <td><div class="tt-name">
+                    <span class="tt-ic"><span class="i" data-ic="file" data-sz="19"></span></span>
+                    <div class="tt-nm"><b>文档资料</b><small>/vol1/1000/Documents · 62 GB</small></div>
+                  </div></td>
+                  <td><div class="tt-route"><span class="chip2">fnos</span>
+                    <span class="i" data-ic="arrow-narrow-right" data-sz="15"></span>
+                    <span class="chip2">115 网盘</span></div></td>
+                  <td><div class="tt-prog">
+                    <div class="tt-prog-t"><span class="spin"></span>备份中<b>62%</b></div>
+                    <div class="bar"><div class="bar-in" style="width:62%"></div></div>
+                    <div class="tt-prog-s">38.4 GB / 62 GB · 约 12 分钟</div>
+                  </div></td>
+                  <td><div class="spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i></div></td>
+                  <td class="mono" style="color:#6b7280">今天 02:30</td>
+                  <td><div class="tc-acts">
+                    <button class="btn ghost sm" style="color:#e5484d;border-color:#f5c9c9">停止</button>
+                    <button class="icon-btn" title="更多"><span class="i" data-ic="dots" data-sz="15"></span></button>
+                  </div></td>
+                </tr>
+                <tr>
+                  <td><div class="tt-name">
+                    <span class="tt-ic c-warn"><span class="i" data-ic="video" data-sz="19"></span></span>
+                    <div class="tt-nm"><b>家庭视频</b><small>/vol1/2000/Videos · 512 GB</small></div>
+                  </div></td>
+                  <td><div class="tt-route"><span class="chip2">fnos</span>
+                    <span class="i" data-ic="arrow-narrow-right" data-sz="15"></span>
+                    <span class="chip2">WebDAV</span></div></td>
+                  <td><span class="tag2 warn"><i class="d"></i>云端空间不足</span></td>
+                  <td><div class="spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="f"></i><i class="f"></i></div></td>
+                  <td class="mono" style="color:#6b7280">周日 04:00</td>
+                  <td><div class="tc-acts">
+                    <button class="icon-btn" title="立即备份"><span class="i" data-ic="player-play" data-sz="15"></span></button>
+                    <button class="icon-btn" title="还原"><span class="i" data-ic="arrow-back-up" data-sz="15"></span></button>
+                    <button class="icon-btn" title="更多"><span class="i" data-ic="dots" data-sz="15"></span></button>
+                  </div></td>
+                </tr>
+                <tr>
+                  <td><div class="tt-name">
+                    <span class="tt-ic c-gray"><span class="i" data-ic="package" data-sz="19"></span></span>
+                    <div class="tt-nm"><b>工作目录</b><small>/vol1/1000/Work · 8.2 GB</small></div>
+                  </div></td>
+                  <td><div class="tt-route"><span class="chip2">fnos</span>
+                    <span class="i" data-ic="arrow-narrow-right" data-sz="15"></span>
+                    <span class="chip2">天翼云盘</span></div></td>
+                  <td><span class="tag2 gray"><i class="d"></i>已禁用</span></td>
+                  <td><div class="spark"><i class="n"></i><i class="n"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i><i class="e"></i></div></td>
+                  <td class="mono" style="color:#9aa3b2">已禁用</td>
+                  <td><div class="tc-acts">
+                    <button class="icon-btn" title="更多"><span class="i" data-ic="dots" data-sz="15"></span></button>
+                  </div></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="panel-foot">点击任务行查看运行日志</div>
+          </div>
+
+        </div></div>
+      </div>
+    </section>
+
+    <!-- ================= 2 空态 ================= -->
+    <section class="pv-screen" data-screen="empty">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content" style="padding-top:70px">
+          <div class="panel" style="padding:46px 24px 40px;text-align:center">
+            <div style="width:76px;height:76px;border-radius:22px;background:#eef4ff;color:#3370ff;display:flex;align-items:center;justify-content:center;margin:0 auto 18px">
+              <span class="i" data-ic="shield-check" data-sz="38"></span>
+            </div>
+            <b style="font-size:16px">还没有备份任务</b>
+            <p style="font-size:13px;color:#8b9098;margin:8px 0 20px">选择 NAS 上的文件夹，加密后定时备份到云盘，云端只存密文</p>
+            <button class="btn primary" style="margin:0 auto"><span class="i" data-ic="plus" data-sz="15"></span>创建第一个任务</button>
+            <div style="display:flex;justify-content:center;gap:26px;margin-top:26px;font-size:12px;color:#a7b2c4">
+              <span>① 选择要备份的目录</span><span>② 连接云盘并设置密码</span><span>③ 设定备份计划</span>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- ================= 3 新建任务 ================= -->
+    <section class="pv-screen" data-screen="wizard">
+      <div class="app" style="min-height:1180px">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="ov-hero">
+            <div class="ov-ring">
+              <svg width="88" height="88" viewBox="0 0 88 88">
+                <circle class="bg" cx="44" cy="44" r="37" fill="none" stroke-width="7"/>
+                <circle class="fg" cx="44" cy="44" r="37" fill="none" stroke-width="7" stroke-linecap="round"
+                        stroke-dasharray="232" stroke-dashoffset="28"/>
+              </svg>
+              <div class="ov-ring-c"><span class="i" data-ic="shield-check" data-sz="30"></span></div>
+            </div>
+            <div class="ov-txt">
+              <h2>所有任务运行正常</h2>
+              <p>4 个任务 · 3 个已启用 · 下次运行 今天 03:00</p>
+              <div class="ov-acts"><button class="btn primary"><span class="i" data-ic="plus" data-sz="15"></span>创建新任务</button></div>
+            </div>
+            <div class="ov-kpis">
+              <div class="ov-kpi"><span>已保护数据</span><b>2.4 TB</b></div>
+              <div class="ov-kpi"><span>云端快照</span><b>128<small>个</small></b></div>
+              <div class="ov-kpi"><span>近 30 天成功率</span><b class="ok">96<small>%</small></b></div>
+            </div>
+          </div>
+          <div class="panel" style="height:420px;opacity:.35"></div>
+        </div></div>
+        <div class="mask">
+          <div class="modal" style="height:auto;max-height:96%">
+            <div class="modal-head"><h3>新建备份任务</h3><button class="x">✕</button></div>
+            <div class="modal-body single">
+              <label class="fld"><span>任务名称</span><input value="相册备份 → 天翼" placeholder="例如：相册资料 → 天翼"></label>
+
+              <div>
+                <div class="sec-head"><b><i class="sec-n">1</i>备份来源地</b><button class="link-btn">设置</button></div>
+                <div class="sec-card">
+                  <div class="src-row">
+                    <div class="src-ico"><span class="i" data-ic="device-desktop" data-sz="18"></span></div>
+                    <div><b>fnos</b><span class="sec-sub">本地设备</span></div>
+                  </div>
+                  <div class="src-paths">
+                    <div class="src-path"><span><span class="i" data-ic="folder" data-sz="15" style="color:#3370ff"></span>/vol1/1000/Photos</span><b class="rm">✕</b></div>
+                    <div class="src-path"><span><span class="i" data-ic="folder" data-sz="15" style="color:#3370ff"></span>/vol1/1000/Camera</span><b class="rm">✕</b></div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div class="sec-head"><b><i class="sec-n">2</i>备份目的地</b><button class="link-btn">新增云端</button></div>
+                <div class="sec-card">
+                  <div class="dest-grid">
+                    <div class="fld"><span>① 选择云端</span>
+                      <button class="cloud-pick-btn">
+                        <span class="cpb-badge">天翼</span>
+                        <span class="cpb-txt"><b>天翼云盘</b><small>189cloud:/个人云/备份</small></span>
+                        <i class="chev-r"><span class="i" data-ic="chevron-right" data-sz="15"></span></i>
+                      </button>
+                    </div>
+                    <div class="fld"><span>② 选择目标目录</span>
+                      <button class="dir-pick-btn">
+                        <span>个人云 / BackVault / photos</span>
+                        <i class="chev-r"><span class="i" data-ic="chevron-right" data-sz="15"></span></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="fld"><span>③ 加密密码</span>
+                    <div class="pwrow">
+                      <input type="password" value="quantum-vault-2026">
+                      <button class="eye"><span class="i" data-ic="eye" data-sz="16"></span></button>
+                      <button class="btn ghost sm">生成</button>
+                    </div>
+                    <div class="hint-box">仓库密码只能设置一次，保存后不可修改，请妥善保管；忘记密码将无法恢复数据。</div>
+                  </div>
+                  <div class="flow-line"><span class="node">fnos 本地</span><i class="lk">──▶</i><span class="node hi">个人云/BackVault/photos</span></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="sec-head"><b><i class="sec-n">3</i>备份设置</b></div>
+                <div class="sec-card">
+                  <div class="opt-row"><span>备份规则</span><em>排除 2 条</em><i class="arr up"></i></div>
+                  <div class="opt-body">
+                    <div class="chips2">
+                      <button class="on">系统缓存</button><button class="on">临时文件</button><button>回收站</button><button>node_modules</button>
+                    </div>
+                    <div style="font-size:11.5px;color:#9aa3b2">本次将排除 <b style="color:#3370ff">2</b> 条规则（预设：系统缓存＋临时文件）</div>
+                  </div>
+                  <div class="opt-row"><span>任务执行计划</span><em>每天 03:00</em><i class="arr"></i></div>
+                  <div class="opt-row last"><span>保留快照数</span><em>最近 5 份</em><i class="arr"></i></div>
+                </div>
+              </div>
+              <div class="hint-box">首次备份为全量上传，速度取决于云盘限速；后续增量备份只上传变化部分。</div>
+            </div>
+            <div class="modal-foot wiz-foot">
+              <button class="btn ghost">取消</button>
+              <button class="btn ghost">创建任务</button>
+              <button class="btn primary">创建并立即备份</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 4 云盘连接 ================= -->
+    <section class="pv-screen" data-screen="cloud">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="panel" style="height:460px;opacity:.3"></div>
+        </div></div>
+        <div class="mask">
+          <div class="modal" style="width:520px">
+            <div class="modal-head"><h3>云盘连接</h3><button class="x">✕</button></div>
+            <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+              <label class="fld"><span>连接名称</span><input value="家里的 WebDAV"></label>
+              <label class="fld"><span>服务器地址</span><input value="https://dav.example.com:5006/dav"></label>
+              <label class="fld"><span>账号</span><input value="caobingbing"></label>
+              <label class="fld"><span>密码</span>
+                <div class="pwrow">
+                  <input type="password" value="••••••••••">
+                  <button class="eye"><span class="i" data-ic="eye" data-sz="16"></span></button>
+                </div>
+              </label>
+              <div class="fld"><span>连接测试</span>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <button class="btn ghost">测试连接</button>
+                  <span style="font-size:12px;color:#16803a;display:flex;align-items:center;gap:5px">
+                    <span class="i" data-ic="circle-check" data-sz="14"></span>连接成功 · 可写 · 剩余 812 GB
+                  </span>
+                </div>
+              </div>
+              <div class="hint-box">WebDAV 凭据仅保存在本机 /vol1/@appdata/encbackup，不参与共享与同步。</div>
+            </div>
+            <div class="modal-foot"><button class="btn ghost">取消</button><button class="btn primary">保存</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 5 选择云端 / 目录 ================= -->
+    <section class="pv-screen" data-screen="picker">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="panel" style="height:460px;opacity:.3"></div>
+        </div></div>
+        <div class="mask">
+          <div class="modal" style="width:600px">
+            <div class="modal-head"><h3>选择云盘目录</h3><button class="x">✕</button></div>
+            <div style="padding:12px 20px 0;display:flex;align-items:center;gap:8px;font-size:12.5px;color:#9aa3b2">
+              <span class="chip2" style="background:#eef4ff;color:#3370ff">天翼云盘</span>
+              <span class="i" data-ic="chevron-right" data-sz="13"></span>
+              <a class="link">个人云</a><span class="i" data-ic="chevron-right" data-sz="13"></span>
+              <a class="link">BackVault</a>
+              <button class="btn ghost sm" style="margin-left:auto"><span class="i" data-ic="folder-plus" data-sz="14"></span>新建文件夹</button>
+            </div>
+            <div class="modal-body" style="padding-top:12px">
+              <table class="ftbl">
+                <thead><tr><th class="c"></th><th>名称</th><th class="w">修改时间</th></tr></thead>
+                <tbody>
+                  <tr><td class="c"></td><td><span class="fn back"><span class="i" data-ic="arrow-left" data-sz="14"></span>返回上一级</span></td><td class="w">—</td></tr>
+                  <tr><td class="c"></td><td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm">photos</span></span></td><td class="w">2026-11-08 03:12</td></tr>
+                  <tr style="background:#f6f9ff"><td class="c"><span class="cbx on">✓</span></td><td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm sel">documents</span></span></td><td class="w">2026-11-07 02:30</td></tr>
+                  <tr><td class="c"></td><td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm">videos</span></span></td><td class="w">2026-11-06 04:00</td></tr>
+                  <tr><td class="c"></td><td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm">work</span></span></td><td class="w">2026-11-05 22:18</td></tr>
+                </tbody>
+              </table>
+              <div style="font-size:11.5px;color:#9aa3b2;margin-top:10px">选中的目录会成为仓库根目录，之后不可更改。</div>
+            </div>
+            <div class="modal-foot"><button class="btn ghost">取消</button><button class="btn primary">选定此目录</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 6 快照 · 仓库列表 ================= -->
+    <section class="pv-screen" data-screen="snaps">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="dhead">
+            <h1>快照</h1>
+            <span class="dhead-sub">每次备份都会在云端留下一个可还原的时间点</span>
+            <div class="acts"><button class="btn ghost"><span class="i" data-ic="refresh" data-sz="14"></span>刷新</button></div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi"><span class="kpi-ic c-blue"><span class="i" data-ic="database" data-sz="20"></span></span>
+              <div><span>云端仓库</span><b>3<small>个</small></b></div></div>
+            <div class="kpi"><span class="kpi-ic c-purple"><span class="i" data-ic="stack-2" data-sz="20"></span></span>
+              <div><span>快照总数</span><b>128<small>个</small></b></div></div>
+            <div class="kpi"><span class="kpi-ic c-green"><span class="i" data-ic="folder" data-sz="20"></span></span>
+              <div><span>关联任务</span><b>4<small>个</small></b></div></div>
+            <div class="kpi"><span class="kpi-ic c-orange"><span class="i" data-ic="clock" data-sz="20"></span></span>
+              <div><span>最近快照</span><b class="sm">今天 03:12</b></div></div>
+          </div>
+
+          <div class="sn-run">
+            <span class="spin"></span>
+            <span class="sn-run-t">正在还原 · 相册备份</span>
+            <div class="sn-run-bar"><i style="width:38%"></i></div>
+            <span class="sn-run-p">38%</span>
+            <a class="sn-run-go">查看</a>
+          </div>
+
+          <div class="sn-list">
+            <div class="sn-repo open">
+              <div class="sn-head">
+                <div class="sn-ic"><span class="i" data-ic="database" data-sz="20"></span></div>
+                <div class="sn-body">
+                  <div class="sn-name">天翼云盘 · BackVault<span class="sn-pill ok">12 个快照</span></div>
+                  <div class="sn-path mono">189cloud:/个人云/BackVault</div>
+                  <div class="sn-meta"><span><b>2</b> 个任务</span><span>最近快照 <b>今天 03:12</b></span></div>
+                </div>
+                <div class="sn-stats">
+                  <div><span>关联任务</span><b>2</b></div>
+                  <div><span>最近快照</span><b>今天 03:12</b></div>
+                </div>
+                <div class="sn-chev"><span class="i" data-ic="chevron-right" data-sz="15"></span></div>
+              </div>
+
+              <div class="sn-drop">
+                <div class="sn-grp">
+                  <div class="sn-grp-h">
+                    <span class="sn-dot" style="background:#3370ff"></span>
+                    <span class="sn-gn">相册备份</span>
+                    <span class="sn-gp mono">/vol1/1000/Photos</span>
+                    <span class="sn-gc">5 个快照</span>
+                  </div>
+                  <table class="sn-tbl">
+                    <thead><tr><th style="width:130px">时间</th><th style="width:100px">来源</th><th>较上一份</th><th style="width:180px">文件 / 大小</th><th style="width:100px"></th></tr></thead>
+                    <tbody>
+                      <tr><td class="t">11-10 03:12</td><td><span class="tag2 pur">首份</span></td>
+                        <td><span class="dl dim">—</span></td><td class="mono" style="color:#9aa3b2">12,483 / 214 GB</td>
+                        <td><span class="sn-link">浏览</span><i class="sn-sep">|</i><span class="sn-link">还原</span></td></tr>
+                      <tr><td class="t">11-09 03:12</td><td><span class="tag2 gray">daily</span></td>
+                        <td><span class="dl a">+128</span><span class="dl a">+1.2 GB</span></td><td class="mono" style="color:#9aa3b2">12,355 / 213 GB</td>
+                        <td><span class="sn-link">浏览</span><i class="sn-sep">|</i><span class="sn-link">还原</span></td></tr>
+                      <tr><td class="t">11-08 03:12</td><td><span class="tag2 gray">daily</span></td>
+                        <td><span class="dl z">无变化</span></td><td class="mono" style="color:#9aa3b2">12,227 / 212 GB</td>
+                        <td><span class="sn-link">浏览</span><i class="sn-sep">|</i><span class="sn-link">还原</span></td></tr>
+                      <tr><td class="t">11-07 03:10</td><td><span class="tag2 gray">daily</span></td>
+                        <td><span class="dl a">+42</span><span class="dl d">−8</span><span class="dl a">+386 MB</span></td><td class="mono" style="color:#9aa3b2">12,227 / 212 GB</td>
+                        <td><span class="sn-link">浏览</span><i class="sn-sep">|</i><span class="sn-link">还原</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="sn-foot">
+                  <span>缓存于 11-10 09:20</span>
+                  <button class="btn ghost sm"><span class="i" data-ic="refresh" data-sz="13"></span>刷新快照</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="sn-repo">
+              <div class="sn-head">
+                <div class="sn-ic" style="background:#f1edff;color:#7c5cff"><span class="i" data-ic="cloud" data-sz="20"></span></div>
+                <div class="sn-body">
+                  <div class="sn-name">115 网盘 · backup<span class="sn-pill ok">8 个快照</span></div>
+                  <div class="sn-path mono">115:/backup/documents</div>
+                  <div class="sn-meta"><span><b>1</b> 个任务</span><span>最近快照 <b>今天 02:41</b></span></div>
+                </div>
+                <div class="sn-stats">
+                  <div><span>关联任务</span><b>1</b></div>
+                  <div><span>最近快照</span><b>今天 02:41</b></div>
+                </div>
+                <div class="sn-chev"><span class="i" data-ic="chevron-right" data-sz="15"></span></div>
+              </div>
+            </div>
+
+            <div class="sn-repo">
+              <div class="sn-head">
+                <div class="sn-ic" style="background:#fdf1e3;color:#d97706"><span class="i" data-ic="server" data-sz="20"></span></div>
+                <div class="sn-body">
+                  <div class="sn-name">WebDAV · 极空间<span class="sn-pill gray">无快照</span></div>
+                  <div class="sn-path mono">https://dav.example.com:5006/dav/nas/video</div>
+                  <div class="sn-meta"><span><b>1</b> 个任务</span><span>最近快照 <b>—</b></span></div>
+                </div>
+                <div class="sn-stats">
+                  <div><span>关联任务</span><b>1</b></div>
+                  <div><span>最近快照</span><b>—</b></div>
+                </div>
+                <div class="sn-chev"><span class="i" data-ic="chevron-right" data-sz="15"></span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- ================= 7 快照详情 ================= -->
+    <section class="pv-screen" data-screen="detail">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="sd-bar">
+            <button class="sd-back">‹ 快照</button>
+            <span>/</span><span class="sd-crumb">天翼云盘 · BackVault</span>
+            <span>/</span><span class="sd-crumb cur">2026-11-09 03:12</span>
+          </div>
+
+          <div class="sd-card">
+            <div class="sd-top">
+              <span class="sd-ic"><span class="i" data-ic="stack-2" data-sz="24"></span></span>
+              <div>
+                <div class="sd-time">2026-11-09 03:12:47</div>
+                <div class="sd-sub"><span>星期一</span><span class="mono">a7f3c2e1</span><span class="sn-pill blue">相册备份</span></div>
+              </div>
+              <div class="sd-acts"><button class="btn primary"><span class="i" data-ic="arrow-back-up" data-sz="15"></span>还原这份快照</button></div>
+            </div>
+            <div class="sd-kv">
+              <div><span>主机</span><b>fnos</b></div>
+              <div><span>文件数</span><b>12,355</b></div>
+              <div><span>总大小</span><b>213 GB</b></div>
+              <div><span>距上一快照</span><b>1 天 0 小时</b></div>
+            </div>
+          </div>
+
+          <div class="sd-panel">
+            <div class="sd-ph">与上一快照的差异</div>
+            <div class="sd-diff">
+              <span class="add">+ 128 新增</span>
+              <span class="mod">~ 6 修改</span>
+              <span class="del">− 2 删除</span>
+              <span class="tot">共 136 个文件变动</span>
+            </div>
+          </div>
+
+          <div class="sd-panel">
+            <div class="sd-ph">
+              <div class="fpath">
+                <a class="cur">快照根目录</a>
+              </div>
+              <label class="psearch"><span class="i" data-ic="search" data-sz="14"></span><input placeholder="在快照中搜索文件名"></label>
+            </div>
+            <table class="ftbl">
+              <thead><tr><th class="c"><span class="cbx half">✓</span></th><th>名称</th><th class="w">大小 / 项数</th><th class="g"></th></tr></thead>
+              <tbody>
+                <tr><td class="c"><span class="cbx"></span></td>
+                  <td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm">2026</span></span></td>
+                  <td class="w">1,284 项</td><td class="g">›</td></tr>
+                <tr class="on"><td class="c"><span class="cbx on">✓</span></td>
+                  <td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm sel">2025</span></span></td>
+                  <td class="w">3,102 项</td><td class="g">›</td></tr>
+                <tr><td class="c"><span class="cbx"></span></td>
+                  <td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm">手机导出</span></span></td>
+                  <td class="w">842 项</td><td class="g">›</td></tr>
+                <tr><td class="c"><span class="cbx"></span></td>
+                  <td><span class="fn"><span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span><span class="nm">相机原片</span></span></td>
+                  <td class="w">6,721 项</td><td class="g">›</td></tr>
+                <tr><td class="c"><span class="cbx"></span></td>
+                  <td><span class="fn"><span class="i" data-ic="file" data-sz="16" style="color:#c2c9d4"></span><span class="nm">相册索引.db</span></span></td>
+                  <td class="w">18.2 MB</td><td class="g"></td></tr>
+                <tr><td class="c"><span class="cbx"></span></td>
+                  <td><span class="fn"><span class="i" data-ic="file" data-sz="16" style="color:#c2c9d4"></span><span class="nm">2026-11-08 家庭聚会.mp4</span></span></td>
+                  <td class="w">2.4 GB</td><td class="g"></td></tr>
+              </tbody>
+            </table>
+            <div class="sd-selbar">
+              <span class="cnt-t">已选 <b>1</b> 项</span>
+              <div class="sel-chips"><span>2025<i>✕</i></span></div>
+              <a class="link">清空</a>
+              <span class="sp"></span>
+              <button class="btn primary">还原所选（1 项）</button>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- ================= 8 还原流程 ================= -->
+    <section class="pv-screen" data-screen="restore">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="sd-bar"><button class="sd-back">‹ 快照</button><span>/</span><span class="sd-crumb">天翼云盘 · BackVault</span><span>/</span><span class="sd-crumb cur">2026-11-09 03:12</span></div>
+          <div class="sd-card" style="opacity:.4">
+            <div class="sd-top"><span class="sd-ic"><span class="i" data-ic="stack-2" data-sz="24"></span></span>
+              <div><div class="sd-time">2026-11-09 03:12:47</div></div></div>
+          </div>
+          <div class="panel" style="height:300px;opacity:.35"></div>
+        </div></div>
+        <div class="mask">
+          <div class="modal" style="width:600px">
+            <div class="modal-head"><h3>还原快照</h3><button class="x">✕</button></div>
+            <div style="display:flex;align-items:flex-start;gap:0;padding:14px 18px;border-bottom:1px solid #f3f4f6;background:#fafbfd">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+                <span style="width:22px;height:22px;border-radius:50%;background:#e8f4ec;color:#16803a;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center">
+                  <span class="i" data-ic="check" data-sz="13"></span></span>
+                <span style="font-size:10.5px;color:#16803a">选快照</span>
+              </div>
+              <div style="width:18px;height:1.5px;background:#3370ff;margin-top:10.5px;flex:none"></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+                <span style="width:22px;height:22px;border-radius:50%;background:#e8f4ec;color:#16803a;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center">
+                  <span class="i" data-ic="check" data-sz="13"></span></span>
+                <span style="font-size:10.5px;color:#16803a">选文件</span>
+              </div>
+              <div style="width:18px;height:1.5px;background:#3370ff;margin-top:10.5px;flex:none"></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+                <span style="width:22px;height:22px;border-radius:50%;background:#3370ff;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center">3</span>
+                <span style="font-size:10.5px;color:#3370ff;font-weight:600">还原位置</span>
+              </div>
+            </div>
+            <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+              <div style="font-size:13px;font-weight:600;color:#111827">选择还原位置<em style="font-style:normal;color:#9aa3b2;font-weight:400;font-size:12px;margin-left:6px">默认不覆盖已有文件</em></div>
+              <label class="fld"><span>目标位置</span>
+                <div style="display:flex;gap:8px">
+                  <input value="/vol1/1000/Photos-restore" style="flex:1">
+                  <button class="btn ghost"><span class="i" data-ic="folder-open" data-sz="15"></span>浏览</button>
+                </div>
+              </label>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4b5563">
+                  <span class="cbx on" style="width:15px;height:15px">✓</span>还原到新目录，保留原有数据
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4b5563">
+                  <span class="cbx" style="width:15px;height:15px">✓</span>覆盖同名文件
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4b5563">
+                  <span class="cbx" style="width:15px;height:15px">✓</span>还原后校验文件完整性
+                </label>
+              </div>
+              <div style="background:#fbfcfe;border:1px solid #eef1f6;border-radius:9px;padding:12px 14px;font-size:12.5px;color:#4b5563;display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa3b2">快照</span><span>2026-11-09 03:12 · 12,355 个文件</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa3b2">还原内容</span><span>整份快照 · 213 GB</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa3b2">预计耗时</span><span>约 18 分钟（云盘限速）</span></div>
+              </div>
+              <div class="hint-box">还原过程可随时在「历史」中查看进度或停止；已写入的文件不会自动删除。</div>
+            </div>
+            <div class="modal-foot"><button class="btn ghost">上一步</button><button class="btn primary">开始还原</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 9 历史 ================= -->
+    <section class="pv-screen" data-screen="history">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="dhead">
+            <h1>历史</h1>
+            <div class="acts"><button class="btn ghost"><span class="i" data-ic="refresh" data-sz="14"></span>刷新</button></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><span class="kpi-ic c-blue"><span class="i" data-ic="folder" data-sz="20"></span></span>
+              <div><span>近 30 天备份</span><b>24<small>次</small></b></div></div>
+            <div class="kpi"><span class="kpi-ic c-green"><span class="i" data-ic="shield-check" data-sz="20"></span></span>
+              <div><span>成功率</span><b>96<small>%</small></b></div></div>
+            <div class="kpi"><span class="kpi-ic c-red"><span class="i" data-ic="alert-circle" data-sz="20"></span></span>
+              <div><span>失败</span><b>1<small>次</small></b></div></div>
+            <div class="kpi"><span class="kpi-ic c-orange"><span class="i" data-ic="arrow-back-up" data-sz="20"></span></span>
+              <div><span>近 30 天还原</span><b>3<small>次</small></b></div></div>
+          </div>
+
+          <div class="hist-bar">
+            <div class="hist-seg">
+              <button class="on">全部<span class="n">27</span></button>
+              <button>备份<span class="n">24</span></button>
+              <button>还原<span class="n">3</span></button>
+            </div>
+            <label class="hist-fail"><input type="checkbox"> 仅看失败</label>
+          </div>
+
+          <div class="hist-wrap">
+            <div class="hist-list">
+              <div class="hist-day">今天 · 11-10<i></i></div>
+              <div class="hist-item on">
+                <div class="hi-row">
+                  <span class="hi-ic k-ok"><span class="i" data-ic="folder" data-sz="15"></span></span>
+                  <div class="hi-main">
+                    <div class="hi-top"><span class="hi-st">成功</span><span class="hi-nm">相册备份</span><span class="hi-tm mono">备份 · 03:12</span></div>
+                    <div class="hi-sub">新增 128 个文件 · 1.2 GB · 用时 4 分 12 秒</div>
+                  </div>
+                </div>
+              </div>
+              <div class="hist-item">
+                <div class="hi-row">
+                  <span class="hi-ic k-ok"><span class="i" data-ic="folder" data-sz="15"></span></span>
+                  <div class="hi-main">
+                    <div class="hi-top"><span class="hi-st">成功</span><span class="hi-nm">文档资料</span><span class="hi-tm mono">备份 · 02:41</span></div>
+                    <div class="hi-sub">新增 36 个文件 · 84 MB · 用时 1 分 03 秒</div>
+                  </div>
+                </div>
+              </div>
+              <div class="hist-item">
+                <div class="hi-row">
+                  <span class="hi-ic k-run"><span class="i" data-ic="arrow-back-up" data-sz="15"></span></span>
+                  <div class="hi-main">
+                    <div class="hi-top"><span class="hi-st run">进行中</span><span class="hi-nm">相册备份 · 还原</span><span class="hi-tm mono">还原 · 09:41</span></div>
+                    <div class="hi-sub">已还原 4,693 / 12,355 个文件 · 38%</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="hist-day">昨天 · 11-09<i></i></div>
+              <div class="hist-item">
+                <div class="hi-row">
+                  <span class="hi-ic k-ok"><span class="i" data-ic="folder" data-sz="15"></span></span>
+                  <div class="hi-main">
+                    <div class="hi-top"><span class="hi-st">成功</span><span class="hi-nm">相册备份</span><span class="hi-tm mono">备份 · 03:12</span></div>
+                    <div class="hi-sub">新增 128 个文件 · 1.2 GB · 用时 4 分 05 秒</div>
+                  </div>
+                </div>
+              </div>
+              <div class="hist-item">
+                <div class="hi-row">
+                  <span class="hi-ic k-fail"><span class="i" data-ic="folder" data-sz="15"></span></span>
+                  <div class="hi-main">
+                    <div class="hi-top"><span class="hi-st fail">失败</span><span class="hi-nm">家庭视频</span><span class="hi-tm mono">备份 · 04:00</span></div>
+                    <div class="hi-sub">云端空间不足：需要 512 GB，可用 96 GB</div>
+                  </div>
+                </div>
+              </div>
+              <div class="hist-item">
+                <div class="hi-row">
+                  <span class="hi-ic k-ok"><span class="i" data-ic="arrow-back-up" data-sz="15"></span></span>
+                  <div class="hi-main">
+                    <div class="hi-top"><span class="hi-st">成功</span><span class="hi-nm">文档资料 · 还原</span><span class="hi-tm mono">还原 · 15:22</span></div>
+                    <div class="hi-sub">还原 1 个目录 · 12 个文件 · 86 MB</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="hist-det">
+              <div class="hd-tags"><span class="hi-st">成功</span><span class="hi-st gray">备份</span></div>
+              <div class="hd-top"><b>相册备份</b></div>
+              <div class="hd-time">2026-11-10 03:12:47 · 用时 4 分 12 秒</div>
+              <div class="hi-kv"><span class="k">快照 ID</span><span class="v">a7f3c2e1</span></div>
+              <div class="hi-kv"><span class="k">新增文件</span><span class="v">128</span></div>
+              <div class="hi-kv"><span class="k">修改文件</span><span class="v">6</span></div>
+              <div class="hi-kv"><span class="k">传输数据</span><span class="v">1.2 GB</span></div>
+              <div class="hi-kv"><span class="k">平均速度</span><span class="v">4.9 MB/s</span></div>
+              <div class="hi-kv"><span class="k">目的地</span><span class="v">天翼云盘 / BackVault</span></div>
+              <div class="hi-tl">
+                <div class="n"><i>03:12:47</i>开始备份，读取源目录</div>
+                <div class="n"><i>03:12:49</i>仓库已锁定，载入索引</div>
+                <div class="n"><i>03:13:20</i>扫描完成，发现 134 个变动文件</div>
+                <div class="n"><i>03:16:52</i>上传完成，写入快照 a7f3c2e1</div>
+                <div class="n"><i>03:16:59</i>备份成功</div>
+              </div>
+              <div class="hd-foot"><button class="btn ghost sm">查看完整日志</button></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- ================= 10 运行日志 ================= -->
+    <section class="pv-screen" data-screen="logs">
+      <div class="app">
+        <div class="sb" data-slot="sb"></div>
+        <div class="main"><div class="content">
+          <div class="dhead"><h1>历史</h1></div>
+          <div class="panel" style="height:420px;opacity:.35"></div>
+        </div></div>
+        <div class="mask drawer-mask">
+          <div class="modal log-drawer">
+            <div class="modal-head">
+              <h3>运行日志 — 相册备份</h3>
+              <label style="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:6px"><input type="checkbox" checked> 自动刷新</label>
+              <button class="x">✕</button>
+            </div>
+            <div class="log-tabs"><button class="on">本次运行</button><button>历史运行</button></div>
+            <div class="log-body">
+              <div class="log-line"><i>03:12:47</i><span class="lv">INFO</span>使用仓库 189cloud:/个人云/BackVault</div>
+              <div class="log-line"><i>03:12:47</i><span class="lv">INFO</span>source: /vol1/1000/Photos</div>
+              <div class="log-line"><i>03:12:48</i><span class="lv">INFO</span>已加载排除规则 2 条（系统缓存、临时文件）</div>
+              <div class="log-line"><i>03:12:49</i><span class="lv">INFO</span>repository a7f3c2e1 opened (restic 0.17.3)</div>
+              <div class="log-line"><i>03:13:20</i><span class="lv">INFO</span>scan finished: 134 files, 1.2 GiB</div>
+              <div class="log-line"><i>03:13:21</i><span class="lv">INFO</span>uploading 128 new blobs (concurrency 4)</div>
+              <div class="log-line"><i>03:14:38</i><span class="lv">WARN</span>retry 1/3: chunk 4f9a… connection reset</div>
+              <div class="log-line"><i>03:14:41</i><span class="lv">INFO</span>chunk 4f9a… uploaded (12.4 MiB)</div>
+              <div class="log-line"><i>03:16:52</i><span class="lv">INFO</span>snapshot a7f3c2e1 saved</div>
+              <div class="log-line"><i>03:16:59</i><span class="lv">OK</span>backup finished successfully in 4m12s</div>
+              <div class="log-line ok"><i>03:16:59</i><span class="lv">DONE</span>新增 128 · 修改 6 · 删除 0 · 1.2 GB</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 11 手机 · 任务列表 ================= -->
+    <section class="pv-screen" data-screen="m-tasks">
+      <div class="phone" style="height:820px">
+        <div class="ph-status"><span>9:41</span><span class="r">
+          <span class="i" data-ic="signal-5g" data-sz="14"></span>
+          <span class="i" data-ic="wifi" data-sz="14"></span>
+          <span class="i" data-ic="battery-4" data-sz="17"></span>
+        </span></div>
+        <div class="ph-head">
+          <h1>备份任务</h1>
+          <div class="acts">
+            <button class="icon-btn"><span class="i" data-ic="search" data-sz="18"></span></button>
+            <button class="icon-btn"><span class="i" data-ic="plus" data-sz="19"></span></button>
+          </div>
+        </div>
+        <div class="ph-body">
+          <div class="mcard">
+            <div class="mc-top">
+              <div class="mc-icon"><span class="i" data-ic="folder" data-sz="20"></span><span class="mc-badge">✓</span></div>
+              <div class="mc-title"><b>相册备份</b><div class="mc-status">成功 · 今天 03:12</div></div>
+              <button class="mc-more">⋯</button>
+            </div>
+            <div class="mc-row"><span>来源地</span><span>fnos · Photos</span></div>
+            <div class="mc-row"><span>目的地</span><span>天翼云盘 · BackVault</span></div>
+            <div class="mc-row"><span>上次备份</span><span>今天 03:12 · 1.2 GB</span></div>
+            <div class="mc-row"><span>下次备份</span><span>明天 03:00</span></div>
+          </div>
+
+          <div class="mcard">
+            <div class="mc-top">
+              <div class="mc-icon"><span class="i" data-ic="file" data-sz="20"></span><span class="mc-badge run"></span></div>
+              <div class="mc-title"><b>文档资料</b><div class="mc-status run">正在备份 62%</div></div>
+              <button class="mc-more">⋯</button>
+            </div>
+            <div class="mc-row"><span>来源地</span><span>fnos · Documents</span></div>
+            <div class="mc-row"><span>目的地</span><span>115 网盘 · backup</span></div>
+            <div class="mc-prog">
+              <div class="h"><span class="spin"></span>正在备份<b>62%</b></div>
+              <div class="bar"><div class="bar-in" style="width:62%"></div></div>
+              <div class="meta">
+                <span><em>开始</em>09:32</span>
+                <span><em>数据</em>38.4 / 62 GB</span>
+                <span><em>预计</em>12 分钟</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mcard">
+            <div class="mc-top">
+              <div class="mc-icon"><span class="i" data-ic="video" data-sz="20"></span><span class="mc-badge warn">!</span></div>
+              <div class="mc-title"><b>家庭视频</b><div class="mc-status warn">云端空间不足</div></div>
+              <button class="mc-more">⋯</button>
+            </div>
+            <div class="mc-row"><span>来源地</span><span>fnos · Videos</span></div>
+            <div class="mc-row"><span>目的地</span><span>WebDAV · 极空间</span></div>
+            <div class="mc-row"><span>上次备份</span><span>11-08 04:00 · 失败</span></div>
+            <div class="mc-row"><span>下次备份</span><span>周日 04:00</span></div>
+          </div>
+
+        </div>
+        <div class="bnav">
+          <button class="on"><span class="i" data-ic="folder" data-sz="21"></span>备份</button>
+          <button><span class="i" data-ic="stack-2" data-sz="21"></span>快照</button>
+          <button><span class="i" data-ic="history" data-sz="21"></span>历史</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 12 手机 · 操作面板 ================= -->
+    <section class="pv-screen" data-screen="m-sheet">
+      <div class="phone">
+        <div class="ph-status"><span>9:41</span><span class="r"><span class="i" data-ic="signal-5g" data-sz="14"></span><span class="i" data-ic="wifi" data-sz="14"></span><span class="i" data-ic="battery-4" data-sz="17"></span></span></div>
+        <div class="ph-head"><h1>备份任务</h1></div>
+        <div class="ph-body" style="opacity:.45">
+          <div class="mcard">
+            <div class="mc-top">
+              <div class="mc-icon"><span class="i" data-ic="folder" data-sz="20"></span><span class="mc-badge">✓</span></div>
+              <div class="mc-title"><b>相册备份</b><div class="mc-status">成功 · 今天 03:12</div></div>
+              <button class="mc-more">⋯</button>
+            </div>
+          </div>
+        </div>
+        <div style="position:absolute;inset:0;background:rgba(17,24,39,.35)"></div>
+        <div class="sheet">
+          <div class="sheet-h"></div>
+          <div style="display:flex;align-items:center;gap:10px;padding:0 4px 12px">
+            <div class="mc-icon" style="width:34px;height:34px;border-radius:10px"><span class="i" data-ic="folder" data-sz="18"></span></div>
+            <div><b style="font-size:15px">相册备份</b><div style="font-size:11.5px;color:#9aa3b2;margin-top:2px">天翼云盘 · BackVault</div></div>
+          </div>
+          <button class="sheet-btn primary"><span class="i" data-ic="player-play" data-sz="16"></span>立即备份</button>
+          <button class="sheet-btn"><span class="i" data-ic="history" data-sz="16"></span>查看日志</button>
+          <button class="sheet-btn"><span class="i" data-ic="stack-2" data-sz="16"></span>查看快照</button>
+          <button class="sheet-btn"><span class="i" data-ic="pencil" data-sz="16"></span>编辑任务</button>
+          <button class="sheet-btn"><span class="i" data-ic="copy" data-sz="16"></span>复制任务</button>
+          <button class="sheet-btn danger"><span class="i" data-ic="trash" data-sz="16"></span>删除任务</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 13 手机 · 快照详情 ================= -->
+    <section class="pv-screen" data-screen="m-snap">
+      <div class="phone">
+        <div class="ph-status"><span>9:41</span><span class="r"><span class="i" data-ic="activity" data-sz="13"></span></span></div>
+        <div class="ph-head">
+          <button class="icon-btn"><span class="i" data-ic="arrow-left" data-sz="19"></span></button>
+          <h1 style="font-size:16px">2026-11-09 03:12</h1>
+          <div class="acts"><button class="icon-btn"><span class="i" data-ic="search" data-sz="18"></span></button></div>
+        </div>
+        <div class="ph-body">
+          <div class="m-dhead">快照 / 天翼云盘 · BackVault</div>
+
+          <div class="mcard" style="padding:15px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="mc-icon" style="background:#f1edff;color:#7c5cff"><span class="i" data-ic="stack-2" data-sz="20"></span></div>
+              <div>
+                <div style="font-size:15px;font-weight:600">2026-11-09 03:12</div>
+                <div style="font-size:11.5px;color:#9aa3b2;margin-top:3px">相册备份 · a7f3c2e1</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;padding-top:13px;border-top:1px solid #f4f6fa">
+              <div><span style="font-size:11px;color:#9aa3b2">文件数</span><b style="display:block;font-size:14px;margin-top:2px">12,355</b></div>
+              <div><span style="font-size:11px;color:#9aa3b2">总大小</span><b style="display:block;font-size:14px;margin-top:2px">213 GB</b></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:13px">
+              <span style="background:#e8f4ec;color:#16803a;border-radius:5px;padding:3px 9px;font-size:11.5px">+128 新增</span>
+              <span style="background:#fdf1e3;color:#b45309;border-radius:5px;padding:3px 9px;font-size:11.5px">~6 修改</span>
+              <span style="background:#fdecec;color:#c22a2f;border-radius:5px;padding:3px 9px;font-size:11.5px">−2 删除</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 4px 10px;font-size:12.5px;color:#9aa3b2">
+            <span style="color:#3370ff">快照根目录</span><span>/</span><b style="color:#374151">2025</b>
+          </div>
+
+          <div class="mcard" style="padding:4px 0">
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid #f6f7fa">
+              <span class="i" data-ic="arrow-left" data-sz="15" style="color:#3370ff"></span>
+              <span style="font-size:13px;color:#3370ff">返回上一级</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid #f6f7fa">
+              <span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span>
+              <span style="font-size:13.5px;flex:1">春节</span><span style="font-size:11.5px;color:#9aa3b2">128 项</span>
+              <span class="i" data-ic="chevron-right" data-sz="14" style="color:#c2c9d4"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid #f6f7fa">
+              <span class="i" data-ic="folder" data-sz="17" style="color:#4a9eff"></span>
+              <span style="font-size:13.5px;flex:1">旅行</span><span style="font-size:11.5px;color:#9aa3b2">642 项</span>
+              <span class="i" data-ic="chevron-right" data-sz="14" style="color:#c2c9d4"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid #f6f7fa;background:#f6f9ff">
+              <span class="cbx on" style="width:16px;height:16px">✓</span>
+              <span class="i" data-ic="file" data-sz="16" style="color:#c2c9d4"></span>
+              <span style="font-size:13.5px;flex:1;color:#3370ff">全家福.jpg</span><span style="font-size:11.5px;color:#9aa3b2">4.2 MB</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 15px">
+              <span class="cbx" style="width:16px;height:16px"></span>
+              <span class="i" data-ic="file" data-sz="16" style="color:#c2c9d4"></span>
+              <span style="font-size:13.5px;flex:1">年夜饭.mp4</span><span style="font-size:11.5px;color:#9aa3b2">842 MB</span>
+            </div>
+          </div>
+
+          <div style="position:sticky;bottom:0;display:flex;align-items:center;gap:10px;background:#fff;border-radius:12px;padding:11px 14px;margin-top:12px;box-shadow:0 -4px 16px rgba(15,23,42,.06)">
+            <span style="font-size:12.5px;color:#4b5563">已选 <b style="color:#3370ff">1</b> 项</span>
+            <button class="btn primary" style="margin-left:auto">还原所选</button>
+          </div>
+        </div>
+        <div class="bnav">
+          <button><span class="i" data-ic="folder" data-sz="21"></span>备份</button>
+          <button class="on"><span class="i" data-ic="stack-2" data-sz="21"></span>快照</button>
+          <button><span class="i" data-ic="history" data-sz="21"></span>历史</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+const SB = (active) => `
+<div class="sb-logo"><span class="mk"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"/></svg></span>量子密备</div>
+<nav class="sb-nav">
+  <button class="sb-item${active === "tasks" ? " on" : ""}"><span class="i" data-ic="folder" data-sz="17"></span>备份任务<span class="sb-cnt">4</span></button>
+  <button class="sb-item${active === "snap" ? " on" : ""}"><span class="i" data-ic="stack-2" data-sz="17"></span>快照</button>
+  <button class="sb-item${active === "hist" ? " on" : ""}"><span class="i" data-ic="history" data-sz="17"></span>历史<span class="sb-cnt run">1</span></button>
+</nav>
+<div class="sb-foot"><div>量子密备 v0.3.9</div><div>restic 0.17.3</div><div>rclone v1.68.1</div></div>`;
+
+const GROUPS = [
+  ["备份任务", "desk", [
+    ["tasks", "任务列表 · 正常"],
+    ["empty", "任务列表 · 空态"],
+    ["wizard", "新建任务弹窗"],
+    ["cloud", "云盘连接 · WebDAV"],
+    ["picker", "选择云盘目录"],
+  ]],
+  ["快照", "desk", [
+    ["snaps", "仓库列表 + 快照"],
+    ["detail", "快照详情 · 文件"],
+    ["restore", "还原流程 · 三步"],
+  ]],
+  ["历史", "desk", [
+    ["history", "备份 / 还原记录"],
+    ["logs", "运行日志抽屉"],
+  ]],
+  ["手机端", "mob", [
+    ["m-tasks", "任务列表"],
+    ["m-sheet", "操作面板"],
+    ["m-snap", "快照详情"],
+  ]],
+];
+
+const NAVOF = { snaps: "snap", detail: "snap", restore: "snap", history: "hist", logs: "hist" };
+const ICON = (n, s) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${window.ICONS[n] || ""}</svg>`;
+
+function paintIcons(root) {
+  root.querySelectorAll("[data-ic]").forEach(el => {
+    el.innerHTML = ICON(el.dataset.ic, el.dataset.sz || 16);
+  });
+}
+
+let MODE = "desk";
+
+function buildRail() {
+  const rail = document.getElementById("rail");
+  rail.innerHTML = GROUPS.filter(g => g[1] === MODE).map(([name, _m, items], gi) =>
+    `<div class="pv-grp">${name}</div>` +
+    items.map(([k, t], i) =>
+      `<div class="pv-item${gi === 0 && i === 0 ? " on" : ""}" data-go="${k}">${t}<em>${String(i + 1).padStart(2, "0")}</em></div>`
+    ).join("")
+  ).join("");
+}
+
+function show(key) {
+  document.querySelectorAll(".pv-screen").forEach(s => s.classList.toggle("on", s.dataset.screen === key));
+  document.querySelectorAll(".pv-item").forEach(i => i.classList.toggle("on", i.dataset.go === key));
+}
+
+function setMode(m) {
+  MODE = m;
+  document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === m));
+  buildRail();
+  const first = GROUPS.filter(g => g[1] === m)[0][2][0][0];
+  show(first);
+}
+
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-go]");
+  if (go) show(go.dataset.go);
+  const mode = e.target.closest("[data-mode]");
+  if (mode) setMode(mode.dataset.mode);
+});
+
+buildRail();
+document.querySelectorAll('[data-slot="sb"]').forEach(el => {
+  const sec = el.closest(".pv-screen");
+  el.innerHTML = SB(NAVOF[sec.dataset.screen] || "tasks");
+});
+paintIcons(document);
+
+const hash = location.hash.replace("#", "");
+if (hash) {
+  const mob = GROUPS.find(g => g[1] === "mob")[2].some(i => i[0] === hash);
+  if (mob) setMode("mob");
+  show(hash);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>页面美化方案</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --blue:#3370ff; --blue-50:#eef4ff; --blue-100:#dce7ff;
+    --green:#18a058; --green-50:#e8f7ee;
+    --orange:#f08a24; --orange-50:#fff3e6;
+    --red:#e5484d; --red-50:#fdecec;
+    --t1:#1f2329; --t2:#4e5969; --t3:#86909c; --t4:#c0c6cf;
+    --line:#eef0f3; --bg:#f2f4f7; --card:#fff;
+  }
+  body { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:#dfe3e9; color:var(--t1); font-size:14px; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ===== 预览切换器（不属于应用 UI） ===== */
+  .switcher { position:sticky; top:0; z-index:99; background:#1f2937; color:#fff; padding:10px 20px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .switcher b { font-size:14px; margin-right:6px; }
+  .switcher button { background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.22); border-radius:6px; padding:6px 14px; cursor:pointer; font-size:13px; }
+  .switcher button.on { background:var(--blue); border-color:var(--blue); }
+  .switcher .tip { margin-left:auto; font-size:12px; color:#9ca3af; }
+  .desc { max-width:1280px; margin:16px auto 0; padding:0 20px; font-size:13px; color:#374151; line-height:1.8; }
+  .desc b { color:#111827; }
+  .desc .tags span { display:inline-block; background:#fff; border-radius:4px; padding:1px 8px; margin:4px 6px 0 0; font-size:12px; color:#4b5563; }
+  .plan { display:none; } .plan.on { display:block; }
+
+  /* ===== 应用窗口外壳（模拟飞牛桌面窗口） ===== */
+  .win { max-width:1280px; margin:14px auto 40px; border-radius:12px; overflow:hidden; box-shadow:0 12px 40px rgba(15,23,42,.18); background:var(--bg); }
+  .win-bar { height:40px; background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:center; padding:0 16px; gap:10px; font-size:13px; color:var(--t2); }
+  .win-bar .logo { width:20px; height:20px; border-radius:6px; background:linear-gradient(135deg,#5b8cff,#3370ff); display:flex; align-items:center; justify-content:center; }
+  .win-bar .ctrl { margin-left:auto; display:flex; gap:14px; color:var(--t3); font-size:14px; }
+  .app { display:flex; min-height:720px; }
+
+  /* 侧边栏（三套共用，细节略有差别） */
+  .side { width:200px; flex:none; background:#fff; border-right:1px solid var(--line); padding:14px 10px; display:flex; flex-direction:column; }
+  .nav { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; color:var(--t2); cursor:pointer; margin-bottom:2px; }
+  .nav:hover { background:#f5f7fa; }
+  .nav.on { background:var(--blue-50); color:var(--blue); font-weight:500; }
+  .nav svg { width:18px; height:18px; flex:none; }
+  .nav .cnt { margin-left:auto; font-size:12px; color:var(--t3); font-weight:400; }
+  .nav.on .cnt { color:var(--blue); }
+  .side-grp { font-size:12px; color:var(--t3); padding:14px 12px 6px; }
+  .side-foot { margin-top:auto; padding:10px 12px 2px; font-size:11px; color:var(--t4); line-height:1.8; }
+
+  .main { flex:1; min-width:0; padding:24px 32px 40px; }
+  .head { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .head h1 { font-size:20px; font-weight:600; }
+  .head .sub { font-size:13px; color:var(--t3); }
+  .sp { flex:1; }
+  .btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 14px; border-radius:6px; font-size:13px; cursor:pointer; border:1px solid #dcdfe6; background:#fff; color:var(--t1); }
+  .btn:hover { border-color:var(--blue); color:var(--blue); }
+  .btn.pri { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .btn.pri:hover { background:#2b5fe0; color:#fff; }
+  .btn.txt { border:none; background:transparent; color:var(--blue); padding:0 6px; }
+  .ib { width:30px; height:30px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; color:var(--t2); cursor:pointer; border:none; background:transparent; }
+  .ib:hover { background:#f2f3f5; color:var(--blue); }
+  .ib svg { width:16px; height:16px; }
+
+  .tag { display:inline-flex; align-items:center; gap:4px; height:22px; padding:0 8px; border-radius:4px; font-size:12px; white-space:nowrap; }
+  .tag.ok { background:var(--green-50); color:var(--green); }
+  .tag.run { background:var(--blue-50); color:var(--blue); }
+  .tag.warn { background:var(--orange-50); color:var(--orange); }
+  .tag.gray { background:#f2f3f5; color:var(--t2); }
+  .dot { width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  .bar { height:6px; background:var(--blue-100); border-radius:3px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--blue); border-radius:3px; position:relative; overflow:hidden; }
+  .bar i::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent); animation:sh 1.6s infinite; }
+  @keyframes sh { from { transform:translateX(-100%); } to { transform:translateX(100%); } }
+  .spin { width:12px; height:12px; border:2px solid var(--blue-100); border-top-color:var(--blue); border-radius:50%; animation:rot .9s linear infinite; display:inline-block; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+
+  /* ============================================================
+     方案 A · 原生精修
+     ============================================================ */
+  .a-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+  .a-stat { background:#fff; border-radius:10px; padding:16px 18px; display:flex; align-items:center; gap:14px; }
+  .a-stat .ic { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .a-stat .ic svg { width:20px; height:20px; }
+  .a-stat .k { font-size:12px; color:var(--t3); }
+  .a-stat .v { font-size:20px; font-weight:600; margin-top:2px; }
+  .a-stat .v small { font-size:12px; font-weight:400; color:var(--t3); margin-left:3px; }
+
+  .a-card { background:#fff; border-radius:10px; margin-bottom:14px; border:1px solid transparent; transition:.15s; }
+  .a-card:hover { border-color:var(--blue-100); box-shadow:0 4px 16px rgba(51,112,255,.07); }
+  .a-top { display:flex; align-items:center; gap:14px; padding:16px 20px; }
+  .a-ico { width:44px; height:44px; border-radius:10px; background:var(--blue-50); color:var(--blue); display:flex; align-items:center; justify-content:center; flex:none; }
+  .a-ico svg { width:22px; height:22px; }
+  .a-ttl { font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .a-meta { font-size:12px; color:var(--t3); margin-top:5px; display:flex; gap:16px; flex-wrap:wrap; }
+  .a-meta b { color:var(--t2); font-weight:500; }
+  .a-acts { margin-left:auto; display:flex; gap:2px; align-items:center; }
+  .a-flow { display:grid; grid-template-columns:1fr 40px 1fr 160px; align-items:center; margin:0 20px; padding:14px 0 16px 58px; border-top:1px dashed var(--line); }
+  .a-node { display:flex; align-items:center; gap:10px; min-width:0; }
+  .a-node .ni { width:32px; height:32px; border-radius:8px; background:#f5f7fa; display:flex; align-items:center; justify-content:center; flex:none; }
+  .a-node .ni svg { width:18px; height:18px; }
+  .a-node b { font-size:13px; font-weight:500; display:block; }
+  .a-node span { font-size:12px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+  .a-arrow { color:var(--t4); display:flex; justify-content:center; }
+  .a-next { text-align:right; font-size:12px; color:var(--t3); }
+  .a-next b { display:block; font-size:13px; color:var(--t1); font-weight:500; margin-top:2px; }
+  .a-prog { margin:0 20px; padding:0 0 16px 58px; }
+  .a-prog .row { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--t2); margin-bottom:8px; }
+  .a-prog .pct { margin-left:auto; color:var(--blue); font-weight:600; font-size:13px; }
+
+  /* ============================================================
+     方案 B · 概览仪表盘
+     ============================================================ */
+  .b-hero { background:linear-gradient(120deg,#ffffff 0%,#f4f8ff 60%,#e9f1ff 100%); border-radius:12px; padding:22px 26px; display:flex; align-items:center; gap:26px; margin-bottom:18px; position:relative; overflow:hidden; }
+  .b-hero::after { content:""; position:absolute; right:-60px; top:-60px; width:240px; height:240px; border-radius:50%; background:radial-gradient(circle, rgba(51,112,255,.10), transparent 70%); }
+  .b-ring { width:96px; height:96px; flex:none; position:relative; }
+  .b-ring svg { width:96px; height:96px; transform:rotate(-90deg); }
+  .b-ring .c { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .b-ring .c svg { width:30px; height:30px; transform:none; }
+  .b-hero h2 { font-size:20px; font-weight:600; }
+  .b-hero p { font-size:13px; color:var(--t2); margin-top:6px; }
+  .b-kpis { margin-left:auto; display:flex; gap:0; position:relative; z-index:1; }
+  .b-kpi { padding:0 26px; border-left:1px solid #dfe6f3; }
+  .b-kpi:first-child { border-left:none; }
+  .b-kpi .k { font-size:12px; color:var(--t3); }
+  .b-kpi .v { font-size:22px; font-weight:600; margin-top:4px; }
+  .b-kpi .v small { font-size:12px; font-weight:400; color:var(--t3); margin-left:2px; }
+
+  .b-panel { background:#fff; border-radius:12px; overflow:hidden; }
+  .b-ph { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid var(--line); }
+  .b-ph h3 { font-size:15px; font-weight:600; }
+  .b-seg { display:flex; background:#f2f3f5; border-radius:6px; padding:2px; margin-left:12px; }
+  .b-seg span { padding:3px 12px; border-radius:4px; font-size:12px; color:var(--t2); cursor:pointer; }
+  .b-seg span.on { background:#fff; color:var(--t1); box-shadow:0 1px 2px rgba(0,0,0,.06); }
+  .b-search { margin-left:auto; height:30px; width:200px; border:1px solid #e5e6eb; border-radius:6px; display:flex; align-items:center; gap:6px; padding:0 10px; color:var(--t4); font-size:12px; }
+  .b-tbl { width:100%; border-collapse:collapse; }
+  .b-tbl th { text-align:left; font-weight:400; font-size:12px; color:var(--t3); padding:10px 20px; background:#fafbfc; }
+  .b-tbl td { padding:14px 20px; border-top:1px solid var(--line); vertical-align:middle; font-size:13px; }
+  .b-tbl tr:hover td { background:#f8faff; }
+  .b-name { display:flex; align-items:center; gap:12px; }
+  .b-name .ic { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .b-name .ic svg { width:20px; height:20px; }
+  .b-name b { font-weight:500; display:block; }
+  .b-name small { font-size:12px; color:var(--t3); }
+  .b-route { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--t2); }
+  .b-route .chip { background:#f5f7fa; border-radius:4px; padding:2px 8px; white-space:nowrap; }
+  .b-spark { display:flex; gap:3px; align-items:flex-end; height:22px; }
+  .b-spark i { width:6px; border-radius:2px; background:var(--green); opacity:.85; }
+  .b-spark i.f { background:var(--red); }
+  .b-spark i.n { background:#e5e6eb; }
+  .b-mini { width:140px; }
+  .b-mini .t { font-size:12px; color:var(--blue); margin-bottom:5px; display:flex; justify-content:space-between; }
+
+  /* ============================================================
+     方案 C · 主从双栏
+     ============================================================ */
+  .c-wrap { display:grid; grid-template-columns:320px 1fr; gap:16px; }
+  .c-list { background:#fff; border-radius:12px; padding:10px; align-self:start; }
+  .c-lh { display:flex; align-items:center; padding:6px 8px 10px; font-size:13px; color:var(--t3); }
+  .c-item { display:flex; gap:12px; padding:12px; border-radius:8px; cursor:pointer; border:1px solid transparent; margin-bottom:4px; }
+  .c-item:hover { background:#f7f8fa; }
+  .c-item.on { background:var(--blue-50); border-color:var(--blue-100); }
+  .c-item .ic { width:38px; height:38px; border-radius:9px; background:#fff; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; flex:none; position:relative; }
+  .c-item.on .ic { border-color:var(--blue-100); }
+  .c-item .ic svg { width:20px; height:20px; }
+  .c-item .st { position:absolute; right:-3px; bottom:-3px; width:12px; height:12px; border-radius:50%; border:2px solid #fff; }
+  .c-item b { font-size:14px; font-weight:500; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .c-item small { font-size:12px; color:var(--t3); display:block; margin-top:3px; }
+  .c-item .mb { margin-top:7px; }
+  .c-add { display:flex; align-items:center; justify-content:center; gap:6px; height:44px; border:1px dashed #d4d9e1; border-radius:8px; color:var(--t3); font-size:13px; margin-top:6px; cursor:pointer; }
+  .c-add:hover { border-color:var(--blue); color:var(--blue); }
+
+  .c-detail { display:flex; flex-direction:column; gap:16px; }
+  .c-box { background:#fff; border-radius:12px; padding:20px 22px; }
+  .c-dh { display:flex; align-items:center; gap:14px; }
+  .c-dh .ic { width:48px; height:48px; border-radius:12px; background:linear-gradient(135deg,#5b8cff,#3370ff); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(51,112,255,.28); }
+  .c-dh .ic svg { width:24px; height:24px; }
+  .c-dh h2 { font-size:18px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .c-dh p { font-size:12px; color:var(--t3); margin-top:4px; }
+  .c-route { display:flex; align-items:stretch; gap:0; margin-top:18px; background:#f7f8fa; border-radius:10px; padding:14px 16px; }
+  .c-route .n { flex:1; display:flex; gap:10px; align-items:center; min-width:0; }
+  .c-route .n .ni { width:34px; height:34px; border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; flex:none; }
+  .c-route .n .ni svg { width:18px; height:18px; }
+  .c-route .n b { font-size:13px; font-weight:500; display:block; }
+  .c-route .n span { font-size:12px; color:var(--t3); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .c-route .lk { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 18px; color:var(--t3); font-size:11px; gap:2px; }
+  .c-route .lk svg { width:60px; height:12px; }
+  .c-kv { display:grid; grid-template-columns:repeat(4,1fr); gap:0; margin-top:18px; }
+  .c-kv div { padding:0 16px; border-left:1px solid var(--line); }
+  .c-kv div:first-child { padding-left:0; border-left:none; }
+  .c-kv .k { font-size:12px; color:var(--t3); }
+  .c-kv .v { font-size:15px; font-weight:600; margin-top:4px; }
+  .c-row2 { display:grid; grid-template-columns:1.2fr 1fr; gap:16px; }
+  .c-bt { font-size:15px; font-weight:600; display:flex; align-items:center; margin-bottom:14px; }
+  .c-tl { position:relative; padding-left:18px; }
+  .c-tl::before { content:""; position:absolute; left:4px; top:6px; bottom:6px; width:1px; background:var(--line); }
+  .c-ev { position:relative; padding-bottom:14px; }
+  .c-ev:last-child { padding-bottom:0; }
+  .c-ev::before { content:""; position:absolute; left:-18px; top:5px; width:9px; height:9px; border-radius:50%; background:#fff; border:2px solid var(--green); }
+  .c-ev.run::before { border-color:var(--blue); background:var(--blue); }
+  .c-ev.warn::before { border-color:var(--orange); }
+  .c-ev .t { font-size:13px; display:flex; gap:8px; align-items:center; }
+  .c-ev .t b { font-weight:500; }
+  .c-ev .m { font-size:12px; color:var(--t3); margin-top:3px; }
+  .c-chart { display:flex; align-items:flex-end; gap:10px; height:140px; padding-top:10px; border-bottom:1px solid var(--line); }
+  .c-chart .col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end; }
+  .c-chart .col i { width:100%; max-width:26px; border-radius:4px 4px 0 0; background:linear-gradient(180deg,#6f9bff,#3370ff); }
+  .c-chart .col.dim i { background:#dce7ff; }
+  .c-cx { display:flex; gap:10px; margin-top:6px; }
+  .c-cx span { flex:1; min-width:0; text-align:center; font-size:11px; color:var(--t3); white-space:nowrap; }
+</style>
+</head>
+<body>
+
+<!-- 通用图标 -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path fill="currentColor" d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.6c.6 0 1.2.3 1.6.7L12 6h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></g></symbol>
+    <symbol id="i-nas" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M4 9.5h16M4 15h16"/></g><g fill="currentColor"><circle cx="16.5" cy="6.5" r="1"/><circle cx="16.5" cy="12.2" r="1"/><circle cx="16.5" cy="17.8" r="1"/></g></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path fill="currentColor" d="M7 19a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 8.6 4.5 4.5 0 0 1 17.5 19z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></g></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m8.8 12 2.3 2.3 4.2-4.6"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></g></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></g></symbol>
+    <symbol id="i-arrow" viewBox="0 0 40 12"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 6h32" stroke-dasharray="3 3"/><path d="m31 2 5 4-5 4"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></g></symbol>
+  </defs>
+</svg>
+
+<div class="switcher">
+  <b>蛋壳备份 · 页面美化方案</b>
+  <button class="on" data-p="a">A · 原生精修</button>
+  <button data-p="b">B · 概览仪表盘</button>
+  <button data-p="c">C · 主从双栏</button>
+  <span class="tip">以「备份任务」页为例 · 视觉规范对齐飞牛 fnOS（主色 #3370FF、浅灰底、白卡片、8–12px 圆角）</span>
+</div>
+
+<!-- ======================= 方案 A ======================= -->
+<section class="plan on" id="p-a">
+  <div class="desc">
+    <b>方案 A · 原生精修</b>：结构基本不动，改动最小。顶部加 4 个统计卡，任务卡片改成「图标 + 状态标签 + 一行元信息」，来源→目标改为带图标的节点行，运行中的任务直接在卡片里展示进度条。
+    <div class="tags"><span>改造成本：低</span><span>适合：想尽快上线</span><span>风险：几乎没有</span></div>
+  </div>
+  <div class="win">
+    <div class="win-bar"><span class="logo"><svg width="12" height="12" style="color:#fff"><use href="#i-lock"/></svg></span>蛋壳备份<span class="ctrl">— ▢ ✕</span></div>
+    <div class="app">
+      <aside class="side">
+        <div class="nav on"><svg><use href="#i-folder"/></svg>备份<span class="cnt">3</span></div>
+        <div class="nav"><svg><use href="#i-layers"/></svg>快照</div>
+        <div class="nav"><svg><use href="#i-clock"/></svg>历史</div>
+        <div class="side-foot">restic 0.18.0<br>rclone v1.75.2</div>
+      </aside>
+      <main class="main">
+        <div class="head"><h1>备份任务</h1><span class="sp"></span><button class="btn pri"><svg width="14" height="14"><use href="#i-plus"/></svg>创建新任务</button></div>
+
+        <div class="a-stats">
+          <div class="a-stat"><div class="ic" style="background:var(--blue-50);color:var(--blue)"><svg><use href="#i-folder"/></svg></div><div><div class="k">备份任务</div><div class="v num">3<small>个</small></div></div></div>
+          <div class="a-stat"><div class="ic" style="background:var(--green-50);color:var(--green)"><svg><use href="#i-shield"/></svg></div><div><div class="k">已保护数据</div><div class="v num">433.5<small>GB</small></div></div></div>
+          <div class="a-stat"><div class="ic" style="background:#f1ecff;color:#7b61ff"><svg><use href="#i-layers"/></svg></div><div><div class="k">云端快照</div><div class="v num">11<small>个</small></div></div></div>
+          <div class="a-stat"><div class="ic" style="background:var(--orange-50);color:var(--orange)"><svg><use href="#i-cal"/></svg></div><div><div class="k">下次备份</div><div class="v num" style="font-size:16px">明天 03:00</div></div></div>
+        </div>
+
+        <!-- 运行中 -->
+        <div class="a-card">
+          <div class="a-top">
+            <div class="a-ico"><svg><use href="#i-folder"/></svg></div>
+            <div style="min-width:0">
+              <div class="a-ttl">相册资料 → 天翼<span class="tag run"><span class="spin" style="width:10px;height:10px"></span>备份中</span></div>
+              <div class="a-meta"><span>开始 <b class="num">14:02</b></span><span>已用时 <b class="num">18 分</b></span><span>每日 03:00</span></div>
+            </div>
+            <div class="a-acts"><button class="btn">停止</button><button class="ib"><svg><use href="#i-more"/></svg></button></div>
+          </div>
+          <div class="a-prog">
+            <div class="row"><span>已处理 <b class="num">128,402</b> 项 · <b class="num">196.3 GB</b> / 433.5 GB</span><span class="pct num">45%</span></div>
+            <div class="bar"><i style="width:45%"></i></div>
+          </div>
+          <div class="a-flow">
+            <div class="a-node"><span class="ni" style="color:var(--blue)"><svg><use href="#i-nas"/></svg></span><div style="min-width:0"><b>fnos（本地）</b><span>相册、资料</span></div></div>
+            <div class="a-arrow"><svg width="36" height="12"><use href="#i-arrow"/></svg></div>
+            <div class="a-node"><span class="ni" style="color:#4a90ff"><svg><use href="#i-cloud"/></svg></span><div style="min-width:0"><b>天翼云盘</b><span>/飞牛加密备份</span></div></div>
+            <div class="a-next">下次运行<b class="num">明天 03:00</b></div>
+          </div>
+        </div>
+
+        <!-- 成功 -->
+        <div class="a-card">
+          <div class="a-top">
+            <div class="a-ico" style="background:var(--green-50);color:var(--green)"><svg><use href="#i-folder"/></svg></div>
+            <div style="min-width:0">
+              <div class="a-ttl">115 网盘 · 资料<span class="tag ok"><span class="dot"></span>上次成功</span></div>
+              <div class="a-meta"><span>上次 <b class="num">10-29 03:04</b></span><span>新增 <b class="num">1,204</b> 项 · <b class="num">2.3 GB</b></span><span>用时 <b class="num">6 分 12 秒</b></span><a class="btn txt" style="height:auto">查看日志</a></div>
+            </div>
+            <div class="a-acts"><button class="ib" title="立即备份"><svg><use href="#i-play"/></svg></button><button class="ib" title="还原"><svg><use href="#i-restore"/></svg></button><button class="ib"><svg><use href="#i-more"/></svg></button></div>
+          </div>
+          <div class="a-flow">
+            <div class="a-node"><span class="ni" style="color:var(--blue)"><svg><use href="#i-nas"/></svg></span><div style="min-width:0"><b>fnos（本地）</b><span>资料</span></div></div>
+            <div class="a-arrow"><svg width="36" height="12"><use href="#i-arrow"/></svg></div>
+            <div class="a-node"><span class="ni" style="color:#ff8a00"><svg><use href="#i-cloud"/></svg></span><div style="min-width:0"><b>115</b><span>/加密备份仓库</span></div></div>
+            <div class="a-next">下次运行<b class="num">每周日 03:00</b></div>
+          </div>
+        </div>
+
+        <!-- 警告 -->
+        <div class="a-card">
+          <div class="a-top">
+            <div class="a-ico" style="background:var(--orange-50);color:var(--orange)"><svg><use href="#i-folder"/></svg></div>
+            <div style="min-width:0">
+              <div class="a-ttl">Docker 配置<span class="tag warn"><span class="dot"></span>部分文件跳过</span></div>
+              <div class="a-meta"><span>上次 <b class="num">11-08 04:00</b></span><span>3 个文件无读取权限</span><a class="btn txt" style="height:auto">查看详情</a></div>
+            </div>
+            <div class="a-acts"><button class="ib"><svg><use href="#i-play"/></svg></button><button class="ib"><svg><use href="#i-restore"/></svg></button><button class="ib"><svg><use href="#i-more"/></svg></button></div>
+          </div>
+          <div class="a-flow">
+            <div class="a-node"><span class="ni" style="color:var(--blue)"><svg><use href="#i-nas"/></svg></span><div style="min-width:0"><b>fnos（本地）</b><span>docker/compose</span></div></div>
+            <div class="a-arrow"><svg width="36" height="12"><use href="#i-arrow"/></svg></div>
+            <div class="a-node"><span class="ni" style="color:#13c2c2"><svg><use href="#i-cloud"/></svg></span><div style="min-width:0"><b>WebDAV</b><span>openlist/backup</span></div></div>
+            <div class="a-next">下次运行<b class="num">明天 04:00</b></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 方案 B ======================= -->
+<section class="plan" id="p-b">
+  <div class="desc">
+    <b>方案 B · 概览仪表盘</b>：顶部一块「保护状态」横幅，一眼看出备份是否健康；下方任务改成飞牛「存储管理 / 任务列表」那样的表格，每行带最近 10 次结果的小柱条。任务多了以后也好扫。
+    <div class="tags"><span>改造成本：中</span><span>适合：任务数较多的用户</span><span>手机端需单独改成卡片</span></div>
+  </div>
+  <div class="win">
+    <div class="win-bar"><span class="logo"><svg width="12" height="12" style="color:#fff"><use href="#i-lock"/></svg></span>蛋壳备份<span class="ctrl">— ▢ ✕</span></div>
+    <div class="app">
+      <aside class="side">
+        <div class="side-grp">概览</div>
+        <div class="nav on"><svg><use href="#i-folder"/></svg>备份任务</div>
+        <div class="nav"><svg><use href="#i-layers"/></svg>快照</div>
+        <div class="nav"><svg><use href="#i-clock"/></svg>历史</div>
+        <div class="side-grp">设置</div>
+        <div class="nav"><svg><use href="#i-cloud"/></svg>云端存储</div>
+        <div class="nav"><svg><use href="#i-gear"/></svg>通用设置</div>
+        <div class="side-foot">restic 0.18.0<br>rclone v1.75.2</div>
+      </aside>
+      <main class="main">
+        <div class="b-hero">
+          <div class="b-ring">
+            <svg viewBox="0 0 96 96"><circle cx="48" cy="48" r="42" fill="none" stroke="#dce7ff" stroke-width="8"/><circle cx="48" cy="48" r="42" fill="none" stroke="#18a058" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="0"/></svg>
+            <div class="c" style="color:var(--green)"><svg><use href="#i-shield"/></svg></div>
+          </div>
+          <div style="position:relative;z-index:1">
+            <h2>数据保护正常</h2>
+            <p>3 个任务全部运行正常 · 最近一次成功备份于 <b class="num">今天 03:04</b></p>
+            <div style="margin-top:12px;display:flex;gap:8px"><button class="btn pri"><svg width="14" height="14"><use href="#i-plus"/></svg>创建新任务</button><button class="btn"><svg width="14" height="14"><use href="#i-play"/></svg>全部立即备份</button></div>
+          </div>
+          <div class="b-kpis">
+            <div class="b-kpi"><div class="k">已保护数据</div><div class="v num">433.5<small>GB</small></div></div>
+            <div class="b-kpi"><div class="k">云端快照</div><div class="v num">11<small>个</small></div></div>
+            <div class="b-kpi"><div class="k">近 30 天成功率</div><div class="v num" style="color:var(--green)">96.7<small>%</small></div></div>
+          </div>
+        </div>
+
+        <div class="b-panel">
+          <div class="b-ph">
+            <h3>备份任务</h3>
+            <div class="b-seg"><span class="on">全部 3</span><span>运行中 1</span><span>异常 0</span></div>
+            <div class="b-search"><svg width="14" height="14"><use href="#i-search"/></svg>搜索任务</div>
+          </div>
+          <table class="b-tbl">
+            <thead><tr><th>任务</th><th>备份路线</th><th>状态</th><th>最近 10 次</th><th>下次运行</th><th style="text-align:right">操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="b-name"><span class="ic" style="background:var(--blue-50);color:var(--blue)"><svg><use href="#i-folder"/></svg></span><div><b>相册资料 → 天翼</b><small>相册、资料 · 433.5 GB</small></div></div></td>
+                <td><div class="b-route"><span class="chip">fnos</span><svg width="22" height="10" style="color:var(--t4)"><use href="#i-arrow"/></svg><span class="chip">天翼云盘</span></div></td>
+                <td><div class="b-mini"><div class="t"><span><span class="spin" style="width:10px;height:10px;vertical-align:-1px"></span> 备份中</span><b class="num">45%</b></div><div class="bar"><i style="width:45%"></i></div></div></td>
+                <td><div class="b-spark"><i style="height:60%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:80%"></i><i style="height:65%"></i><i class="f" style="height:30%"></i><i style="height:75%"></i><i style="height:60%"></i><i style="height:90%"></i><i class="n" style="height:100%"></i></div></td>
+                <td class="num">明天 03:00</td>
+                <td style="text-align:right"><button class="btn" style="height:28px">停止</button><button class="ib"><svg><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="b-name"><span class="ic" style="background:var(--green-50);color:var(--green)"><svg><use href="#i-folder"/></svg></span><div><b>115 网盘 · 资料</b><small>资料 · 86.2 GB</small></div></div></td>
+                <td><div class="b-route"><span class="chip">fnos</span><svg width="22" height="10" style="color:var(--t4)"><use href="#i-arrow"/></svg><span class="chip">115</span></div></td>
+                <td><span class="tag ok"><span class="dot"></span>成功 · 10-29 03:04</span></td>
+                <td><div class="b-spark"><i style="height:40%"></i><i style="height:45%"></i><i style="height:42%"></i><i style="height:50%"></i><i style="height:44%"></i><i style="height:48%"></i><i style="height:41%"></i><i style="height:46%"></i><i style="height:52%"></i><i style="height:47%"></i></div></td>
+                <td class="num">每周日 03:00</td>
+                <td style="text-align:right"><button class="ib"><svg><use href="#i-play"/></svg></button><button class="ib"><svg><use href="#i-restore"/></svg></button><button class="ib"><svg><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="b-name"><span class="ic" style="background:var(--orange-50);color:var(--orange)"><svg><use href="#i-folder"/></svg></span><div><b>Docker 配置</b><small>docker/compose · 1.2 GB</small></div></div></td>
+                <td><div class="b-route"><span class="chip">fnos</span><svg width="22" height="10" style="color:var(--t4)"><use href="#i-arrow"/></svg><span class="chip">WebDAV</span></div></td>
+                <td><span class="tag warn"><span class="dot"></span>3 个文件跳过</span></td>
+                <td><div class="b-spark"><i style="height:30%"></i><i style="height:32%"></i><i style="height:28%"></i><i style="height:35%"></i><i style="height:30%"></i><i style="height:33%"></i><i style="height:31%"></i><i style="height:29%"></i><i style="height:34%"></i><i style="height:30%;background:var(--orange)"></i></div></td>
+                <td class="num">明天 04:00</td>
+                <td style="text-align:right"><button class="ib"><svg><use href="#i-play"/></svg></button><button class="ib"><svg><use href="#i-restore"/></svg></button><button class="ib"><svg><use href="#i-more"/></svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 方案 C ======================= -->
+<section class="plan" id="p-c">
+  <div class="desc">
+    <b>方案 C · 主从双栏</b>：仿飞牛「文件管理 / 下载」的主从布局。左侧窄列选任务，右侧展示该任务的完整画像：路线、关键数据、最近运行时间线、快照增长柱图。信息最丰富，查看任务时基本不用再弹窗。
+    <div class="tags"><span>改造成本：高</span><span>适合：想做出差异化</span><span>手机端退化为「列表 → 详情页」</span></div>
+  </div>
+  <div class="win">
+    <div class="win-bar"><span class="logo"><svg width="12" height="12" style="color:#fff"><use href="#i-lock"/></svg></span>蛋壳备份<span class="ctrl">— ▢ ✕</span></div>
+    <div class="app">
+      <aside class="side" style="width:180px">
+        <div class="nav on"><svg><use href="#i-folder"/></svg>备份</div>
+        <div class="nav"><svg><use href="#i-layers"/></svg>快照</div>
+        <div class="nav"><svg><use href="#i-clock"/></svg>历史</div>
+        <div class="side-foot">restic 0.18.0<br>rclone v1.75.2</div>
+      </aside>
+      <main class="main" style="padding:20px 24px">
+        <div class="c-wrap">
+          <div class="c-list">
+            <div class="c-lh">我的任务 · 3<span class="sp"></span><button class="ib" style="width:26px;height:26px"><svg><use href="#i-search"/></svg></button></div>
+            <div class="c-item on">
+              <span class="ic" style="color:var(--blue)"><svg><use href="#i-folder"/></svg><span class="st" style="background:var(--blue)"></span></span>
+              <div style="flex:1;min-width:0"><b>相册资料 → 天翼</b><small>备份中 · 45%</small><div class="bar mb"><i style="width:45%"></i></div></div>
+            </div>
+            <div class="c-item">
+              <span class="ic" style="color:var(--green)"><svg><use href="#i-folder"/></svg><span class="st" style="background:var(--green)"></span></span>
+              <div style="flex:1;min-width:0"><b>115 网盘 · 资料</b><small>10-29 03:04 成功 · 每周日</small></div>
+            </div>
+            <div class="c-item">
+              <span class="ic" style="color:var(--orange)"><svg><use href="#i-folder"/></svg><span class="st" style="background:var(--orange)"></span></span>
+              <div style="flex:1;min-width:0"><b>Docker 配置</b><small>11-08 04:00 · 3 个文件跳过</small></div>
+            </div>
+            <div class="c-add"><svg width="14" height="14"><use href="#i-plus"/></svg>创建新任务</div>
+          </div>
+
+          <div class="c-detail">
+            <div class="c-box">
+              <div class="c-dh">
+                <span class="ic"><svg><use href="#i-folder"/></svg></span>
+                <div><h2>相册资料 → 天翼 <span class="tag run"><span class="spin" style="width:10px;height:10px"></span>备份中 45%</span></h2><p>迁移自 Backrest · 创建于 10-24 · 每日 03:00 自动运行</p></div>
+                <span class="sp"></span>
+                <button class="btn"><svg width="14" height="14"><use href="#i-restore"/></svg>还原</button>
+                <button class="btn">停止</button>
+                <button class="ib"><svg><use href="#i-more"/></svg></button>
+              </div>
+              <div class="bar" style="margin-top:16px"><i style="width:45%"></i></div>
+              <div class="c-route">
+                <div class="n"><span class="ni" style="color:var(--blue)"><svg><use href="#i-nas"/></svg></span><div style="min-width:0"><b>fnos（本地）</b><span>/vol1/1000/相册 · /vol1/1000/资料</span></div></div>
+                <div class="lk"><svg><use href="#i-arrow"/></svg><span>AES-256 加密</span></div>
+                <div class="n"><span class="ni" style="color:#4a90ff"><svg><use href="#i-cloud"/></svg></span><div style="min-width:0"><b>天翼云盘</b><span>rclone:ol:天翼云盘/飞牛加密备份</span></div></div>
+              </div>
+              <div class="c-kv">
+                <div><div class="k">源数据</div><div class="v num">433.5 GB</div></div>
+                <div><div class="k">文件数</div><div class="v num">281,186</div></div>
+                <div><div class="k">快照</div><div class="v num">7 个</div></div>
+                <div><div class="k">下次运行</div><div class="v num">明天 03:00</div></div>
+              </div>
+            </div>
+
+            <div class="c-row2">
+              <div class="c-box">
+                <div class="c-bt">最近运行<span class="sp"></span><a class="btn txt" style="height:auto;font-weight:400">全部历史</a></div>
+                <div class="c-tl">
+                  <div class="c-ev run"><div class="t"><b class="num">今天 14:02</b><span class="tag run">进行中</span></div><div class="m">手动触发 · 已处理 128,402 项</div></div>
+                  <div class="c-ev"><div class="t"><b class="num">11-02 03:00</b><span class="tag ok">成功</span></div><div class="m">新增 3,120 项 · 24.2 GB · 用时 4 时 40 分</div></div>
+                  <div class="c-ev"><div class="t"><b class="num">10-30 14:44</b><span class="tag ok">成功</span></div><div class="m">无变化 · 用时 3 分</div></div>
+                  <div class="c-ev warn"><div class="t"><b class="num">10-30 08:03</b><span class="tag warn">警告</span></div><div class="m">网络中断后自动重试成功</div></div>
+                </div>
+              </div>
+              <div class="c-box">
+                <div class="c-bt">仓库容量变化<span class="sp"></span><span style="font-size:12px;color:var(--t3);font-weight:400">近 7 个快照</span></div>
+                <div class="c-chart">
+                  <div class="col dim"><i style="height:62%"></i></div>
+                  <div class="col dim"><i style="height:62%"></i></div>
+                  <div class="col dim"><i style="height:66%"></i></div>
+                  <div class="col dim"><i style="height:74%"></i></div>
+                  <div class="col dim"><i style="height:74%"></i></div>
+                  <div class="col dim"><i style="height:75%"></i></div>
+                  <div class="col"><i style="height:90%"></i></div>
+                </div>
+                <div class="c-cx num"><span>10-26</span><span>10-26</span><span>10-29</span><span>10-30</span><span>10-30</span><span>10-30</span><span>11-02</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('.switcher button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.switcher button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.plan').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.p));
+  });
+</script>
+</body>
+</html>

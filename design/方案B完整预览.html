@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案B完整预览</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --blue:#3370ff; --blue-h:#2b5fe0; --blue-50:#eef4ff; --blue-100:#dce7ff;
+    --green:#18a058; --green-50:#e8f7ee;
+    --orange:#f08a24; --orange-50:#fff3e6;
+    --red:#e5484d; --red-50:#fdecec;
+    --purple:#7b61ff; --purple-50:#f1ecff;
+    --t1:#1f2329; --t2:#4e5969; --t3:#86909c; --t4:#c0c6cf;
+    --line:#eef0f3; --line2:#e5e6eb; --bg:#f2f4f7;
+  }
+  body { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:#dfe3e9; color:var(--t1); font-size:14px; }
+  button { font-family:inherit; }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size:12px; }
+  .sp { flex:1; }
+  a { color:var(--blue); cursor:pointer; text-decoration:none; }
+
+  /* ===== 预览跳转条（不属于应用 UI） ===== */
+  .jump { position:sticky; top:0; z-index:200; background:#1f2937; color:#cbd5e1; padding:8px 16px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; }
+  .jump b { color:#fff; font-size:13px; margin-right:6px; }
+  .jump .g { color:#6b7280; margin:0 4px 0 10px; }
+  .jump button { background:rgba(255,255,255,.08); color:#e5e7eb; border:1px solid rgba(255,255,255,.18); border-radius:5px; padding:4px 10px; cursor:pointer; font-size:12px; }
+  .jump button:hover { background:var(--blue); border-color:var(--blue); }
+
+  /* ===== 窗口 ===== */
+  .win { max-width:1320px; margin:16px auto 40px; border-radius:12px; overflow:hidden; box-shadow:0 12px 40px rgba(15,23,42,.18); background:var(--bg); position:relative; }
+  .win-bar { height:40px; background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:center; padding:0 16px; gap:10px; font-size:13px; color:var(--t2); }
+  .win-bar .logo { width:20px; height:20px; border-radius:6px; background:linear-gradient(135deg,#5b8cff,#3370ff); display:flex; align-items:center; justify-content:center; color:#fff; }
+  .win-bar .ctrl { margin-left:auto; display:flex; gap:14px; color:var(--t3); }
+  .app { display:flex; height:820px; }
+  .side { width:200px; flex:none; background:#fff; border-right:1px solid var(--line); padding:14px 10px; display:flex; flex-direction:column; }
+  .nav { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; color:var(--t2); cursor:pointer; margin-bottom:2px; user-select:none; }
+  .nav:hover { background:#f5f7fa; }
+  .nav.on { background:var(--blue-50); color:var(--blue); font-weight:500; }
+  .nav svg { width:18px; height:18px; flex:none; }
+  .nav .cnt { margin-left:auto; font-size:12px; color:var(--t3); font-weight:400; }
+  .nav.on .cnt { color:var(--blue); }
+  .nav .cnt.run { background:var(--blue); color:#fff; border-radius:9px; padding:0 6px; line-height:17px; }
+  .side-foot { margin-top:auto; padding:10px 12px 2px; font-size:11px; color:var(--t4); line-height:1.8; }
+  .main { flex:1; min-width:0; overflow:auto; padding:24px 32px 40px; }
+
+  /* ===== 通用组件 ===== */
+  .head { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .head h1 { font-size:20px; font-weight:600; }
+  .head .sub { font-size:13px; color:var(--t3); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:32px; padding:0 14px; border-radius:6px; font-size:13px; cursor:pointer; border:1px solid #dcdfe6; background:#fff; color:var(--t1); white-space:nowrap; }
+  .btn:hover { border-color:var(--blue); color:var(--blue); }
+  .btn svg { width:14px; height:14px; }
+  .btn.pri { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .btn.pri:hover { background:var(--blue-h); color:#fff; }
+  .btn.pri:disabled { background:#a9c1ff; border-color:#a9c1ff; cursor:not-allowed; }
+  .btn.danger { color:var(--red); }
+  .btn.danger:hover { border-color:var(--red); }
+  .btn.danger-fill { background:var(--red); border-color:var(--red); color:#fff; }
+  .btn.sm { height:28px; padding:0 10px; font-size:12px; }
+  .btn.txt { border:none; background:transparent; color:var(--blue); padding:0 4px; height:auto; }
+  .ib { width:30px; height:30px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; color:var(--t2); cursor:pointer; border:none; background:transparent; vertical-align:middle; }
+  .ib:hover { background:#f2f3f5; color:var(--blue); }
+  .ib svg { width:16px; height:16px; }
+  .tag { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px; border-radius:4px; font-size:12px; white-space:nowrap; font-weight:400; }
+  .tag.ok { background:var(--green-50); color:var(--green); }
+  .tag.run { background:var(--blue-50); color:var(--blue); }
+  .tag.warn { background:var(--orange-50); color:var(--orange); }
+  .tag.err { background:var(--red-50); color:var(--red); }
+  .tag.gray { background:#f2f3f5; color:var(--t2); }
+  .tag.pur { background:var(--purple-50); color:var(--purple); }
+  .dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
+  .bar { height:6px; background:var(--blue-100); border-radius:3px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--blue); border-radius:3px; position:relative; overflow:hidden; }
+  .bar i::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent); animation:sh 1.6s infinite; }
+  @keyframes sh { from { transform:translateX(-100%); } to { transform:translateX(100%); } }
+  .spin { width:11px; height:11px; border:2px solid var(--blue-100); border-top-color:var(--blue); border-radius:50%; animation:rot .9s linear infinite; display:inline-block; flex:none; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+  .panel { background:#fff; border-radius:12px; overflow:hidden; margin-bottom:16px; }
+  .ph { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid var(--line); }
+  .ph h3 { font-size:15px; font-weight:600; }
+  .seg { display:inline-flex; background:#f2f3f5; border-radius:6px; padding:2px; }
+  .seg span { padding:3px 12px; border-radius:4px; font-size:12px; color:var(--t2); cursor:pointer; user-select:none; display:inline-flex; gap:4px; align-items:center; }
+  .seg span.on { background:#fff; color:var(--t1); box-shadow:0 1px 2px rgba(0,0,0,.08); font-weight:500; }
+  .seg.lg span { padding:5px 16px; font-size:13px; }
+  .search { height:30px; width:200px; border:1px solid var(--line2); border-radius:6px; display:flex; align-items:center; gap:6px; padding:0 10px; color:var(--t4); font-size:12px; background:#fff; }
+  .search svg { width:14px; height:14px; }
+  .tbl { width:100%; border-collapse:collapse; }
+  .tbl th { text-align:left; font-weight:400; font-size:12px; color:var(--t3); padding:9px 20px; background:#fafbfc; white-space:nowrap; }
+  .tbl td { padding:13px 20px; border-top:1px solid var(--line); vertical-align:middle; font-size:13px; }
+  .tbl tbody tr { cursor:pointer; }
+  .tbl tbody tr:hover td { background:#f8faff; }
+  .r { text-align:right; }
+  .dim { color:var(--t3); }
+  .ellip { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chip { background:#f5f7fa; border-radius:4px; padding:2px 8px; white-space:nowrap; font-size:12px; color:var(--t2); }
+  .empty { padding:48px 0; text-align:center; color:var(--t3); font-size:13px; }
+  .empty b { display:block; color:var(--t2); font-size:14px; font-weight:500; margin-bottom:4px; }
+
+  /* KPI 条 */
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px; }
+  .kpi { background:#fff; border-radius:12px; padding:16px 18px; display:flex; align-items:center; gap:14px; }
+  .kpi .ic { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .kpi .ic svg { width:20px; height:20px; }
+  .kpi .k { font-size:12px; color:var(--t3); }
+  .kpi .v { font-size:20px; font-weight:600; margin-top:2px; }
+  .kpi .v small { font-size:12px; font-weight:400; color:var(--t3); margin-left:3px; }
+
+  /* 备份任务 hero */
+  .hero { background:linear-gradient(120deg,#ffffff 0%,#f4f8ff 60%,#e9f1ff 100%); border-radius:12px; padding:22px 26px; display:flex; align-items:center; gap:26px; margin-bottom:16px; position:relative; overflow:hidden; }
+  .hero::after { content:""; position:absolute; right:-60px; top:-60px; width:240px; height:240px; border-radius:50%; background:radial-gradient(circle, rgba(51,112,255,.10), transparent 70%); pointer-events:none; }
+  .ring { width:96px; height:96px; flex:none; position:relative; }
+  .ring > svg { width:96px; height:96px; transform:rotate(-90deg); }
+  .ring .c { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--green); }
+  .ring .c svg { width:30px; height:30px; }
+  .hero h2 { font-size:20px; font-weight:600; }
+  .hero p { font-size:13px; color:var(--t2); margin-top:6px; }
+  .hero-kpis { margin-left:auto; display:flex; position:relative; z-index:1; }
+  .hero-kpi { padding:0 26px; border-left:1px solid #dfe6f3; }
+  .hero-kpi:first-child { border-left:none; }
+  .hero-kpi .k { font-size:12px; color:var(--t3); }
+  .hero-kpi .v { font-size:22px; font-weight:600; margin-top:4px; }
+  .hero-kpi .v small { font-size:12px; font-weight:400; color:var(--t3); margin-left:2px; }
+  .tname { display:flex; align-items:center; gap:12px; }
+  .tname .ic { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .tname .ic svg { width:20px; height:20px; }
+  .tname b { font-weight:500; display:block; }
+  .tname small { font-size:12px; color:var(--t3); }
+  .route { display:flex; align-items:center; gap:6px; }
+  .route svg { color:var(--t4); }
+  .spark { display:flex; gap:3px; align-items:flex-end; height:22px; }
+  .spark i { width:6px; border-radius:2px; background:var(--green); opacity:.85; }
+  .spark i.f { background:var(--red); } .spark i.w { background:var(--orange); } .spark i.n { background:#e5e6eb; }
+  .mini { width:150px; }
+  .mini .t { font-size:12px; color:var(--blue); margin-bottom:5px; display:flex; justify-content:space-between; align-items:center; gap:4px; }
+
+  /* 更多菜单 */
+  .menu { position:absolute; z-index:60; background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,.14); padding:4px; min-width:140px; }
+  .menu div { padding:7px 12px; border-radius:5px; font-size:13px; cursor:pointer; display:flex; align-items:center; gap:8px; }
+  .menu div:hover { background:#f5f7fa; }
+  .menu div.red { color:var(--red); }
+  .menu hr { border:none; border-top:1px solid var(--line); margin:4px 0; }
+  .menu svg { width:14px; height:14px; color:var(--t3); }
+
+  /* 快照 · 仓库 */
+  .running-strip { background:#fff; border:1px solid var(--blue-100); border-radius:10px; padding:10px 16px; display:flex; align-items:center; gap:12px; margin-bottom:16px; font-size:13px; }
+  .running-strip .bar { flex:1; max-width:320px; }
+  .repo-h { display:flex; align-items:center; gap:14px; padding:16px 20px; cursor:pointer; }
+  .repo-h:hover { background:#fafbfd; }
+  .repo-ic { width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .repo-ic svg { width:22px; height:22px; }
+  .repo-n { font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .repo-p { color:var(--t3); margin-top:3px; }
+  .repo-stats { display:flex; gap:28px; margin-left:auto; margin-right:10px; }
+  .repo-stats div { text-align:right; }
+  .repo-stats .k { font-size:12px; color:var(--t3); }
+  .repo-stats .v { font-size:14px; font-weight:600; margin-top:2px; }
+  .chev { color:var(--t3); transition:transform .15s; }
+  .chev svg { width:16px; height:16px; }
+  .open .chev { transform:rotate(90deg); }
+  .grp-h { display:flex; align-items:center; gap:10px; padding:12px 20px 8px; border-top:1px solid var(--line); font-size:13px; }
+  .grp-h b { font-weight:500; }
+  .cdot { width:8px; height:8px; border-radius:50%; }
+  .diff { display:inline-flex; gap:4px; }
+  .diff span { font-size:11px; padding:0 5px; border-radius:3px; line-height:18px; }
+  .diff .a { background:var(--green-50); color:var(--green); }
+  .diff .m { background:var(--blue-50); color:var(--blue); }
+  .diff .d { background:var(--red-50); color:var(--red); }
+  .diff .z { background:#f2f3f5; color:var(--t3); }
+  .repo-foot { display:flex; align-items:center; padding:10px 20px; border-top:1px solid var(--line); font-size:12px; color:var(--t3); background:#fafbfc; }
+
+  /* 面包屑 */
+  .crumb { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--t3); margin-bottom:14px; }
+  .crumb a { color:var(--t2); }
+  .crumb a:hover { color:var(--blue); }
+  .crumb b { color:var(--t1); font-weight:500; }
+
+  /* 快照详情 */
+  .sd-hero { background:#fff; border-radius:12px; padding:20px 24px; margin-bottom:16px; display:flex; align-items:center; gap:18px; }
+  .sd-hero .ic { width:52px; height:52px; border-radius:12px; background:linear-gradient(135deg,#8a7bff,#7b61ff); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(123,97,255,.28); flex:none; }
+  .sd-hero .ic svg { width:26px; height:26px; }
+  .sd-hero h2 { font-size:18px; font-weight:600; display:flex; align-items:center; gap:10px; }
+  .sd-hero p { font-size:12px; color:var(--t3); margin-top:5px; display:flex; gap:14px; }
+  .sd-kv { display:flex; margin-left:auto; }
+  .sd-kv div { padding:0 22px; border-left:1px solid var(--line); }
+  .sd-kv div:first-child { border-left:none; }
+  .sd-kv .k { font-size:12px; color:var(--t3); }
+  .sd-kv .v { font-size:16px; font-weight:600; margin-top:3px; }
+  .fpath { display:flex; align-items:center; gap:4px; font-size:13px; flex-wrap:wrap; }
+  .fpath a { color:var(--t2); padding:2px 4px; border-radius:4px; }
+  .fpath a:hover { background:#f2f3f5; color:var(--blue); }
+  .fpath a.cur { color:var(--t1); font-weight:500; }
+  .fpath .sl { color:var(--t4); }
+  .cbx { width:16px; height:16px; border-radius:4px; border:1.5px solid #c9cdd4; display:inline-flex; align-items:center; justify-content:center; flex:none; cursor:pointer; background:#fff; vertical-align:middle; }
+  .cbx.on { background:var(--blue); border-color:var(--blue); }
+  .cbx.on::after { content:""; width:8px; height:4px; border:2px solid #fff; border-top:none; border-right:none; transform:rotate(-45deg) translate(1px,-1px); }
+  .cbx.half { background:var(--blue); border-color:var(--blue); }
+  .cbx.half::after { content:""; width:8px; height:2px; background:#fff; border-radius:1px; }
+  .fname { display:flex; align-items:center; gap:10px; }
+  .fname svg { flex:none; }
+  .selbar { position:sticky; bottom:0; display:flex; align-items:center; gap:12px; padding:12px 20px; background:#fff; border-top:1px solid var(--line); box-shadow:0 -4px 12px rgba(15,23,42,.04); }
+  .selbar .chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .selbar .chips span { background:var(--blue-50); color:var(--blue); border-radius:4px; padding:2px 8px; font-size:12px; display:inline-flex; gap:6px; align-items:center; }
+  .selbar .chips i { font-style:normal; cursor:pointer; opacity:.7; }
+
+  /* 还原向导 */
+  .stepper { display:flex; align-items:center; padding:20px 40px; background:#fff; border-radius:12px; margin-bottom:16px; }
+  .st { display:flex; align-items:center; gap:10px; flex:none; }
+  .st .n { width:28px; height:28px; border-radius:50%; background:#f2f3f5; color:var(--t3); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; }
+  .st .l b { display:block; font-size:13px; font-weight:500; color:var(--t3); }
+  .st .l small { font-size:12px; color:var(--t4); }
+  .st.on .n { background:var(--blue); color:#fff; box-shadow:0 0 0 4px var(--blue-50); }
+  .st.on .l b { color:var(--t1); }
+  .st.done .n { background:var(--blue-50); color:var(--blue); }
+  .st.done .l b { color:var(--t2); }
+  .st.done .l small { color:var(--t3); }
+  .st-line { flex:1; height:2px; background:#eef0f3; margin:0 14px; border-radius:1px; }
+  .st-line.done { background:var(--blue); }
+  .wz-body { background:#fff; border-radius:12px; padding:22px 26px; min-height:360px; }
+  .wz-title { font-size:16px; font-weight:600; margin-bottom:4px; }
+  .wz-hint { font-size:13px; color:var(--t3); margin-bottom:18px; }
+  .wz-foot { display:flex; align-items:center; gap:10px; padding:16px 0 0; }
+  .opt-list { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  .opt { display:flex; align-items:center; gap:14px; padding:14px 16px; border:1px solid var(--line2); border-radius:10px; cursor:pointer; transition:.15s; background:#fff; text-align:left; }
+  .opt:hover { border-color:var(--blue); }
+  .opt.on { border-color:var(--blue); background:#f7faff; box-shadow:0 0 0 3px var(--blue-50); }
+  .opt .ic { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .opt .ic svg { width:20px; height:20px; }
+  .opt b { display:block; font-weight:500; font-size:14px; }
+  .opt small { font-size:12px; color:var(--t3); display:block; margin-top:3px; }
+  .rd { width:16px; height:16px; border-radius:50%; border:1.5px solid #c9cdd4; flex:none; margin-left:auto; position:relative; }
+  .on .rd { border-color:var(--blue); }
+  .on .rd::after { content:""; position:absolute; inset:3px; border-radius:50%; background:var(--blue); }
+  .snap-tl { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .snap-tl .row { display:flex; align-items:center; gap:14px; padding:12px 16px; border-top:1px solid var(--line); cursor:pointer; }
+  .snap-tl .row:first-child { border-top:none; }
+  .snap-tl .row:hover { background:#f8faff; }
+  .snap-tl .row.on { background:var(--blue-50); }
+  .snap-tl .t { font-weight:600; width:110px; }
+  .pick-btn { display:flex; align-items:center; gap:14px; width:100%; padding:18px; border:1.5px dashed #c9d6f5; background:#f8faff; border-radius:10px; cursor:pointer; color:var(--blue); font-size:14px; text-align:left; }
+  .pick-btn:hover { border-color:var(--blue); }
+  .pick-btn .ic { width:40px; height:40px; border-radius:10px; background:#fff; display:flex; align-items:center; justify-content:center; }
+  .pick-btn small { display:block; color:var(--t3); font-size:12px; margin-top:2px; }
+  .tray { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+  .tray span { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line2); border-radius:6px; padding:5px 10px; font-size:13px; }
+  .tray i { font-style:normal; color:var(--t3); cursor:pointer; }
+  .summary { margin-top:20px; background:#f7f8fa; border-radius:10px; padding:14px 18px; display:flex; align-items:center; gap:14px; font-size:13px; }
+  .summary .node { background:#fff; border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; }
+  .summary .node.hi { background:var(--blue-50); color:var(--blue); font-weight:500; }
+  .summary svg { color:var(--t4); }
+
+  /* 表单 */
+  .fld { display:block; margin-bottom:16px; }
+  .fld > .lb { font-size:13px; color:var(--t2); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+  .fld > .lb em { font-style:normal; color:var(--t3); font-size:12px; }
+  .inp { width:100%; height:34px; border:1px solid #dcdfe6; border-radius:6px; padding:0 11px; font-size:13px; color:var(--t1); background:#fff; display:flex; align-items:center; gap:8px; outline:none; font-family:inherit; }
+  .inp:focus, .inp.focus { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-50); }
+  .inp .ph { color:var(--t4); }
+  .inp svg { width:15px; height:15px; color:var(--t3); flex:none; }
+  textarea.inp { height:auto; padding:8px 11px; resize:vertical; line-height:1.6; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .inline { display:flex; gap:8px; align-items:center; }
+  .chips-sel { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips-sel span { border:1px solid var(--line2); border-radius:6px; padding:5px 12px; font-size:13px; cursor:pointer; user-select:none; color:var(--t2); }
+  .chips-sel span.on { border-color:var(--blue); background:var(--blue-50); color:var(--blue); }
+  .note { font-size:12px; color:var(--t3); margin-top:6px; line-height:1.6; }
+  .note.warn { color:var(--orange); }
+  .sec { border:1px solid var(--line); border-radius:10px; margin-bottom:16px; }
+  .sec-h { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); }
+  .sec-h .n { width:22px; height:22px; border-radius:6px; background:var(--blue-50); color:var(--blue); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; }
+  .sec-h b { font-size:14px; font-weight:600; }
+  .sec-b { padding:16px; }
+  .src-list { display:flex; flex-direction:column; gap:8px; }
+  .src-row { display:flex; align-items:center; gap:10px; padding:9px 12px; background:#f7f8fa; border-radius:8px; font-size:13px; }
+  .src-row .x { margin-left:auto; color:var(--t3); cursor:pointer; }
+  .sw { width:34px; height:20px; border-radius:10px; background:#c9cdd4; position:relative; cursor:pointer; flex:none; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .sw.on { background:var(--blue); }
+  .sw.on::after { left:16px; }
+  .sel { position:relative; }
+  .sel .inp { cursor:pointer; }
+  .sel-drop { position:absolute; left:0; right:0; top:38px; background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,.14); padding:4px; z-index:5; }
+  .sel-drop .o { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+  .sel-drop .o:hover { background:#f5f7fa; }
+  .sel-drop .o.on { color:var(--blue); background:var(--blue-50); }
+  .sel-drop .o small { color:var(--t3); margin-left:auto; }
+  .sel-drop .add { border-top:1px solid var(--line); margin-top:4px; padding-top:8px; color:var(--blue); }
+
+  /* 弹窗 */
+  .mask { position:absolute; inset:40px 0 0 0; background:rgba(15,23,42,.38); display:flex; align-items:center; justify-content:center; z-index:80; }
+  .mask.anim { animation:fade .15s; }
+  .mask.drawer { justify-content:flex-end; align-items:stretch; }
+  @keyframes fade { from { opacity:0; } }
+  .modal { background:#fff; border-radius:12px; width:520px; max-height:calc(100% - 40px); display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(15,23,42,.25); }
+  .anim > .modal { animation:pop .18s; }
+  @keyframes pop { from { transform:translateY(8px) scale(.98); opacity:0; } }
+  .modal.w640 { width:640px; } .modal.w720 { width:720px; } .modal.w420 { width:420px; }
+  .drawer .modal { border-radius:12px 0 0 12px; width:600px; max-height:none; }
+  .drawer.anim .modal { animation:slide .2s; }
+  @keyframes slide { from { transform:translateX(40px); opacity:0; } }
+  .mh { display:flex; align-items:center; gap:10px; padding:16px 20px; border-bottom:1px solid var(--line); }
+  .mh h3 { font-size:16px; font-weight:600; }
+  .mh .ib { margin-left:auto; }
+  .mb { padding:20px; overflow:auto; flex:1; }
+  .mf { display:flex; align-items:center; gap:10px; padding:14px 20px; border-top:1px solid var(--line); justify-content:flex-end; }
+  .mf .left { margin-right:auto; font-size:12px; color:var(--t3); }
+
+  /* 目录选择 */
+  .dir-crumb { display:flex; align-items:center; gap:4px; padding:10px 20px; background:#fafbfc; border-bottom:1px solid var(--line); font-size:13px; }
+  .dir-list .d { display:flex; align-items:center; gap:10px; padding:10px 20px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; }
+  .dir-list .d:hover { background:#f8faff; }
+  .dir-list .d.on { background:var(--blue-50); }
+  .dir-list .d .go { margin-left:auto; color:var(--t4); }
+
+  /* 云盘类型 */
+  .ctype { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+  .ctype div { border:1px solid var(--line2); border-radius:10px; padding:14px 10px; text-align:center; cursor:pointer; font-size:13px; }
+  .ctype div.on { border-color:var(--blue); background:#f7faff; box-shadow:0 0 0 3px var(--blue-50); color:var(--blue); font-weight:500; }
+  .ctype .lg { width:36px; height:36px; border-radius:10px; margin:0 auto 8px; display:flex; align-items:center; justify-content:center; color:#fff; }
+  .ctype .lg svg { width:20px; height:20px; }
+
+  /* 日志 */
+  .log-sum { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+  .log-sum div { background:#f7f8fa; border-radius:8px; padding:10px 12px; }
+  .log-sum .k { font-size:12px; color:var(--t3); }
+  .log-sum .v { font-size:15px; font-weight:600; margin-top:3px; }
+  .tl { position:relative; padding-left:20px; }
+  .tl::before { content:""; position:absolute; left:5px; top:6px; bottom:6px; width:1px; background:var(--line2); }
+  .tl .e { position:relative; padding-bottom:14px; font-size:13px; }
+  .tl .e:last-child { padding-bottom:0; }
+  .tl .e::before { content:""; position:absolute; left:-20px; top:4px; width:9px; height:9px; border-radius:50%; background:#fff; border:2px solid var(--green); }
+  .tl .e.b::before { border-color:var(--blue); }
+  .tl .e.w::before { border-color:var(--orange); }
+  .tl .e.r::before { border-color:var(--red); }
+  .tl .e i { font-style:normal; color:var(--t3); margin-right:10px; }
+  .raw { background:#1f2329; color:#c9d1d9; border-radius:8px; padding:12px 14px; line-height:1.7; max-height:220px; overflow:auto; white-space:pre; margin-top:10px; }
+  .raw .w { color:#f0b35a; } .raw .g { color:#7ee2a8; }
+
+  /* 历史 */
+  .hist { display:grid; grid-template-columns:1fr 400px; gap:16px; align-items:start; }
+  .day { font-size:12px; color:var(--t3); padding:12px 20px 6px; background:#fafbfc; border-top:1px solid var(--line); display:flex; gap:8px; }
+  .day:first-child { border-top:none; }
+  .hrow { display:flex; align-items:center; gap:12px; padding:12px 20px; border-top:1px solid var(--line); cursor:pointer; }
+  .day + .hrow { border-top:none; }
+  .hrow:hover { background:#f8faff; }
+  .hrow.on { background:var(--blue-50); box-shadow:inset 3px 0 0 var(--blue); }
+  .hrow .hic { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .hrow .hic svg { width:16px; height:16px; }
+  .hrow .hn { font-weight:500; }
+  .hrow .hs { font-size:12px; color:var(--t3); margin-top:2px; }
+  .hrow .ht { margin-left:auto; text-align:right; font-size:12px; color:var(--t3); }
+  .hdet { background:#fff; border-radius:12px; padding:20px; position:sticky; top:0; }
+  .hdet h3 { font-size:16px; font-weight:600; margin:10px 0 4px; }
+  .kv { display:flex; padding:8px 0; border-bottom:1px dashed var(--line); font-size:13px; }
+  .kv .k { width:84px; color:var(--t3); flex:none; }
+  .kv .v { flex:1; word-break:break-all; }
+
+  .toast { position:absolute; top:56px; left:50%; transform:translateX(-50%); background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,.16); padding:10px 16px; display:flex; align-items:center; gap:8px; font-size:13px; z-index:120; animation:pop .2s; }
+  .toast .ok { width:18px; height:18px; border-radius:50%; background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path fill="currentColor" d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.6c.6 0 1.2.3 1.6.7L12 6h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-dir" viewBox="0 0 40 32"><path fill="#4a9eff" d="M2 6a4 4 0 0 1 4-4h9.5l4 4H34a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path fill="#7cb8ff" d="M2 11h36v15a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path fill="#e5e9f0" d="M6 2h9l5 5v15H6V2Z"/><path fill="#c9d2e0" d="M15 2l5 5h-5V2Z"/></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24"><path fill="#ffd8a8" d="M6 2h9l5 5v15H6V2Z"/><path fill="#f59f00" d="M15 2l5 5h-5V2Z"/><path fill="#f08c00" d="m8 18 3-4 2 2.5 1.5-2L17 18z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></g></symbol>
+    <symbol id="i-nas" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M4 9.5h16M4 15h16"/></g><g fill="currentColor"><circle cx="16.5" cy="6.5" r="1"/><circle cx="16.5" cy="12.2" r="1"/><circle cx="16.5" cy="17.8" r="1"/></g></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path fill="currentColor" d="M7 19a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 8.6 4.5 4.5 0 0 1 17.5 19z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></g></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m8.8 12 2.3 2.3 4.2-4.6"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></g></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></g></symbol>
+    <symbol id="i-arrow" viewBox="0 0 40 12"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 6h32" stroke-dasharray="3 3"/><path d="m31 2 5 4-5 4"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-log" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6 3h9l4 4v14H6zM9 11h7M9 15h7M9 7h3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></g></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></g></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></g></symbol>
+  </defs>
+</svg>
+
+<div class="jump" id="jump">
+  <b>方案 B · 完整预览</b>
+  <span class="g">页面</span>
+  <button onclick="go({nav:'tasks'})">备份任务</button>
+  <button onclick="go({nav:'snap',snapView:'list'})">快照</button>
+  <button onclick="go({nav:'snap',snapView:'detail'})">快照浏览</button>
+  <button onclick="startRestore(null)">还原向导</button>
+  <button onclick="go({nav:'hist'})">历史</button>
+  <span class="g">弹窗</span>
+  <button onclick="go({nav:'tasks'});openModal('wizard',{edit:false})">新建任务</button>
+  <button onclick="go({nav:'tasks'});openModal('wizard',{edit:true})">编辑任务</button>
+  <button onclick="go({nav:'tasks'});openModal('wizard',{edit:false});openModal('dirpick')">选择目录</button>
+  <button onclick="go({nav:'tasks'});openModal('wizard',{edit:false});openModal('cloud')">云盘连接</button>
+  <button onclick="go({nav:'tasks'});openModal('log',{task:'t1'})">运行日志</button>
+  <button onclick="startRestore('t1',2);openModal('pick')">选择还原文件</button>
+  <button onclick="go({nav:'tasks'});openModal('confirm',{task:'t3'})">删除确认</button>
+  <span class="g">状态</span>
+  <button onclick="S.empty=!S.empty;go({nav:'tasks'})">切换空状态</button>
+</div>
+
+<div class="win">
+  <div class="win-bar"><span class="logo"><svg width="12" height="12"><use href="#i-lock"/></svg></span>蛋壳备份<span class="ctrl">— ▢ ✕</span></div>
+  <div class="app">
+    <aside class="side" id="side"></aside>
+    <main class="main" id="main"></main>
+  </div>
+  <div id="layer"></div>
+</div>
+
+<script>
+/* =====================================================================
+   Mock 数据
+   ===================================================================== */
+const TASKS = [
+  { id:'t1', name:'相册资料 → 天翼', src:['/vol1/1000/相册','/vol1/1000/资料'], srcLabel:'相册、资料', size:'433.5 GB', files:'281,186',
+    repo:'r1', cloud:'天翼云盘', path:'飞牛加密备份', state:'run', pct:45, done:'196.3 GB', items:'128,402', startAt:'14:02', elapsed:'18 分',
+    last:'11-02 03:00', next:'明天 03:00', sched:'每天 03:00', color:'#3370ff',
+    spark:['ok','ok','ok','ok','ok','f','ok','ok','ok','n'] },
+  { id:'t2', name:'115 网盘 · 资料', src:['/vol1/1000/资料'], srcLabel:'资料', size:'86.2 GB', files:'52,310',
+    repo:'r2', cloud:'115', path:'加密备份仓库', state:'ok', last:'10-29 03:04', lastNote:'新增 1,204 项 · 2.3 GB · 6 分 12 秒',
+    next:'每周日 03:00', sched:'每周日 03:00', color:'#18a058', spark:['ok','ok','ok','ok','ok','ok','ok','ok','ok','ok'] },
+  { id:'t3', name:'Docker 配置', src:['/vol1/1000/docker/compose'], srcLabel:'docker/compose', size:'1.2 GB', files:'3,881',
+    repo:'r3', cloud:'WebDAV', path:'openlist/backup', state:'warn', last:'11-08 04:00', lastNote:'3 个文件无读取权限，已跳过',
+    next:'明天 04:00', sched:'每天 04:00', color:'#f08a24', spark:['ok','ok','ok','ok','ok','ok','ok','ok','ok','w'] },
+];
+const REPOS = [
+  { id:'r1', name:'天翼云盘', uri:'rclone:ol:天翼云盘/飞牛加密备份', type:'天翼', color:'#3370ff', size:'412.8 GB', latest:'11-02 03:00',
+    groups:[
+      { task:'t1', name:'相册资料 → 天翼', path:'/vol1/1000/相册', snaps:[
+        ['s11','11-02 03:00','自动','281,186','433.5 GB',[3120,412,0]],
+        ['s12','10-30 14:44','手动','449,267','409.3 GB',[0,0,0]],
+        ['s13','10-30 08:03','自动','449,257','409.4 GB',[18,2,0]],
+        ['s14','10-30 03:00','自动','449,257','409.4 GB',[219538,6,0]],
+        ['s15','10-29 06:40','自动','229,719','382.8 GB',[20,0,0]],
+        ['s16','10-26 17:00','自动','229,699','382.8 GB',[0,0,0]],
+        ['s17','10-26 11:47','首次','229,699','382.8 GB',null]]},
+      { task:null, name:'未关联任务', path:'/source/相册', snaps:[
+        ['s18','10-25 03:00','plan:album +1','229,669','374.9 GB',[5,0,0]],
+        ['s19','10-24 00:05','plan:album +1','229,664','374.9 GB',null]]} ]},
+  { id:'r2', name:'115', uri:'rclone:115:加密备份仓库', type:'115', color:'#ff8a00', size:'84.1 GB', latest:'10-29 03:04',
+    groups:[{ task:'t2', name:'115 网盘 · 资料', path:'/vol1/1000/资料', snaps:[
+        ['s21','10-29 03:04','自动','52,310','86.2 GB',[1204,33,8]],
+        ['s22','10-22 03:00','自动','51,114','83.9 GB',[302,4,0]],
+        ['s23','10-15 03:00','自动','50,816','83.1 GB',[51,0,2]],
+        ['s24','10-08 03:00','首次','50,767','83.0 GB',null]]}]},
+  { id:'r3', name:'WebDAV · openlist', uri:'webdav:openlist/backup', type:'WebDAV', color:'#13c2c2', size:'1.1 GB', latest:'11-08 04:00',
+    groups:[{ task:'t3', name:'Docker 配置', path:'/vol1/1000/docker/compose', snaps:[
+        ['s31','11-08 04:00','自动','3,881','1.2 GB',[12,4,1]],
+        ['s32','11-07 04:00','自动','3,870','1.2 GB',[0,1,0]],
+        ['s33','11-06 04:00','首次','3,870','1.2 GB',null]]}]},
+  { id:'r4', name:'天翼（旧仓库）', uri:'rclone:wd-ec180132c881:天翼云盘', type:'天翼', color:'#86909c', size:'—', latest:null, groups:[] },
+];
+const TREE = {
+  '': [['相册',1,'—','2,812 项'],['资料',1,'—','1,936 项']],
+  '相册': [['2024',1,'—','1,204 项'],['2025',1,'—','1,520 项'],['手机备份',1,'—','88 项'],['封面.jpg',0,'2.1 MB','10-02 18:22']],
+  '相册/2025': [['01 春节',1,'—','312 项'],['05 云南旅行',1,'—','644 项'],['10 国庆',1,'—','564 项'],['IMG_2025_0101.HEIC',0,'3.8 MB','01-01 00:12'],['IMG_2025_0214.HEIC',0,'4.1 MB','02-14 20:41']],
+  '资料': [['合同',1,'—','42 项'],['发票',1,'—','318 项'],['证件扫描.pdf',0,'12.4 MB','06-11 09:30'],['家庭账本.xlsx',0,'860 KB','11-01 22:15']],
+};
+const HIST = [
+  { id:'h1', kind:'bak', day:'今天', task:'t1', st:'run', time:'14:02', title:'相册资料 → 天翼', sub:'备份中 45% · 已处理 128,402 项', trigger:'手动' },
+  { id:'h2', kind:'rst', day:'今天', task:'t2', st:'ok', time:'10:21', title:'还原 · 115 网盘 · 资料', sub:'还原 3 项到原位置 · 28.4 MB', trigger:'手动' },
+  { id:'h3', kind:'bak', day:'今天', task:'t3', st:'warn', time:'04:00', title:'Docker 配置', sub:'3 个文件无读取权限，已跳过', trigger:'定时' },
+  { id:'h4', kind:'bak', day:'11-08 周六', task:'t3', st:'ok', time:'04:00', title:'Docker 配置', sub:'新增 12 项 · 修改 4 项 · 用时 38 秒', trigger:'定时' },
+  { id:'h5', kind:'bak', day:'11-02 周日', task:'t1', st:'ok', time:'03:00', title:'相册资料 → 天翼', sub:'新增 3,120 项 · 24.2 GB · 用时 4 时 40 分', trigger:'定时' },
+  { id:'h6', kind:'rst', day:'10-31 周五', task:'t1', st:'err', time:'21:13', title:'还原 · 相册资料 → 天翼', sub:'目标目录无写入权限', trigger:'手动' },
+  { id:'h7', kind:'bak', day:'10-30 周四', task:'t1', st:'ok', time:'14:44', title:'相册资料 → 天翼', sub:'无变化 · 用时 3 分', trigger:'手动' },
+  { id:'h8', kind:'bak', day:'10-30 周四', task:'t1', st:'warn', time:'08:03', title:'相册资料 → 天翼', sub:'网络中断 1 次，自动重试成功', trigger:'定时' },
+  { id:'h9', kind:'bak', day:'10-29 周三', task:'t2', st:'ok', time:'03:04', title:'115 网盘 · 资料', sub:'新增 1,204 项 · 2.3 GB · 6 分 12 秒', trigger:'定时' },
+];
+
+/* =====================================================================
+   状态 & 工具
+   ===================================================================== */
+const S = { nav:'tasks', filter:'all', snapView:'list', openRepo:{r1:true}, snapCur:'s11', fdir:'相册/2025',
+  picked:['相册/2025/05 云南旅行','相册/2025/IMG_2025_0214.HEIC'], rstStep:0, rst:{ task:null, snap:null, files:[], dest:'original', target:'', conflict:'if-changed', from:'tasks' },
+  histTab:'all', histCur:'h1', modals:[], menu:null, empty:false, toast:null,
+  wiz:{ sched:'daily', days:['日'], presets:['cache','tmp','recycle'], cloud:'r1', cloudOpen:false, showPass:false, adv:false, srcs:['/vol1/1000/相册','/vol1/1000/资料'] },
+  cloudType:'webdav', dirPath:'/vol1/1000', dirSel:['/vol1/1000/相册'] };
+const $ = id => document.getElementById(id);
+const ic = (n, w=16, h) => `<svg width="${w}" height="${h||w}"><use href="#i-${n}"/></svg>`;
+const T = id => TASKS.find(t => t.id === id);
+const R = id => REPOS.find(r => r.id === id);
+const allSnaps = () => REPOS.flatMap(r => r.groups.flatMap(g => g.snaps.map(s => ({ id:s[0], time:s[1], desc:s[2], files:s[3], size:s[4], diff:s[5], repo:r, grp:g }))));
+const SN = id => allSnaps().find(s => s.id === id);
+const stTag = st => ({ ok:'<span class="tag ok"><span class="dot"></span>成功</span>', run:'<span class="tag run"><span class="spin"></span>进行中</span>',
+  warn:'<span class="tag warn"><span class="dot"></span>警告</span>', err:'<span class="tag err"><span class="dot"></span>失败</span>' })[st];
+const stColor = st => ({ ok:['var(--green-50)','var(--green)'], run:['var(--blue-50)','var(--blue)'], warn:['var(--orange-50)','var(--orange)'], err:['var(--red-50)','var(--red)'] })[st];
+const diffHtml = d => !d ? '<span class="tag gray" style="height:18px">首个快照</span>'
+  : (d[0]+d[1]+d[2] === 0 ? '<span class="diff"><span class="z">无变化</span></span>'
+  : `<span class="diff">${d[0]?`<span class="a">+${d[0].toLocaleString()}</span>`:''}${d[1]?`<span class="m">~${d[1]}</span>`:''}${d[2]?`<span class="d">−${d[2]}</span>`:''}</span>`);
+
+function go(p) { Object.assign(S, p); S.modals = []; S.menu = null; render(); $('main').scrollTop = 0; }
+function set(p) { Object.assign(S, p); render(); }
+function openModal(type, data={}) { S.modals.push({ type, ...data, _new:true }); S.menu = null; render(); }
+function closeModal() { S.modals.pop(); render(); }
+function toast(msg) { S.toast = msg; render(); clearTimeout(window._tt); window._tt = setTimeout(() => { S.toast = null; render(); }, 2400); }
+
+/* =====================================================================
+   侧边栏
+   ===================================================================== */
+function renderSide() {
+  const n = (k, icon, label, cnt='') => `<div class="nav ${S.nav===k?'on':''}" onclick="go({nav:'${k}',snapView:'list'})">${ic(icon,18)}${label}${cnt}</div>`;
+  $('side').innerHTML = n('tasks','folder','备份任务', `<span class="cnt">${S.empty?0:TASKS.length}</span>`)
+    + n('snap','layers','快照') + n('hist','clock','历史', '<span class="cnt run">1</span>')
+    + `<div class="side-foot">restic 0.18.0<br>rclone v1.75.2</div>`;
+}
+
+/* =====================================================================
+   页面：备份任务
+   ===================================================================== */
+function renderTasks() {
+  if (S.empty) return `
+    <div class="head"><h1>备份任务</h1></div>
+    <div class="panel" style="padding:70px 0;text-align:center">
+      <div style="width:88px;height:88px;border-radius:24px;background:var(--blue-50);color:var(--blue);margin:0 auto 18px;display:flex;align-items:center;justify-content:center">${ic('shield',44)}</div>
+      <div style="font-size:17px;font-weight:600">还没有备份任务</div>
+      <div style="font-size:13px;color:var(--t3);margin:8px 0 22px">选择 NAS 上的文件夹，加密后定时备份到云盘，云端只存密文</div>
+      <button class="btn pri" onclick="openModal('wizard',{edit:false})">${ic('plus')}创建第一个任务</button>
+      <div style="display:flex;justify-content:center;gap:36px;margin-top:40px;font-size:12px;color:var(--t3)">
+        <span>① 选择要备份的目录</span><span>② 连接云盘并设置密码</span><span>③ 设定备份计划</span></div>
+    </div>`;
+  const list = TASKS.filter(t => S.filter==='all' || (S.filter==='run' ? t.state==='run' : t.state==='warn'));
+  const rows = list.map(t => {
+    const [bg, fg] = stColor(t.state);
+    const status = t.state==='run'
+      ? `<div class="mini"><div class="t"><span style="display:flex;gap:5px;align-items:center"><span class="spin"></span>备份中</span><b class="num">${t.pct}%</b></div><div class="bar"><i style="width:${t.pct}%"></i></div></div>`
+      : t.state==='ok' ? `<span class="tag ok"><span class="dot"></span>成功 · ${t.last}</span>`
+      : `<span class="tag warn" title="${t.lastNote}"><span class="dot"></span>部分跳过 · ${t.last}</span>`;
+    const spark = t.spark.map((s,i) => `<i class="${s==='ok'?'':s}" style="height:${s==='n'?100:40+((i*37+t.id.charCodeAt(1)*13)%55)}%"></i>`).join('');
+    const ops = t.state==='run'
+      ? `<button class="btn sm" onclick="event.stopPropagation();toast('已发送停止指令')">${ic('stop',12)}停止</button>`
+      : `<button class="ib" title="立即备份" onclick="event.stopPropagation();toast('「${t.name}」已开始备份')">${ic('play')}</button><button class="ib" title="还原" onclick="event.stopPropagation();startRestore('${t.id}',1)">${ic('restore')}</button>`;
+    return `<tr onclick="openModal('log',{task:'${t.id}'})">
+      <td><div class="tname"><span class="ic" style="background:${bg};color:${fg}">${ic('folder',20)}</span><div><b>${t.name}</b><small>${t.srcLabel} · ${t.size}</small></div></div></td>
+      <td><div class="route"><span class="chip">fnos</span>${ic('arrow',22,10)}<span class="chip">${t.cloud}</span></div></td>
+      <td>${status}</td>
+      <td><div class="spark" title="最近 10 次运行">${spark}</div></td>
+      <td class="num">${t.next}</td>
+      <td class="r" style="white-space:nowrap;position:relative">${ops}<button class="ib" onclick="event.stopPropagation();toggleMenu('${t.id}',this)">${ic('more')}</button></td>
+    </tr>`;
+  }).join('');
+  const cnt = k => k==='all'?TASKS.length:TASKS.filter(t=>k==='run'?t.state==='run':t.state==='warn').length;
+  return `
+  <div class="hero">
+    <div class="ring"><svg viewBox="0 0 96 96"><circle cx="48" cy="48" r="42" fill="none" stroke="#dce7ff" stroke-width="8"/><circle cx="48" cy="48" r="42" fill="none" stroke="#18a058" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="0"/></svg><div class="c">${ic('shield',30)}</div></div>
+    <div style="position:relative;z-index:1">
+      <h2>数据保护正常</h2>
+      <p>3 个任务均按计划运行 · 1 个任务有可忽略的警告 · 最近成功备份 <b class="num">今天 04:00</b></p>
+      <div style="margin-top:12px;display:flex;gap:8px"><button class="btn pri" onclick="openModal('wizard',{edit:false})">${ic('plus')}创建新任务</button><button class="btn" onclick="toast('2 个任务已加入队列')">${ic('play')}全部立即备份</button></div>
+    </div>
+    <div class="hero-kpis">
+      <div class="hero-kpi"><div class="k">已保护数据</div><div class="v num">520.9<small>GB</small></div></div>
+      <div class="hero-kpi"><div class="k">云端快照</div><div class="v num">16<small>个</small></div></div>
+      <div class="hero-kpi"><div class="k">近 30 天成功率</div><div class="v num" style="color:var(--green)">96.7<small>%</small></div></div>
+    </div>
+  </div>
+  <div class="panel" style="overflow:visible">
+    <div class="ph">
+      <h3>备份任务</h3>
+      <div class="seg" style="margin-left:12px">
+        ${[['all','全部'],['run','运行中'],['warn','需关注']].map(([k,l]) => `<span class="${S.filter===k?'on':''}" onclick="set({filter:'${k}'})">${l} ${cnt(k)}</span>`).join('')}
+      </div>
+      <span class="sp"></span>
+      <div class="search">${ic('search')}搜索任务</div>
+    </div>
+    <table class="tbl"><thead><tr><th>任务</th><th>备份路线</th><th>状态</th><th>最近 10 次</th><th>下次运行</th><th class="r">操作</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="6"><div class="empty"><b>没有需要关注的任务</b>一切正常</div></td></tr>`}</tbody></table>
+  </div>
+  <div style="font-size:12px;color:var(--t3);text-align:center">点击任务行查看运行日志 · 点「⋯」编辑或删除</div>`;
+}
+function toggleMenu(id, el) {
+  if (S.menu && S.menu.id === id) { S.menu = null; render(); return; }
+  const r = el.getBoundingClientRect(), w = document.querySelector('.win').getBoundingClientRect();
+  S.menu = { id, x: r.right - w.left - 150, y: r.bottom - w.top + 4 }; render();
+}
+function renderMenu() {
+  if (!S.menu) return '';
+  const id = S.menu.id;
+  return `<div class="menu" style="left:${S.menu.x}px;top:${S.menu.y}px;width:150px">
+    <div onclick="openModal('wizard',{edit:true})">${ic('edit')}编辑任务</div>
+    <div onclick="openModal('log',{task:'${id}'})">${ic('log')}运行日志</div>
+    <div onclick="go({nav:'snap',snapView:'list',openRepo:{${T(id).repo}:true}})">${ic('layers')}查看快照</div>
+    <div onclick="startRestore('${id}',1)">${ic('restore')}还原</div>
+    <div onclick="S.menu=null;toast('已复制为新任务')">${ic('copy')}复制任务</div>
+    <hr><div class="red" onclick="openModal('confirm',{task:'${id}'})">${ic('trash')}删除任务</div></div>`;
+}
+
+/* =====================================================================
+   页面：快照（仓库列表）
+   ===================================================================== */
+function renderSnapList() {
+  const total = allSnaps().length;
+  const repos = REPOS.map(r => {
+    const open = S.openRepo[r.id];
+    const cnt = r.groups.reduce((a,g) => a + g.snaps.length, 0);
+    const body = !open ? '' : !cnt
+      ? `<div class="empty" style="border-top:1px solid var(--line)"><b>这个仓库还没有快照</b>没有任务在使用它，可在「⋯」中移除</div>`
+      : r.groups.map(g => `
+        <div class="grp-h"><span class="cdot" style="background:${g.task?T(g.task).color:'#c0c6cf'}"></span><b>${g.name}</b><span class="mono dim">${g.path}</span><span class="sp"></span><span class="dim" style="font-size:12px">${g.snaps.length} 个快照</span></div>
+        <table class="tbl"><thead><tr><th style="width:130px">时间</th><th style="width:130px">来源</th><th>与上一份相比</th><th style="width:180px">文件 / 大小</th><th style="width:120px" class="r"></th></tr></thead><tbody>
+        ${g.snaps.map(s => `<tr onclick="go({nav:'snap',snapView:'detail',snapCur:'${s[0]}',fdir:''})">
+          <td class="num" style="font-weight:600">${s[1]}</td>
+          <td><span class="tag ${s[2]==='手动'?'run':s[2]==='首次'?'pur':'gray'}" style="height:20px">${s[2]}</span></td>
+          <td>${diffHtml(s[5])}</td>
+          <td class="num dim">${s[3]} 项 · ${s[4]}</td>
+          <td class="r"><a onclick="event.stopPropagation();go({nav:'snap',snapView:'detail',snapCur:'${s[0]}',fdir:''})">浏览</a><span style="color:var(--line2);margin:0 8px">|</span><a onclick="event.stopPropagation();startRestore('${g.task||'t1'}',2,'${s[0]}')">还原</a></td>
+        </tr>`).join('')}</tbody></table>`).join('')
+        + `<div class="repo-foot">缓存于 11-09 14:49 · 快照列表来自本地缓存，避免每次查询云盘<span class="sp"></span><button class="btn sm" onclick="toast('正在从云端刷新快照…')">${ic('refresh',12)}刷新快照</button></div>`;
+    return `<div class="panel ${open?'open':''}">
+      <div class="repo-h" onclick="S.openRepo['${r.id}']=!S.openRepo['${r.id}'];render()">
+        <span class="repo-ic" style="background:${r.color}1a;color:${r.color}">${ic('db',22)}</span>
+        <div style="min-width:0"><div class="repo-n">${r.name}<span class="tag ${cnt?'ok':'gray'}" style="height:20px">${cnt?cnt+' 个快照':'无快照'}</span></div><div class="repo-p mono">${r.uri}</div></div>
+        <div class="repo-stats"><div><div class="k">关联任务</div><div class="v num">${r.groups.filter(g=>g.task).length}</div></div><div><div class="k">仓库大小</div><div class="v num">${r.size}</div></div><div><div class="k">最近快照</div><div class="v num">${r.latest||'—'}</div></div></div>
+        <span class="chev">${ic('chev')}</span>
+      </div>${body}</div>`;
+  }).join('');
+  return `
+  <div class="head"><h1>快照</h1><span class="sub">每次备份都会在云端留下一个可还原的时间点</span><span class="sp"></span><button class="btn" onclick="toast('正在刷新全部仓库…')">${ic('refresh')}刷新</button></div>
+  <div class="kpis">
+    <div class="kpi"><div class="ic" style="background:var(--blue-50);color:var(--blue)">${ic('db',20)}</div><div><div class="k">云端仓库</div><div class="v num">${REPOS.length}<small>个</small></div></div></div>
+    <div class="kpi"><div class="ic" style="background:var(--purple-50);color:var(--purple)">${ic('layers',20)}</div><div><div class="k">快照总数</div><div class="v num">${total}<small>个</small></div></div></div>
+    <div class="kpi"><div class="ic" style="background:var(--green-50);color:var(--green)">${ic('cloud',20)}</div><div><div class="k">云端占用</div><div class="v num">498.0<small>GB</small></div></div></div>
+    <div class="kpi"><div class="ic" style="background:var(--orange-50);color:var(--orange)">${ic('clock',20)}</div><div><div class="k">最早可还原到</div><div class="v num" style="font-size:16px">10-08 03:00</div></div></div>
+  </div>
+  <div class="running-strip"><span class="spin"></span><b style="font-weight:500">正在还原 · 115 网盘 · 资料</b><span class="dim">3 项 → 原位置</span><div class="bar"><i style="width:72%"></i></div><b class="num" style="color:var(--blue)">72%</b><span class="sp"></span><a onclick="go({nav:'hist',histTab:'rst',histCur:'h2'})">查看</a></div>
+  ${repos}`;
+}
+
+/* =====================================================================
+   页面：快照浏览
+   ===================================================================== */
+function isPicked(p) { return S.picked.includes(p); }
+function isHalf(p) { return !isPicked(p) && S.picked.some(x => x.startsWith(p + '/')); }
+function togglePick(p) { S.picked = isPicked(p) ? S.picked.filter(x => x !== p) : [...S.picked.filter(x => !x.startsWith(p + '/')), p]; render(); }
+function renderFileTable(dir, inModal) {
+  const items = TREE[dir] || [['（mock 数据）此目录暂无示例内容',0,'—','—']];
+  const segs = dir ? dir.split('/') : [];
+  const crumb = `<div class="fpath"><a class="${!dir?'cur':''}" onclick="set({fdir:''})">快照根目录</a>${segs.map((s,i) => `<span class="sl">/</span><a class="${i===segs.length-1?'cur':''}" onclick="set({fdir:'${segs.slice(0,i+1).join('/')}'})">${s}</a>`).join('')}</div>`;
+  const rows = items.map(([n, isDir, size, meta]) => {
+    const p = dir ? dir + '/' + n : n;
+    const icon = isDir ? ic('dir',20,16) : /\.(jpg|heic)$/i.test(n) ? ic('img',18) : ic('file',18);
+    return `<tr onclick="${isDir ? `set({fdir:'${p}'})` : `togglePick('${p}')`}">
+      <td style="width:44px;padding-right:0"><span class="cbx ${isPicked(p)?'on':isHalf(p)?'half':''}" onclick="event.stopPropagation();togglePick('${p}')"></span></td>
+      <td><div class="fname">${icon}<span style="${isPicked(p)?'color:var(--blue);font-weight:500':''}">${n}</span></div></td>
+      <td class="dim num" style="width:130px">${isDir?meta:size}</td>
+      <td class="dim num" style="width:130px">${isDir?'':meta}</td>
+      <td class="r dim" style="width:40px">${isDir?ic('chev',14):''}</td></tr>`;
+  }).join('');
+  return { crumb, table: `<table class="tbl"><thead><tr><th></th><th>名称</th><th>${'大小 / 项数'}</th><th>修改时间</th><th></th></tr></thead><tbody>
+    ${dir?`<tr onclick="set({fdir:'${segs.slice(0,-1).join('/')}'})"><td></td><td colspan="4"><div class="fname" style="color:var(--t3)">${ic('restore',16)}返回上一级</div></td></tr>`:''}${rows}</tbody></table>` };
+}
+function renderSnapDetail() {
+  const s = SN(S.snapCur) || SN('s11');
+  const ft = renderFileTable(S.fdir);
+  const chips = S.picked.map(p => `<span>${p.split('/').pop()}<i onclick="togglePick('${p}')">✕</i></span>`).join('');
+  return `
+  <div class="crumb"><a onclick="go({nav:'snap',snapView:'list'})">快照</a>${ic('chev',12)}<a onclick="go({nav:'snap',snapView:'list'})">${s.repo.name}</a>${ic('chev',12)}<b>${s.time}</b></div>
+  <div class="sd-hero">
+    <span class="ic">${ic('layers',26)}</span>
+    <div><h2>${s.grp.name}<span class="tag gray num">快照 ${((parseInt(s.id.slice(1))*2654435761)>>>0).toString(16).padStart(8,'0')}</span>${diffHtml(s.diff)}</h2>
+      <p><span>${ic('clock',12)} 2026-${s.time}</span><span>${ic('db',12)} ${s.repo.name}</span><span>${ic('nas',12)} fnos</span><span>标签：${s.desc}</span></p></div>
+    <div class="sd-kv"><div><div class="k">文件</div><div class="v num">${s.files}</div></div><div><div class="k">大小</div><div class="v num">${s.size}</div></div><div><div class="k">根目录</div><div class="v">2 项</div></div></div>
+  </div>
+  <div class="panel" style="overflow:visible">
+    <div class="ph">${ft.crumb}<span class="sp"></span><div class="search" style="width:180px">${ic('search')}在快照中搜索</div></div>
+    ${ft.table}
+    <div class="selbar">
+      ${S.picked.length ? `<span style="font-size:13px">已选 <b style="color:var(--blue)">${S.picked.length}</b> 项</span><div class="chips">${chips}</div><a style="font-size:12px" onclick="set({picked:[]})">清空</a>`
+        : `<span class="dim" style="font-size:13px">勾选要还原的文件或目录；不勾选则还原整份快照</span>`}
+      <span class="sp"></span>
+      <button class="btn" onclick="toast('已生成下载任务（mock）')">下载</button>
+      <button class="btn pri" onclick="startRestore('${s.grp.task||'t1'}',3,'${s.id}',true)">${ic('restore')}还原${S.picked.length?'所选':'整份快照'}</button>
+    </div>
+  </div>`;
+}
+
+/* =====================================================================
+   页面：还原向导
+   ===================================================================== */
+const STEPS = [['选择任务','从哪个备份还原'],['选择快照','还原到哪个时间点'],['选择文件','整份或部分'],['还原位置','原位置或新路径'],['冲突处理','遇到同名文件时']];
+function startRestore(task, step=0, snap, fromSnap) {
+  S.rst.task = task; S.rst.snap = snap || (task ? (R(T(task).repo).groups[0].snaps[0][0]) : null);
+  S.rst.files = fromSnap ? [...S.picked] : (step >= 3 ? [...S.picked] : []);
+  S.rst.from = fromSnap ? 'snap' : 'tasks';
+  go({ nav:'snap', snapView:'restore', rstStep:step });
+}
+function renderRestore() {
+  const st = S.rstStep, r = S.rst, t = r.task ? T(r.task) : null, s = r.snap ? SN(r.snap) : null;
+  const stepper = STEPS.map(([l, h], i) => `${i?`<div class="st-line ${i<=st?'done':''}"></div>`:''}
+    <div class="st ${i===st?'on':i<st?'done':''}" ${i<st?`style="cursor:pointer" onclick="set({rstStep:${i}})"`:''}><span class="n">${i<st?'✓':i+1}</span><div class="l"><b>${l}</b><small>${i<st ? [t&&t.name, s&&s.time, r.files.length?r.files.length+' 项':'整份快照', r.dest==='original'?'原位置':'新路径', ''][i] : h}</small></div></div>`).join('');
+  let body = '';
+  if (st === 0) body = `<div class="wz-title">从哪个备份任务还原？</div><div class="wz-hint">只列出已产生快照的任务</div>
+    <div class="opt-list">${TASKS.map(x => { const [bg,fg]=stColor(x.state==='run'?'ok':x.state); return `<button class="opt ${r.task===x.id?'on':''}" onclick="S.rst.task='${x.id}';S.rst.snap=R('${x.repo}').groups[0].snaps[0][0];render()">
+      <span class="ic" style="background:${bg};color:${fg}">${ic('folder',20)}</span><span><b>${x.name}</b><small>${x.cloud} · 上次备份 ${x.last} · ${R(x.repo).groups[0].snaps.length} 个快照</small></span><span class="rd"></span></button>`; }).join('')}</div>`;
+  if (st === 1) { const g = R(t.repo).groups[0];
+    body = `<div class="wz-title">还原到哪个时间点？</div><div class="wz-hint">徽章表示与上一份快照的差异 · <span class="dim">缓存于 11-09 14:49</span> <a onclick="toast('正在刷新…')">刷新</a></div>
+    <div class="snap-tl">${g.snaps.map(x => `<div class="row ${r.snap===x[0]?'on':''}" onclick="S.rst.snap='${x[0]}';render()"><span class="rd" style="margin:0"></span><span class="t num">${x[1]}</span><span class="tag gray" style="height:20px">${x[2]}</span>${diffHtml(x[5])}<span class="sp"></span><span class="dim num" style="font-size:12px">${x[3]} 项 · ${x[4]}</span></div>`).join('').replaceAll('class="row on"','class="row on"')}</div>`;
+    body = body.replace(/<div class="row on"([^>]*)><span class="rd"/g, '<div class="row on"$1><span class="rd" style="margin:0;border-color:var(--blue)"');
+  }
+  if (st === 2) body = `<div class="wz-title">要还原哪些内容？</div><div class="wz-hint">不选择则还原整份快照（/vol1/1000/相册、/vol1/1000/资料）</div>
+    <button class="pick-btn" onclick="S.fdir='相册/2025';openModal('pick')"><span class="ic">${ic('folder',22)}</span><span>${r.files.length?`已选 ${r.files.length} 项 · 点击修改`:'浏览快照文件…'}<small>按目录逐层下钻，可整选目录或单个文件</small></span></button>
+    ${r.files.length?`<div class="tray">${r.files.map(p=>`<span>${/\./.test(p)?ic('file',14):ic('dir',16,13)}${p}<i onclick="S.rst.files=S.rst.files.filter(x=>x!=='${p}');render()">✕</i></span>`).join('')}</div>`:''}`;
+  if (st === 3) body = `<div class="wz-title">还原到哪里？</div><div class="wz-hint">还原到新路径更安全，不会影响现有文件</div>
+    <div class="opt-list" style="margin-bottom:18px">
+      <button class="opt ${r.dest==='original'?'on':''}" onclick="S.rst.dest='original';render()"><span class="ic" style="background:var(--blue-50);color:var(--blue)">${ic('pin',20)}</span><span><b>原位置</b><small>写回备份时的原始路径</small></span><span class="rd"></span></button>
+      <button class="opt ${r.dest==='custom'?'on':''}" onclick="S.rst.dest='custom';render()"><span class="ic" style="background:var(--green-50);color:var(--green)">${ic('folder',20)}</span><span><b>新路径</b><small>还原到指定目录，自动创建</small></span><span class="rd"></span></button>
+    </div>
+    ${r.dest==='original' ? `<div class="note" style="background:#f7f8fa;border-radius:8px;padding:10px 14px;margin:0">将写回：${(r.files.length?r.files:['相册','资料']).map(p=>'/vol1/1000/'+p).join('；')}</div>`
+      : `<div class="fld"><div class="lb">目标目录</div><div class="inline"><input class="inp" value="/vol1/1000/还原/2026-11-09" /><button class="btn" onclick="openModal('dirpick')">浏览</button></div><div class="note">目录不存在时会自动创建</div></div>`}`;
+  if (st === 4) { const opts = [['always','全部覆盖','直接覆盖本地同名文件'],['if-changed','仅覆盖有变化','内容没变的文件不重写（推荐）'],['never','跳过已存在','已存在的文件保持不动']]; if (r.dest==='custom') opts.push(['rename','保留两者','还原版本加后缀另存']);
+    body = `<div class="wz-title">遇到同名文件怎么办？</div><div class="wz-hint">只影响目标位置已存在的文件</div>
+    <div class="opt-list">${opts.map(([k,l,d]) => `<button class="opt ${r.conflict===k?'on':''}" onclick="S.rst.conflict='${k}';render()"><span><b>${l}</b><small>${d}</small></span><span class="rd"></span></button>`).join('')}</div>
+    <div class="summary"><span class="node">${ic('layers',14)}快照 ${s?s.time:''}</span><span class="node">${r.files.length?r.files.length+' 项':'整份快照'}</span>${ic('arrow',40,12)}<span class="node hi">${ic(r.dest==='original'?'pin':'folder',14)}${r.dest==='original'?'原位置':'/vol1/1000/还原/2026-11-09'}</span></div>`; }
+  const back = r.from==='snap' ? `<a onclick="go({nav:'snap',snapView:'detail'})">快照浏览</a>` : `<a onclick="go({nav:'tasks'})">备份任务</a>`;
+  return `
+  <div class="crumb">${back}${ic('chev',12)}<b>新建还原</b>${t?`<span class="dim">· ${t.name}</span>`:''}</div>
+  <div class="stepper">${stepper}</div>
+  <div class="wz-body">${body}</div>
+  <div class="wz-foot">
+    <button class="btn" onclick="${r.from==='snap'?"go({nav:'snap',snapView:'detail'})":"go({nav:'tasks'})"}">取消</button><span class="sp"></span>
+    ${st>0?`<button class="btn" onclick="set({rstStep:${st-1}})">上一步</button>`:''}
+    ${st<4?`<button class="btn pri" ${st===0&&!r.task?'disabled':''} onclick="set({rstStep:${st+1}})">下一步</button>`
+      :`<button class="btn pri" onclick="go({nav:'hist',histTab:'rst',histCur:'h2'});toast('还原任务已开始')">${ic('restore')}开始还原</button>`}
+  </div>`;
+}
+
+/* =====================================================================
+   页面：历史
+   ===================================================================== */
+function renderHist() {
+  const list = HIST.filter(h => S.histTab==='all' || h.kind===S.histTab);
+  let day = '', rows = '';
+  list.forEach(h => {
+    if (h.day !== day) { day = h.day; rows += `<div class="day">${day}</div>`; }
+    const [bg, fg] = stColor(h.st);
+    rows += `<div class="hrow ${S.histCur===h.id?'on':''}" onclick="set({histCur:'${h.id}'})">
+      <span class="hic" style="background:${bg};color:${fg}">${ic(h.kind==='bak'?'folder':'restore',16)}</span>
+      <div style="min-width:0"><div class="hn">${h.title}</div><div class="hs">${h.sub}</div></div>
+      <div class="ht"><div>${stTag(h.st)}</div><div class="num" style="margin-top:4px">${h.trigger} · ${h.time}</div></div></div>`;
+  });
+  const h = HIST.find(x => x.id === S.histCur) || list[0];
+  const t = T(h.task);
+  const kvs = h.kind==='bak'
+    ? [['任务',t.name],['触发方式',h.trigger],['开始时间','2026-'+(h.day==='今天'?'11-09':h.day.slice(0,5))+' '+h.time],['用时',h.st==='run'?'18 分（进行中）':'4 时 40 分'],['来源',t.src.join('、')],['目标',t.cloud+' / '+t.path],['快照',h.st==='run'?'—':'a9f3c2e1'],['处理',h.st==='run'?'128,402 项 · 196.3 GB':'281,186 项 · 433.5 GB'],['新增数据','24.2 GB（压缩后 21.8 GB）']]
+    : [['任务',t.name],['快照','10-29 03:04 · 3f1b77aa'],['还原内容',h.st==='err'?'相册/2025':'合同、发票、证件扫描.pdf'],['目标',h.st==='err'?'/vol2/还原':'原位置'],['冲突处理','仅覆盖有变化'],['结果',h.st==='err'?'失败 · 目标目录无写入权限':'已写入 312 个文件 · 28.4 MB']];
+  const nodes = h.st==='run' ? [['b','14:02:11','开始备份，扫描 2 个目录'],['b','14:03:40','扫描完成：281,186 项 / 433.5 GB'],['b','14:20:05','上传中 45%…']]
+    : h.st==='err' ? [['b','21:13:02','开始还原'],['r','21:13:05','mkdir /vol2/还原: permission denied'],['r','21:13:05','还原终止']]
+    : h.st==='warn' ? [['g','04:00:00','开始备份'],['w','04:00:12','3 个文件无读取权限，已跳过'],['g','04:00:38','完成，生成快照 c71e09ab']]
+    : [['g', h.time+':00','开始'],['g', h.time+':41','扫描完成'],['g','—','完成，生成快照 a9f3c2e1']];
+  return `
+  <div class="head"><h1>历史</h1><span class="sp"></span><button class="btn" onclick="toast('已刷新')">${ic('refresh')}刷新</button></div>
+  <div class="kpis">
+    <div class="kpi"><div class="ic" style="background:var(--blue-50);color:var(--blue)">${ic('folder',20)}</div><div><div class="k">近 30 天备份</div><div class="v num">30<small>次</small></div></div></div>
+    <div class="kpi"><div class="ic" style="background:var(--green-50);color:var(--green)">${ic('shield',20)}</div><div><div class="k">成功率</div><div class="v num">96.7<small>%</small></div></div></div>
+    <div class="kpi"><div class="ic" style="background:var(--purple-50);color:var(--purple)">${ic('cloud',20)}</div><div><div class="k">上传数据量</div><div class="v num">73.6<small>GB</small></div></div></div>
+    <div class="kpi"><div class="ic" style="background:var(--orange-50);color:var(--orange)">${ic('restore',20)}</div><div><div class="k">还原次数</div><div class="v num">2<small>次</small></div></div></div>
+  </div>
+  <div class="hist">
+    <div class="panel" style="margin:0">
+      <div class="ph"><div class="seg">${[['all','全部',HIST.length],['bak','备份',HIST.filter(x=>x.kind==='bak').length],['rst','还原',HIST.filter(x=>x.kind==='rst').length]].map(([k,l,n]) => `<span class="${S.histTab===k?'on':''}" onclick="set({histTab:'${k}'})">${l} ${n}</span>`).join('')}</div><span class="sp"></span>
+        <div class="seg"><span class="on">全部状态</span><span>失败</span></div></div>
+      ${rows}
+    </div>
+    <div class="hdet">
+      <div style="display:flex;gap:8px;align-items:center">${stTag(h.st)}<span class="tag gray">${h.kind==='bak'?'备份':'还原'}</span></div>
+      <h3>${h.title}</h3>
+      <div class="dim" style="font-size:12px;margin-bottom:12px">${h.sub}</div>
+      ${h.st==='run'?`<div class="bar" style="margin-bottom:14px"><i style="width:45%"></i></div>`:''}
+      ${kvs.map(([k,v]) => `<div class="kv"><span class="k">${k}</span><span class="v ${/^[\/\d]/.test(v)?'num':''}">${v}</span></div>`).join('')}
+      <div style="font-size:13px;font-weight:600;margin:16px 0 10px">关键节点</div>
+      <div class="tl">${nodes.map(([c,tm,m]) => `<div class="e ${c}"><i class="num">${tm}</i>${m}</div>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin-top:18px">
+        ${h.kind==='bak'?`<button class="btn" onclick="openModal('log',{task:'${h.task}'})">${ic('log')}完整日志</button>`:''}
+        ${h.st==='run'?`<button class="btn danger">${ic('stop',12)}停止</button>`:''}
+        ${h.st==='err'?`<button class="btn pri" onclick="startRestore('${h.task}',3)">重新还原</button>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* =====================================================================
+   弹窗
+   ===================================================================== */
+function mWizard(m) {
+  const w = S.wiz, cloud = R(w.cloud);
+  const presets = [['cache','系统缓存'],['tmp','临时文件'],['recycle','回收站'],['thumb','缩略图'],['node','node_modules'],['ds','.DS_Store']];
+  return `<div class="modal w640">
+    <div class="mh"><h3>${m.edit?'编辑任务':'新建备份任务'}</h3><button class="ib" onclick="closeModal()">${ic('x')}</button></div>
+    <div class="mb">
+      <label class="fld"><div class="lb">任务名称</div><input class="inp" value="${m.edit?'相册资料 → 天翼':''}" placeholder="例如：相册资料 → 天翼"></label>
+      <div class="sec"><div class="sec-h"><span class="n">1</span><b>备份来源</b><span class="dim" style="font-size:12px">fnos 本地设备</span><span class="sp"></span><button class="btn sm" onclick="openModal('dirpick')">${ic('plus',12)}选择目录</button></div>
+        <div class="sec-b"><div class="src-list">${w.srcs.map(p => `<div class="src-row">${ic('dir',20,16)}<span class="num">${p}</span><span class="dim" style="font-size:12px;margin-left:8px">${p.endsWith('相册')?'2,812 项 · 409 GB':'1,936 项 · 24.5 GB'}</span><span class="x" onclick="S.wiz.srcs=S.wiz.srcs.filter(x=>x!=='${p}');render()">${ic('x',14)}</span></div>`).join('') || '<div class="dim" style="font-size:13px">还未选择目录</div>'}</div></div></div>
+      <div class="sec"><div class="sec-h"><span class="n">2</span><b>备份目的地</b><span class="sp"></span><a style="font-size:13px" onclick="openModal('cloud')">新增云端</a></div>
+        <div class="sec-b">
+          <div class="row2">
+            <div class="fld sel"><div class="lb">云端</div><div class="inp ${w.cloudOpen?'focus':''}" onclick="S.wiz.cloudOpen=!S.wiz.cloudOpen;render()"><span style="width:8px;height:8px;border-radius:50%;background:${cloud.color}"></span>${cloud.name}<span class="sp"></span>${ic('chev',12)}</div>
+              ${w.cloudOpen?`<div class="sel-drop">${REPOS.slice(0,3).map(r=>`<div class="o ${r.id===w.cloud?'on':''}" onclick="S.wiz.cloud='${r.id}';S.wiz.cloudOpen=false;render()"><span style="width:8px;height:8px;border-radius:50%;background:${r.color}"></span>${r.name}<small>${r.type}</small></div>`).join('')}<div class="o add" onclick="S.wiz.cloudOpen=false;openModal('cloud')">${ic('plus',13)}连接新的云盘</div></div>`:''}</div>
+            <div class="fld"><div class="lb">仓库目录</div><div class="inline"><input class="inp" value="飞牛加密备份"><button class="btn" onclick="toast('打开云端目录选择器（同「选择目录」样式）')">浏览</button></div></div>
+          </div>
+          <div class="fld" style="margin:0"><div class="lb">加密密码 <em>用于加密云端数据</em></div>
+            <div class="inp">${ic('lock')}<input style="border:none;outline:none;flex:1;font-size:13px;font-family:inherit" type="${w.showPass?'text':'password'}" value="kT9#vQ2m-Lx7p!Rw"><span style="cursor:pointer" onclick="S.wiz.showPass=!S.wiz.showPass;render()">${ic('eye')}</span><a style="font-size:12px" onclick="toast('已重新生成')">重新生成</a></div>
+            <div class="note warn">请妥善保存密码：丢失后云端备份将无法解密，任何人都无法找回</div></div>
+        </div></div>
+      <div class="sec"><div class="sec-h"><span class="n">3</span><b>备份计划</b></div>
+        <div class="sec-b">
+          <div class="seg lg" style="margin-bottom:14px">${[['manual','手动'],['daily','每天'],['weekly','每周'],['ndays','每 N 天']].map(([k,l])=>`<span class="${w.sched===k?'on':''}" onclick="S.wiz.sched='${k}';render()">${l}</span>`).join('')}</div>
+          ${w.sched==='manual'?'<div class="note" style="margin:0">只在点击「立即备份」时运行</div>':`<div class="row2">
+            ${w.sched==='weekly'?`<div class="fld" style="margin:0"><div class="lb">重复（可多选）</div><div class="chips-sel">${['一','二','三','四','五','六','日'].map(d=>`<span class="${w.days.includes(d)?'on':''}" onclick="S.wiz.days=S.wiz.days.includes('${d}')?S.wiz.days.filter(x=>x!=='${d}'):[...S.wiz.days,'${d}'];render()">${d}</span>`).join('')}</div></div>`
+              : w.sched==='ndays'?`<div class="fld" style="margin:0"><div class="lb">间隔</div><div class="inline"><input class="inp" value="3" style="width:80px"><span class="dim">天</span></div></div>`:''}
+            <div class="fld" style="margin:0"><div class="lb">执行时间</div><div class="inp">${ic('clock')}03:00</div></div></div>`}
+        </div></div>
+      <div class="sec" style="margin:0"><div class="sec-h"><span class="n">4</span><b>排除规则</b><span class="sp"></span><a style="font-size:13px" onclick="S.wiz.adv=!S.wiz.adv;render()">${w.adv?'收起':'自定义规则'}</a></div>
+        <div class="sec-b"><div class="chips-sel">${presets.map(([k,l])=>`<span class="${w.presets.includes(k)?'on':''}" onclick="S.wiz.presets=S.wiz.presets.includes('${k}')?S.wiz.presets.filter(x=>x!=='${k}'):[...S.wiz.presets,'${k}'];render()">${l}</span>`).join('')}</div>
+          <div class="note">本次将排除 <b>${w.presets.length*3+1}</b> 条规则</div>
+          ${w.adv?`<textarea class="inp" rows="3" style="margin-top:10px" placeholder="每行一条">**/*.tmp\n@eaDir/</textarea>`:''}</div></div>
+    </div>
+    <div class="mf"><span class="left">${m.edit?'修改将在下次运行时生效':''}</span><button class="btn" onclick="closeModal()">取消</button><button class="btn" onclick="closeModal();toast('已保存')">保存</button><button class="btn pri" onclick="closeModal();toast('已保存并开始首次备份')">${m.edit?'保存':'保存并立即备份'}</button></div>
+  </div>`;
+}
+function mDirpick() {
+  const dirs = S.dirPath === '/vol1/1000' ? ['相册','资料','docker','下载','影视','音乐'] : ['2024','2025','手机备份'];
+  return `<div class="modal w520" style="width:520px">
+    <div class="mh"><h3>选择备份目录</h3><span class="tag gray">已授权 2 个位置</span><button class="ib" onclick="closeModal()">${ic('x')}</button></div>
+    <div class="dir-crumb">${ic('nas',14)}<a style="color:var(--t2)" onclick="S.dirPath='/vol1/1000';render()">存储空间 1</a><span style="color:var(--t4)">/</span><a style="color:var(--t2)" onclick="S.dirPath='/vol1/1000';render()">1000</a>${S.dirPath!=='/vol1/1000'?'<span style="color:var(--t4)">/</span><b style="font-weight:500">相册</b>':''}</div>
+    <div class="dir-list" style="max-height:340px;overflow:auto">${dirs.map(d => { const p = S.dirPath+'/'+d; const on = S.dirSel.includes(p);
+      return `<div class="d ${on?'on':''}"><span class="cbx ${on?'on':''}" onclick="S.dirSel=S.dirSel.includes('${p}')?S.dirSel.filter(x=>x!=='${p}'):[...S.dirSel,'${p}'];render()"></span>${ic('dir',20,16)}<span onclick="S.dirPath='/vol1/1000/相册';render()" style="flex:1">${d}</span><span class="go">${ic('chev',14)}</span></div>`; }).join('')}</div>
+    <div class="mf"><span class="left">已选 ${S.dirSel.length} 个目录</span><button class="btn" onclick="closeModal()">取消</button><button class="btn pri" onclick="closeModal();toast('已添加 ${S.dirSel.length} 个目录')">确定</button></div></div>`;
+}
+function mCloud() {
+  const types = [['webdav','WebDAV','#13c2c2'],['tianyi','天翼云盘','#3370ff'],['115','115 网盘','#ff8a00']];
+  return `<div class="modal" style="width:520px">
+    <div class="mh"><h3>连接云盘</h3><button class="ib" onclick="closeModal()">${ic('x')}</button></div>
+    <div class="mb">
+      <div class="ctype">${types.map(([k,l,c])=>`<div class="${S.cloudType===k?'on':''}" onclick="S.cloudType='${k}';render()"><div class="lg" style="background:${c}">${ic('cloud',20)}</div>${l}</div>`).join('')}</div>
+      <label class="fld"><div class="lb">显示名称</div><input class="inp" value="${S.cloudType==='webdav'?'WebDAV · openlist':types.find(x=>x[0]===S.cloudType)[1]}"></label>
+      ${S.cloudType==='webdav' ? `<label class="fld"><div class="lb">服务器地址</div><input class="inp" placeholder="http://192.168.1.10:5244/dav"></label>
+        <div class="row2"><label class="fld"><div class="lb">用户名</div><input class="inp" placeholder="admin"></label><label class="fld"><div class="lb">密码</div><input class="inp" type="password" placeholder="••••••"></label></div>
+        <div class="note" style="margin-top:-6px">推荐用 OpenList 挂载各类网盘后，以 WebDAV 方式接入</div>`
+        : `<div style="background:#f7f8fa;border-radius:10px;padding:18px;text-align:center"><div style="width:120px;height:120px;margin:0 auto 10px;background:repeating-linear-gradient(45deg,#e5e6eb 0 6px,#fff 6px 12px);border-radius:8px"></div><div style="font-size:13px">打开 ${types.find(x=>x[0]===S.cloudType)[1]} App 扫码授权</div><div class="note">授权信息仅保存在本机</div></div>`}
+    </div>
+    <div class="mf"><button class="btn" style="margin-right:auto" onclick="toast('连接成功，可用空间 1.8 TB')">测试连接</button><button class="btn" onclick="closeModal()">取消</button><button class="btn pri" onclick="closeModal();toast('云盘已添加')">保存</button></div></div>`;
+}
+function mLog(m) {
+  const t = T(m.task);
+  return `<div class="modal">
+    <div class="mh"><h3>运行日志</h3><span class="dim" style="font-size:13px">${t.name}</span><button class="ib" onclick="closeModal()">${ic('x')}</button></div>
+    <div class="dir-crumb" style="gap:8px">${['今天 14:02','11-02 03:00','10-30 14:44','10-30 08:03'].map((x,i)=>`<span class="tag ${i===0?'run':'gray'}" style="cursor:pointer">${x}</span>`).join('')}<span class="sp"></span><a style="font-size:12px" onclick="go({nav:'hist'})">全部历史</a></div>
+    <div class="mb">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">${stTag(t.state==='run'?'run':t.state)}<b>${t.state==='run'?'备份进行中':t.state==='ok'?'备份成功':'完成，有警告'}</b><span class="sp"></span><span class="dim num" style="font-size:12px">${t.state==='run'?'开始于 14:02 · 已用 18 分':t.last}</span></div>
+      ${t.state==='run'?`<div class="bar" style="margin-bottom:16px"><i style="width:45%"></i></div>`:''}
+      <div class="log-sum"><div><div class="k">已处理</div><div class="v num">128,402 项</div></div><div><div class="k">数据量</div><div class="v num">196.3 GB</div></div><div><div class="k">上传速度</div><div class="v num">18.6 MB/s</div></div></div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">关键节点</div>
+      <div class="tl">
+        <div class="e"><i class="num">14:02:11</i>开始备份 · 手动触发</div>
+        <div class="e"><i class="num">14:02:15</i>已连接仓库 天翼云盘 / 飞牛加密备份</div>
+        <div class="e"><i class="num">14:03:40</i>扫描完成：281,186 项 / 433.5 GB</div>
+        <div class="e w"><i class="num">14:11:02</i>网络波动，第 1 次重试成功</div>
+        <div class="e b"><i class="num">14:20:05</i>上传中 45%，预计剩余 22 分钟</div>
+      </div>
+      <div style="display:flex;align-items:center;margin-top:20px"><b style="font-size:13px">原始日志</b><span class="sp"></span><a style="font-size:12px" onclick="toast('已复制')">复制</a></div>
+      <div class="raw mono">open repository
+lock repository
+using parent snapshot a9f3c2e1
+load index files
+start scan on [/vol1/1000/相册 /vol1/1000/资料]
+start backup on [/vol1/1000/相册 /vol1/1000/资料]
+scan finished in 89.2s: 281186 files, 433.512 GiB
+<span class="w">rclone: Post "https://…/upload": EOF, retrying (1/10)</span>
+<span class="g">[18:03] 45.28%  128402 files 196.3 GiB, total 281186 files 433.5 GiB, 0 errors ETA 22:14</span></div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeModal()">关闭</button>${t.state==='run'?`<button class="btn danger">${ic('stop',12)}停止备份</button>`:''}</div></div>`;
+}
+function mPick() {
+  const ft = renderFileTable(S.fdir, true);
+  return `<div class="modal w720">
+    <div class="mh"><h3>选择要还原的内容</h3><span class="tag gray num">快照 ${(SN(S.rst.snap)||{time:''}).time}</span><button class="ib" onclick="closeModal()">${ic('x')}</button></div>
+    <div class="dir-crumb">${ft.crumb}</div>
+    <div style="max-height:380px;overflow:auto">${ft.table}</div>
+    <div class="mf"><span class="left">已选 <b style="color:var(--blue)">${S.picked.length}</b> 项 ${S.picked.length?`· <a onclick="set({picked:[]})">清空</a>`:''}</span><button class="btn" onclick="closeModal()">取消</button><button class="btn pri" onclick="S.rst.files=[...S.picked];closeModal()">确定</button></div></div>`;
+}
+function mConfirm(m) {
+  const t = T(m.task);
+  return `<div class="modal w420">
+    <div class="mb" style="padding:26px 24px 8px;text-align:center">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--red-50);color:var(--red);margin:0 auto 14px;display:flex;align-items:center;justify-content:center">${ic('trash',24)}</div>
+      <div style="font-size:16px;font-weight:600">删除任务「${t.name}」？</div>
+      <div style="font-size:13px;color:var(--t3);margin-top:8px;line-height:1.7">任务配置和计划会被移除。<br>云端已有的 ${R(t.repo).groups[0].snaps.length} 个快照默认保留，仍可在「快照」中还原。</div>
+      <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;font-size:13px;color:var(--t2)"><span class="cbx"></span>同时删除云端快照（不可恢复）</label>
+    </div>
+    <div class="mf" style="border:none;justify-content:center;padding-bottom:22px"><button class="btn" style="width:120px" onclick="closeModal()">取消</button><button class="btn danger-fill" style="width:120px" onclick="go({});toast('任务已删除（mock）')">删除</button></div></div>`;
+}
+
+/* =====================================================================
+   渲染
+   ===================================================================== */
+function render() {
+  renderSide();
+  $('main').innerHTML = S.nav === 'tasks' ? renderTasks()
+    : S.nav === 'hist' ? renderHist()
+    : S.snapView === 'detail' ? renderSnapDetail()
+    : S.snapView === 'restore' ? renderRestore() : renderSnapList();
+  const M = { wizard:mWizard, dirpick:mDirpick, cloud:mCloud, log:mLog, pick:mPick, confirm:mConfirm };
+  $('layer').innerHTML = renderMenu()
+    + S.modals.map((m, i) => `<div class="mask ${m.type==='log'?'drawer':''} ${m._new?'anim':''}" style="${i?'background:rgba(15,23,42,.25)':''}" onclick="if(event.target===this)closeModal()">${M[m.type](m)}</div>`).join('')
+    + (S.toast ? `<div class="toast"><span class="ok">✓</span>${S.toast}</div>` : '');
+  S.modals.forEach(m => delete m._new);
+}
+document.addEventListener('click', e => { if (S.menu && !e.target.closest('.menu') && !e.target.closest('.ib')) { S.menu = null; render(); } });
+render();
+</script>
+</body>
+</html>
