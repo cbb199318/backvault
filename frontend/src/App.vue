@@ -6566,7 +6566,7 @@ html.scroll-locked body {
   .modal.log-drawer { width: 100%; height: 92vh; border-radius: 16px 16px 0 0; animation: sheetup .22s ease-out; }
   .log-stats { grid-template-columns: 1fr 1fr; }
   .modal.del-dlg { width: 100%; }
-  .toast { top: calc(12px + env(safe-area-inset-top)); }
+  .toast { top: 12px; }
 
 }
 
@@ -6841,13 +6841,14 @@ input::placeholder, textarea::placeholder { color: var(--t3); }
 /* =========================== 手机 =========================== */
 @media (max-width: 768px) {
   .page { background: var(--bg); }
-  /* 顶部滚动边缘：内容滚到状态栏下方时淡出 */
+  /* 顶部滚动边缘：内容滚到顶端时淡出。
+     不加 env(safe-area-inset-top)：飞牛 App 的 WebView 自带顶栏，却仍把状态栏高度报成安全区，会在标题上方多出约 48px 空白 */
   .page::before {
     content: ""; position: fixed; left: 0; right: 0; top: 0; z-index: 20; pointer-events: none;
-    height: calc(env(safe-area-inset-top) + 14px);
+    height: 8px;
     background: linear-gradient(var(--bg), transparent);
   }
-  .content { padding: calc(env(safe-area-inset-top) + 2px) 16px 130px; }
+  .content { padding: 6px 16px 130px; }
   .mtitle {
     display: block; margin: 0 4px 10px; font-size: 34px; font-weight: 700; letter-spacing: .01em; line-height: 1.12;
     padding-right: 56px;
@@ -6866,7 +6867,7 @@ input::placeholder, textarea::placeholder { color: var(--t3); }
 
   /* 新建按钮：右上角玻璃圆按钮（替代右下角 FAB） */
   .fab {
-    top: calc(env(safe-area-inset-top) + 2px); bottom: auto; right: 16px;
+    top: 6px; bottom: auto; right: 16px;
     width: 40px; height: 40px; color: var(--t1);
   }
   .fab:active { transform: scale(.92); }
