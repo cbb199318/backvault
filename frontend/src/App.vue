@@ -2734,6 +2734,12 @@ async function copySetRepoPw(r) {
   }
 }
 
+// 升级到非 root 后数据目录读不到：从后端提示里取出修复命令
+const dataFixCmd = computed(() => {
+  const m = /sudo chown -R \S+ \S+/.exec((status.value && status.value.data_error) || "");
+  return m ? m[0] : "";
+});
+
 // 外观：跟随系统 / 浅色 / 深色（只存在本机浏览器）
 function readTheme() {
   try { return localStorage.getItem("bv-theme") || "auto"; } catch (e) { return "auto"; }
@@ -2848,6 +2854,14 @@ const mHead = computed(() => {
     <div class="main" :style="ptrStyle">
 
       <main class="content">
+        <div class="data-err" v-if="status && status.data_error">
+          <Icon name="alert-triangle" :size="18" />
+          <div class="data-err-t">
+            <b>无法访问升级前的数据</b>
+            <span>{{ status.data_error }}</span>
+          </div>
+          <button class="btn sm" v-if="dataFixCmd" @click="copyText(dataFixCmd, '命令已复制')">复制命令</button>
+        </div>
         <!-- 手机：iOS 式大标题（只在各 Tab 的根视图出现） -->
         <h1 class="mtitle" v-if="(nav !== 'snap' || snapView === 'list') && !(nav === 'set' && setRepo)">{{ nav === "tasks" ? "备份" : nav === "snap" ? "快照" : nav === "set" ? "设置" : "历史" }}</h1>
         <template v-if="mHead">
@@ -7055,4 +7069,15 @@ button.set-row:active { background: var(--fill); }
 .panel-h h3, .pseg button { white-space: nowrap; }
 .panel-h .psearch { min-width: 0; flex: 0 1 260px; margin-left: auto; }
 .panel-h .psearch input { min-width: 0; width: 100%; }
+
+/* 升级后旧数据读不到 */
+.data-err {
+  display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; padding: 12px 14px;
+  border-radius: 16px; background: var(--c-red-50); color: var(--t1);
+}
+.page .data-err > svg { color: var(--c-red); flex: none; margin-top: 1px; }
+.data-err-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.data-err-t b { color: var(--c-red); font-size: 14px; }
+.data-err-t span { font-size: 13px; color: var(--t2); line-height: 1.55; word-break: break-all; }
+.data-err .btn { flex: none; background: var(--c-red); color: #fff; }
 </style>

@@ -621,10 +621,12 @@ const rollbackSh = `rollback() {
 }
 `
 
-// restartApp 优先走 appcenter-cli（飞牛面板状态保持一致，并带回滚看门狗），否则原地 exec
+// restartApp：root 时走 appcenter-cli（飞牛面板状态保持一致，并带回滚看门狗），否则原地 exec
 func restartApp(newBin, newVer string) {
 	const cli = "/usr/local/bin/appcenter-cli"
-	if _, err := os.Stat(cli); err == nil && socketMode() {
+	// appcenter-cli 要连系统 RPC，只有 root 能用；0.5.0 起以应用用户运行，直接走原地 exec。
+	// 回滚由 cmd/main 的 trial 机制兜底：新版本起不来时，下次启动自动退回上一个版本
+	if _, err := os.Stat(cli); err == nil && socketMode() && os.Geteuid() == 0 {
 		app := appName()
 		var watch string
 		if newVer != "" {
@@ -646,7 +648,12 @@ rollback; %[1]s stop %[2]s; sleep 2; %[1]s start %[2]s
 		}
 		log.Printf("[update] appcenter-cli 重启失败，改用 exec")
 	}
-	// 回退：原地替换进程（PID 不变，cmd/main 的 pid 文件依然有效）
+	// 回退：原地替换进程（PID 不变，cmd/main 的 pid 文件依然有效）。
+	// 新版本没经过 cmd/main，先替它标记「已启动过一次试运行」：万一新版本崩溃，
+	// 用户在应用中心重新启动时 cmd/main 会直接回滚，而不是再试一次
+	if newVer != "" {
+		_ = os.WriteFile(filepath.Join(overlayRoot(), "trial.booted"), nil, 0o644)
+	}
 	if newBin == "" {
 		newBin = filepath.Join(env("TRIM_APPDEST", "."), "server", "encbackup-server")
 	}

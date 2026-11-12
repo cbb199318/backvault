@@ -701,12 +701,17 @@ func unmaskPassword(r Repo, stored *Repo) Repo {
 }
 
 func saveConfig() error {
+	if e := dataError(); e != "" {
+		// 旧数据读不到时不写，避免用空配置覆盖
+		return errors.New(e)
+	}
 	data, _ := json.MarshalIndent(cfg, "", "  ")
 	p := filepath.Join(varDir(), "config.json")
 	return os.WriteFile(p, data, 0o600)
 }
 
 func loadConfig() {
+	startupDataCheck()
 	migrateConfigFile() // 跨多个版本升级时，按顺序把旧数据一次迁到当前 schema
 	data, err := os.ReadFile(filepath.Join(varDir(), "config.json"))
 	if err == nil {
@@ -1631,6 +1636,8 @@ func statusHandler(gateway string) http.HandlerFunc {
 			"restic_version": engineVersion("restic"),
 			"rclone_version": engineVersion("rclone"),
 			"running_task":   runID,
+			"run_user":       runUserName(),
+			"data_error":     dataError(),
 		})
 	}
 }
@@ -2414,6 +2421,8 @@ func friendlyErr(msg string) string {
 		return "仓库被锁定，请稍后重试"
 	case strings.Contains(msg, "connection") || strings.Contains(msg, "timeout"):
 		return "连接云端超时，请检查网络"
+	case strings.Contains(msg, "permission denied"):
+		return permHint
 	default:
 		// 去掉 "Fatal: " 前缀，截断
 		m := strings.TrimSpace(strings.TrimPrefix(msg, "Fatal:"))
@@ -2525,7 +2534,11 @@ func browseHandler(w http.ResponseWriter, r *http.Request) {
 	req.Path = safePath
 	entries, err := os.ReadDir(req.Path)
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"path": req.Path, "dirs": []any{}, "user_root": root, "roots": sc.Display, "home": sc.Home, "error": err.Error()})
+		msg := err.Error()
+		if os.IsPermission(err) {
+			msg = permHint
+		}
+		writeJSON(w, 200, map[string]any{"path": req.Path, "dirs": []any{}, "user_root": root, "roots": sc.Display, "home": sc.Home, "error": msg})
 		return
 	}
 	type dirInfo struct {
@@ -4599,16 +4612,16 @@ func main() {
 		}
 		// socket 权限：默认只允许网关（nginx worker，www-data 组）与 root 访问，
 		// 避免本机其它用户绕过飞牛统一鉴权直连 API。组不存在时退回 0666 保证可用。
-		if err := os.Chmod(socketPath, 0o660); err == nil {
-			if g, gerr := user.LookupGroup("www-data"); gerr == nil {
-				if gid, aerr := strconv.Atoi(g.Gid); aerr == nil {
-					_ = os.Chown(socketPath, 0, gid)
-				} else {
-					_ = os.Chmod(socketPath, 0o666)
-				}
-			} else {
-				_ = os.Chmod(socketPath, 0o666)
+		// 以应用用户（非 root）运行时改不了属组，只能放开到 0666，与官方 package 应用一致；
+		// 身份仍以网关注入的头为准，裸连 socket 拿不到管理员权限之外的东西（见 identityFrom）。
+		restricted := false
+		if g, gerr := user.LookupGroup("www-data"); gerr == nil {
+			if gid, aerr := strconv.Atoi(g.Gid); aerr == nil && os.Chown(socketPath, -1, gid) == nil {
+				restricted = os.Chmod(socketPath, 0o660) == nil
 			}
+		}
+		if !restricted {
+			_ = os.Chmod(socketPath, 0o666)
 		}
 		if err := http.Serve(l, mux); err != nil {
 			panic(err)
