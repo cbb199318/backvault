@@ -3923,6 +3923,7 @@ func runRestore(j RestoreJob) {
 	if j.Dest == "custom" {
 		tmp = filepath.Join(j.Target, ".encbackup-rst-"+j.ID)
 		target = tmp // restic 先还原进临时目录（全新无冲突），rename 等冲突策略由随后的搬移阶段落地
+		sweepStaleStaging(j.Target)
 		_ = os.RemoveAll(tmp)
 		if err := os.MkdirAll(tmp, 0o755); err != nil {
 			finish("failed", "无法创建临时目录: "+err.Error())
@@ -4028,14 +4029,14 @@ func runRestore(j RestoreJob) {
 	}
 	if stopped {
 		if tmp != "" {
-			_ = os.RemoveAll(tmp)
+			removeStaging(tmp)
 		}
 		finish("stopped", "已手动停止")
 		return
 	}
 	if err != nil {
 		if tmp != "" {
-			_ = os.RemoveAll(tmp)
+			removeStaging(tmp)
 		}
 		finish("failed", "还原失败: "+err.Error())
 		return
@@ -4043,6 +4044,9 @@ func runRestore(j RestoreJob) {
 
 	// 自定义目的地：从临时目录搬移到目标目录（冲突策略在这里落地）
 	if j.Dest == "custom" {
+		// restic 会照快照恢复目录权限；原目录若是 d---------（靠 ACL 授权），以应用用户运行时
+		// 连自己刚还原的目录都进不去，搬移和清理都会失败。先给属主补上读写权限
+		ensureOwnerAccess(tmp)
 		restored, replaced, skipped, renamed := 0, 0, 0, 0
 		for _, inc := range j.Includes {
 			src := filepath.Join(tmp, strings.TrimPrefix(filepath.Clean(inc), "/"))
@@ -4081,7 +4085,7 @@ func runRestore(j RestoreJob) {
 				skipped++
 			}
 		}
-		_ = os.RemoveAll(tmp)
+		removeStaging(tmp)
 		finish("success", fmt.Sprintf("已还原 %d 项", len(j.Includes)-skipped),
 			restored, replaced, renamed, skipped)
 		return

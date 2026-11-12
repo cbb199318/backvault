@@ -79,3 +79,40 @@ func startupDataCheck() {
 		setDataError("升级后无法访问旧数据（" + err.Error() + "）。" + dataFixHint())
 	}
 }
+
+// ensureOwnerAccess 自顶向下给 root 下的目录补 u+rwx、文件补 u+rw。
+// 必须先改目录再读它的内容：权限为 000 的目录连列出都不行。只改属于自己的文件。
+func ensureOwnerAccess(root string) {
+	fi, err := os.Lstat(root)
+	if err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		return
+	}
+	if fi.IsDir() {
+		_ = os.Chmod(root, fi.Mode().Perm()|0o700)
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			ensureOwnerAccess(filepath.Join(root, e.Name()))
+		}
+		return
+	}
+	if fi.Mode().IsRegular() {
+		_ = os.Chmod(root, fi.Mode().Perm()|0o600)
+	}
+}
+
+// removeStaging 删除还原临时目录（先补权限，否则 000 目录删不掉）
+func removeStaging(dir string) {
+	ensureOwnerAccess(dir)
+	_ = os.RemoveAll(dir)
+}
+
+// sweepStaleStaging 清理目标目录下以前中断或失败留下的还原临时目录
+func sweepStaleStaging(target string) {
+	matches, _ := filepath.Glob(filepath.Join(target, ".encbackup-rst-*"))
+	for _, m := range matches {
+		removeStaging(m)
+	}
+}
