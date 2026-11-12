@@ -4,6 +4,7 @@ import BDrop from "./BDrop.vue";
 import CloudPicker from "./CloudPicker.vue";
 import TPick from "./TPick.vue";
 import Icon from "./Icon.vue";
+import wechatGroupQr from "./assets/wechat-group.png";
 import { cloudLogo, cloudLabel, cloudIcon, brandOf, brandFromText, BRANDS, BRAND_OPTIONS } from "./cloudLogo.js";
 
 // ---------------------------------------------------------------------------
@@ -11,7 +12,7 @@ import { cloudLogo, cloudLabel, cloudIcon, brandOf, brandFromText, BRANDS, BRAND
 // ---------------------------------------------------------------------------
 // API 前缀：网关下页面路径为 /app/encbackup/，直连/开发时为 /，从地址栏自动推导
 const API = ref(location.pathname.replace(/\/index\.html$/, "").replace(/\/+$/, ""));
-const nav = ref("tasks"); // tasks | snap | hist
+const nav = ref("tasks"); // tasks | snap | hist | set
 const toast = reactive({ show: false, msg: "", type: "ok" });
 
 function showToast(msg, type = "ok") {
@@ -2549,6 +2550,272 @@ onUnmounted(() => {
   // 保险：组件销毁时解除滚动锁，避免 body 卡在 fixed
   unlockBody();
 });
+
+// ---------------------------------------------------------------------------
+// 设置页：云盘仓库 / 数据安全 / 上传限速 / 外观 / 关于
+// ---------------------------------------------------------------------------
+const setRepoId = ref(""); // 非空时显示仓库详情
+const setRepo = computed(() => cfg.repos.find((r) => r.id === setRepoId.value) || null);
+const qrDlg = reactive({ show: false });
+function repoSum(id) {
+  return rp.list.find((x) => x.id === id) || null;
+}
+function repoSubText(r) {
+  const n = cfg.tasks.filter((t) => t.repo_id === r.id).length;
+  const sm = repoSum(r.id);
+  const parts = [n ? n + " 个任务" : "未被任务使用"];
+  if (sm && sm.cached) parts.push(sm.count ? sm.count + " 个快照" : "还没有快照");
+  return parts.join(" · ");
+}
+function repoTasks(r) {
+  return cfg.tasks.filter((t) => t.repo_id === r.id);
+}
+
+const settings = reactive({
+  upload_limit_kb: 0, limit_day_only: false, limit_from: "08:00", limit_to: "23:00",
+  config_saved_at: "", recovery_saved_at: "", loaded: false, saving: false,
+});
+const LIMIT_OPTS = [0, 512, 1024, 2048, 5120, 10240, 20480, 51200];
+function fmtLimit(kb) {
+  if (!kb) return "不限速";
+  if (kb < 1024) return kb + " KB/s";
+  const v = kb / 1024;
+  return (Number.isInteger(v) ? v : v.toFixed(1)) + " MB/s";
+}
+async function loadSettings() {
+  try {
+    Object.assign(settings, await api("/api/settings"));
+    settings.loaded = true;
+  } catch (e) {
+    showToast(e.message, "bad");
+  }
+}
+async function saveSettings() {
+  settings.saving = true;
+  try {
+    const r = await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        upload_limit_kb: Number(settings.upload_limit_kb) || 0,
+        limit_day_only: settings.limit_day_only,
+        limit_from: settings.limit_from,
+        limit_to: settings.limit_to,
+      }),
+    });
+    Object.assign(settings, r);
+    showToast("已保存，从下一次备份开始生效");
+  } catch (e) {
+    showToast("保存失败：" + e.message, "bad");
+    loadSettings();
+  } finally {
+    settings.saving = false;
+  }
+}
+
+// 下载：fetch 成 blob 再触发保存，飞牛的 iframe 里 window.open 可能被拦
+async function downloadFile(path, name) {
+  const r = await fetch(API.value + path);
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error(d.error || `HTTP ${r.status}`);
+  }
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+}
+async function exportRecovery() {
+  try {
+    await downloadFile("/api/export/recovery", `量子密备-恢复信息-${stamp()}.txt`);
+    showToast("已导出。请存到 NAS 以外的安全位置");
+    loadSettings();
+  } catch (e) {
+    showToast("导出失败：" + e.message, "bad");
+  }
+}
+async function exportConfig() {
+  try {
+    await downloadFile("/api/export/config", `量子密备-配置备份-${stamp()}.json`);
+    showToast("配置已导出");
+    loadSettings();
+  } catch (e) {
+    showToast("导出失败：" + e.message, "bad");
+  }
+}
+const importInput = ref(null);
+const importDlg = reactive({ show: false, busy: false, data: null, name: "", summary: "" });
+function pickImport() {
+  if (!importInput.value) return;
+  importInput.value.value = "";
+  importInput.value.click();
+}
+async function onImportFile(e) {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (d.app !== "encbackup" || d.kind !== "config") throw new Error("这不是量子密备导出的配置备份文件");
+    importDlg.data = d;
+    importDlg.name = f.name;
+    importDlg.summary = `${(d.repos || []).length} 个仓库 · ${(d.tasks || []).length} 个任务 · 导出于 ${fmtClock(d.exported_at)}（v${d.version || "?"}）`;
+    importDlg.show = true;
+  } catch (err) {
+    showToast("读取失败：" + err.message, "bad");
+  }
+}
+async function confirmImport() {
+  if (importDlg.busy) return;
+  importDlg.busy = true;
+  try {
+    const r = await api("/api/import/config", { method: "POST", body: JSON.stringify(importDlg.data) });
+    showToast(`已恢复 ${r.repos} 个仓库、${r.tasks} 个任务`);
+    importDlg.show = false;
+    setRepoId.value = "";
+    rp.list = [];
+    rp.byRepo = {};
+    await loadAll();
+    loadRepoSummary();
+    loadSettings();
+  } catch (e) {
+    showToast("恢复失败：" + e.message, "bad");
+  } finally {
+    importDlg.busy = false;
+  }
+}
+
+// 仓库详情：查看 / 复制加密密码
+const repoPw = reactive({ id: "", val: "", busy: false });
+async function toggleRepoPw(r) {
+  if (repoPw.id === r.id) {
+    repoPw.id = "";
+    repoPw.val = "";
+    return;
+  }
+  repoPw.busy = true;
+  try {
+    repoPw.val = await fetchRepoPw(r.id);
+    repoPw.id = r.id;
+  } catch (e) {
+    showToast("获取密码失败：" + e.message, "bad");
+  } finally {
+    repoPw.busy = false;
+  }
+}
+async function copyText(text, okMsg) {
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+    document.body.removeChild(ta);
+  }
+  showToast(ok ? okMsg : "复制失败，请手动记录", ok ? "ok" : "bad");
+}
+async function copySetRepoPw(r) {
+  try {
+    const pw = repoPw.id === r.id ? repoPw.val : await fetchRepoPw(r.id);
+    if (!pw) { showToast("该仓库没有密码", "bad"); return; }
+    copyText(pw, "密码已复制到剪贴板");
+  } catch (e) {
+    showToast("获取密码失败：" + e.message, "bad");
+  }
+}
+
+// 外观：跟随系统 / 浅色 / 深色（只存在本机浏览器）
+function readTheme() {
+  try { return localStorage.getItem("bv-theme") || "auto"; } catch (e) { return "auto"; }
+}
+const theme = ref(readTheme());
+function applyTheme(v) {
+  const el = document.documentElement;
+  if (v === "light" || v === "dark") el.dataset.theme = v;
+  else delete el.dataset.theme;
+}
+applyTheme(theme.value);
+watch(theme, (v) => {
+  applyTheme(v);
+  try { localStorage.setItem("bv-theme", v); } catch (e) { /* 隐私模式下忽略 */ }
+});
+watch(nav, (n) => {
+  if (n !== "set") {
+    setRepoId.value = "";
+    return;
+  }
+  if (!settings.loaded) loadSettings();
+  if (!rp.list.length) loadRepoSummary();
+});
+watch(setRepoId, () => {
+  repoPw.id = "";
+  repoPw.val = "";
+});
+
+// ---------------------------------------------------------------------------
+// 手机端：大标题下一行结论 + 有事才出的橙色提醒（替代占地方的仪表盘卡片）
+// ---------------------------------------------------------------------------
+const mHead = computed(() => {
+  if (nav.value === "tasks") {
+    if (!cfg.tasks.length) return null;
+    const ov = overview.value;
+    const care = cfg.tasks.filter(taskNeedsCare);
+    const running = cfg.tasks.find((t) => t.last_status === "running");
+    const next = cfg.tasks.map((t) => t.next_run_at || "").filter(Boolean).sort()[0];
+    const rest = [];
+    if (ov.bytes) rest.push(fmtBytes(ov.bytes));
+    if (next) rest.push("下次 " + fmtNextRun(next));
+    let lead = "全部正常";
+    if (care.length) lead = `${care.length} 个需要关注`;
+    else if (running) lead = "正在备份" + (progress.task_id === running.id ? " " + progress.percent.toFixed(0) + "%" : "");
+    return {
+      tone: ov.tone, lead, rest,
+      alerts: care.slice(0, 3).map((t) => ({
+        key: t.id,
+        title: `${t.name} ${t.auth_warn ? "云盘授权失效" : "上次备份未成功"}`,
+        sub: (t.auth_warn || t.last_message || "").slice(0, 40),
+        go: () => openLogs(t),
+      })),
+    };
+  }
+  if (nav.value === "snap") {
+    if (snapView.value !== "list" || !rp.list.length) return null;
+    const empty = rp.list.filter((r) => !r.count).length;
+    const o = snapOverview.value;
+    const rest = [`${o.repos} 个仓库`, `${o.snaps} 个快照`];
+    if (o.latest) rest.push("最近 " + fmtSnapTime(o.latest));
+    return { tone: empty ? "warn" : "ok", lead: empty ? `${empty} 个仓库还没有快照` : "云端快照正常", rest, alerts: [] };
+  }
+  if (nav.value === "hist") {
+    if (!hist.loaded) return null;
+    const fails = bak30.value.filter((x) => x.status === "failed");
+    const rest = [`近 30 天 ${bak30.value.length} 次备份`];
+    if (bak30Rate.value != null) rest.push("成功率 " + fmtRate(bak30Rate.value) + "%");
+    if (rst30.value.length) rest.push(`${rst30.value.length} 次还原`);
+    return {
+      tone: fails.length ? "warn" : "ok",
+      lead: fails.length ? `${fails.length} 次未成功` : "全部成功",
+      rest,
+      alerts: fails.length && !hist.onlyFail ? [{
+        key: "fail",
+        title: `最近一次失败：${fails[0].task_name || fails[0].name || "备份"}`,
+        sub: "点击只看失败记录",
+        go: () => { hist.onlyFail = true; hist.tab = "bak"; },
+      }] : [],
+    };
+  }
+  return null;
+});
 </script>
 
 <template>
@@ -2568,14 +2835,13 @@ onUnmounted(() => {
           <Icon name="history" :size="18" />
           历史<span class="sb-cnt run" v-if="taskCounts.run || runningRestores.length">{{ taskCounts.run + runningRestores.length }}</span>
         </button>
+        <button class="sb-item" :class="{ on: nav === 'set' }" @click="nav = 'set'; setRepoId = ''">
+          <Icon name="settings" :size="18" />
+          设置<span class="upd-dot sb-dot" v-if="upd && upd.available"></span>
+        </button>
       </nav>
       <div class="sb-foot" v-if="status">
         <div>量子密备 v{{ status.version || "-" }}</div>
-        <button class="upd-link" v-if="upd && upd.enabled" :class="{ hot: upd.available }" @click="openUpdate">
-          <span class="upd-dot" v-if="upd.available"></span>{{ upd.available ? "更新到 v" + upd.latest : "检查更新" }}
-        </button>
-        <div>restic {{ status.restic_version || "未找到" }}</div>
-        <div>rclone {{ status.rclone_version || "未找到" }}</div>
       </div>
     </aside>
 
@@ -2583,7 +2849,15 @@ onUnmounted(() => {
 
       <main class="content">
         <!-- 手机：iOS 式大标题（只在各 Tab 的根视图出现） -->
-        <h1 class="mtitle" v-if="nav !== 'snap' || snapView === 'list'">{{ nav === "tasks" ? "备份" : nav === "snap" ? "快照" : "历史" }}</h1>
+        <h1 class="mtitle" v-if="(nav !== 'snap' || snapView === 'list') && !(nav === 'set' && setRepo)">{{ nav === "tasks" ? "备份" : nav === "snap" ? "快照" : nav === "set" ? "设置" : "历史" }}</h1>
+        <template v-if="mHead">
+          <p class="msub"><b :class="'t-' + mHead.tone"><i class="msub-dot"></i>{{ mHead.lead }}</b><span v-for="(x, i) in mHead.rest" :key="i"> · {{ x }}</span></p>
+          <button class="malert" v-for="a in mHead.alerts" :key="a.key" @click="a.go()">
+            <span class="malert-ic">!</span>
+            <span class="malert-t"><b>{{ a.title }}</b><small v-if="a.sub">{{ a.sub }}</small></span>
+            <Icon name="chevron-right" :size="16" class="malert-chev" />
+          </button>
+        </template>
         <div class="upd-bar" v-if="updBanner" :class="'tone-' + updBanner.tone" @click="openUpdate">
           <Icon :name="updBanner.tone === 'info' ? 'refresh' : 'alert-circle'" :size="16" />
           <span>{{ updBanner.text }}</span>
@@ -3307,7 +3581,7 @@ onUnmounted(() => {
         </template>
 
         <!-- ==================== 历史：备份 + 还原 ==================== -->
-        <template v-else>
+        <template v-else-if="nav === 'hist'">
           <div class="dhead">
             <h1>历史</h1>
             <div class="dhead-acts">
@@ -3433,6 +3707,198 @@ onUnmounted(() => {
                 </div>
               </template>
               <div class="sn-empty" v-else><p>选一条记录查看详情</p></div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ==================== 设置 ==================== -->
+        <template v-if="nav === 'set'">
+          <!-- 设置首页 -->
+          <template v-if="!setRepo">
+            <div class="dhead"><h1>设置</h1></div>
+            <div class="set-cols">
+              <div>
+                <div class="set-hdr">云盘仓库</div>
+                <div class="set-group">
+                  <button class="set-row" v-for="r in cfg.repos" :key="r.id" @click="setRepoId = r.id">
+                    <span class="set-logo">
+                      <img v-if="cloudLogo(repoBrand(r))" :src="cloudLogo(repoBrand(r))" :alt="cloudLabel(repoBrand(r))" />
+                      <Icon v-else :name="cloudIcon(repoBrand(r))" :size="22" />
+                    </span>
+                    <span class="set-g">
+                      <b>{{ r.name }}</b>
+                      <small><i class="set-dot" :class="repoHealth(r.id).dot"></i>{{ repoSubText(r) }}</small>
+                    </span>
+                    <Icon name="chevron-right" :size="16" class="set-chev" />
+                  </button>
+                  <button class="set-row noic" @click="openRepo(null)"><span class="set-g set-link">添加云盘仓库…</span></button>
+                </div>
+                <div class="set-foot" v-if="!cfg.repos.length">新建备份任务时也可以顺手添加。</div>
+
+                <div class="set-hdr">数据安全</div>
+                <div class="set-group">
+                  <button class="set-row" @click="exportRecovery">
+                    <span class="set-tile t-red"><Icon name="lock" :size="17" /></span>
+                    <span class="set-g">
+                      <b>导出恢复信息</b>
+                      <small>{{ settings.recovery_saved_at ? "上次导出 " + fmtClock(settings.recovery_saved_at) : "还没有导出过，建议现在导出一份" }}</small>
+                    </span>
+                    <Icon name="download" :size="16" class="set-chev" />
+                  </button>
+                  <button class="set-row" @click="exportConfig">
+                    <span class="set-tile t-indigo"><Icon name="upload" :size="17" /></span>
+                    <span class="set-g">
+                      <b>导出配置备份</b>
+                      <small>{{ settings.config_saved_at ? "上次导出 " + fmtClock(settings.config_saved_at) : "全部任务、仓库和设置" }}</small>
+                    </span>
+                    <Icon name="download" :size="16" class="set-chev" />
+                  </button>
+                  <button class="set-row" @click="pickImport">
+                    <span class="set-tile t-gray"><Icon name="refresh" :size="17" /></span>
+                    <span class="set-g"><b>从配置备份恢复</b><small>重装应用或换 NAS 后使用</small></span>
+                    <Icon name="chevron-right" :size="16" class="set-chev" />
+                  </button>
+                </div>
+                <input ref="importInput" type="file" accept=".json,application/json" style="display: none" @change="onImportFile" />
+                <div class="set-foot">恢复信息包含所有仓库的加密密码和云盘连接凭据。NAS 损坏时，凭它就能在任意电脑上用 restic 取回数据。请打印或存放在 NAS 以外的安全位置，不要上传到网盘。</div>
+              </div>
+
+              <div>
+                <div class="set-hdr">备份</div>
+                <div class="set-group">
+                  <label class="set-row">
+                    <span class="set-tile t-teal"><Icon name="upload" :size="17" /></span>
+                    <span class="set-g"><b>上传限速</b></span>
+                    <select class="set-select" v-model.number="settings.upload_limit_kb" @change="saveSettings" :disabled="settings.saving">
+                      <option v-for="o in LIMIT_OPTS" :key="o" :value="o">{{ fmtLimit(o) }}</option>
+                      <option v-if="!LIMIT_OPTS.includes(settings.upload_limit_kb)" :value="settings.upload_limit_kb">{{ fmtLimit(settings.upload_limit_kb) }}</option>
+                    </select>
+                  </label>
+                  <div class="set-row noic" v-if="settings.upload_limit_kb">
+                    <span class="set-g"><b>只在指定时段限速</b></span>
+                    <span class="tg" :class="{ off: !settings.limit_day_only }" role="switch" :aria-checked="settings.limit_day_only"
+                      @click="settings.limit_day_only = !settings.limit_day_only; saveSettings()"></span>
+                  </div>
+                  <div class="set-row noic" v-if="settings.upload_limit_kb && settings.limit_day_only">
+                    <span class="set-g"><b>时段</b></span>
+                    <input class="set-time" type="time" v-model="settings.limit_from" @change="saveSettings" />
+                    <span class="set-to">至</span>
+                    <input class="set-time" type="time" v-model="settings.limit_to" @change="saveSettings" />
+                  </div>
+                </div>
+                <div class="set-foot">{{ settings.upload_limit_kb && settings.limit_day_only ? "时段以外全速上传，适合白天限速、夜里全速。" : "备份时家里网速变卡，可以在这里限制上传带宽。" }}从下一次备份开始生效。</div>
+
+                <div class="set-hdr">通用</div>
+                <div class="set-group">
+                  <div class="set-row">
+                    <span class="set-tile t-indigo"><Icon name="eye" :size="17" /></span>
+                    <span class="set-g"><b>外观</b></span>
+                    <div class="pseg set-seg">
+                      <button :class="{ on: theme === 'light' }" @click="theme = 'light'">浅色</button>
+                      <button :class="{ on: theme === 'dark' }" @click="theme = 'dark'">深色</button>
+                      <button :class="{ on: theme === 'auto' }" @click="theme = 'auto'">自动</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="set-hdr">关于</div>
+                <div class="set-group">
+                  <div class="set-row noic"><span class="set-g"><b>版本</b></span><span class="set-v">{{ status ? status.version || "-" : "-" }}</span></div>
+                  <button class="set-row noic" v-if="upd && upd.enabled" @click="openUpdate">
+                    <span class="set-g set-link">{{ upd.available ? "更新到 v" + upd.latest : "检查更新" }}</span>
+                    <span class="upd-dot" v-if="upd.available"></span>
+                    <Icon name="chevron-right" :size="16" class="set-chev" />
+                  </button>
+                  <div class="set-row noic"><span class="set-g"><b>restic</b></span><span class="set-v">{{ status ? status.restic_version || "未找到" : "-" }}</span></div>
+                  <div class="set-row noic"><span class="set-g"><b>rclone</b></span><span class="set-v">{{ status ? status.rclone_version || "未找到" : "-" }}</span></div>
+                  <button class="set-row noic" @click="qrDlg.show = true">
+                    <span class="set-g"><b>加入用户交流群</b></span>
+                    <Icon name="chevron-right" :size="16" class="set-chev" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 仓库详情 -->
+          <template v-else>
+            <div class="set-bar">
+              <button class="set-back" @click="setRepoId = ''"><Icon name="chevron-left" :size="18" />设置</button>
+              <button class="btn ghost sm" @click="openRepo(setRepo)">编辑</button>
+            </div>
+            <div class="set-detail">
+              <div class="set-group set-hero">
+                <span class="set-logo lg">
+                  <img v-if="cloudLogo(repoBrand(setRepo))" :src="cloudLogo(repoBrand(setRepo))" :alt="cloudLabel(repoBrand(setRepo))" />
+                  <Icon v-else :name="cloudIcon(repoBrand(setRepo))" :size="30" />
+                </span>
+                <div class="set-g">
+                  <b class="set-hero-t">{{ setRepo.name }}</b>
+                  <small><i class="set-dot" :class="repoHealth(setRepo.id).dot"></i>{{ repoHealth(setRepo.id).sub }}</small>
+                </div>
+                <div class="set-hero-n" v-if="repoSum(setRepo.id) && repoSum(setRepo.id).cached">
+                  <b>{{ repoSum(setRepo.id).count }}</b><small>个快照</small>
+                </div>
+              </div>
+
+              <div class="set-hdr">连接</div>
+              <div class="set-group">
+                <div class="set-row noic"><span class="set-g"><b>类型</b></span><span class="set-v">{{ cloudLabel(repoBrand(setRepo)) }}</span></div>
+                <div class="set-row noic"><span class="set-g"><b>仓库地址</b></span><span class="set-v mono set-ellip" :title="setRepo.uri">{{ setRepo.uri }}</span></div>
+                <div class="set-row noic" v-if="setRepo.dav_url"><span class="set-g"><b>WebDAV</b></span><span class="set-v set-ellip">{{ setRepo.dav_user }} @ {{ setRepo.dav_url }}</span></div>
+                <button class="set-row noic" @click="verifyRepo(setRepo)"><span class="set-g set-link">检测连接</span></button>
+              </div>
+
+              <div class="set-hdr">加密密码</div>
+              <div class="set-group">
+                <div class="set-row noic">
+                  <span class="set-g mono set-pw">{{ repoPw.id === setRepo.id ? repoPw.val : "••••••••••••" }}</span>
+                  <button class="set-inline" :disabled="repoPw.busy" @click="toggleRepoPw(setRepo)">{{ repoPw.id === setRepo.id ? "隐藏" : "显示" }}</button>
+                </div>
+                <button class="set-row noic" @click="copySetRepoPw(setRepo)"><span class="set-g set-link">复制密码</span></button>
+              </div>
+              <div class="set-foot">密码只能在创建时设定。忘记密码将无法解密云端数据，建议用「导出恢复信息」另外保存一份。</div>
+
+              <div class="set-hdr">使用中的任务</div>
+              <div class="set-group">
+                <button class="set-row noic" v-for="t in repoTasks(setRepo)" :key="t.id" @click="openLogs(t)">
+                  <span class="set-g"><b>{{ t.name }}</b><small>{{ pathSummary(t) || "未选择目录" }}</small></span>
+                  <Icon name="chevron-right" :size="16" class="set-chev" />
+                </button>
+                <div class="set-row noic" v-if="!repoTasks(setRepo).length"><span class="set-g"><small>没有任务在使用这个仓库</small></span></div>
+              </div>
+
+              <div class="set-group set-danger">
+                <button class="set-row noic" @click="delRepo(setRepo)"><span class="set-g">删除仓库</span></button>
+              </div>
+              <div class="set-foot">只删除这里的连接配置，云端数据不受影响。有任务正在使用时无法删除。</div>
+            </div>
+          </template>
+
+          <!-- 从配置备份恢复：确认 -->
+          <div class="mask top2" v-if="importDlg.show" @click.self="!importDlg.busy && (importDlg.show = false)">
+            <div class="modal set-imp">
+              <div class="modal-head"><h3>从配置备份恢复？</h3></div>
+              <div class="modal-body">
+                <p class="set-imp-f">{{ importDlg.name }}</p>
+                <p class="set-imp-s">{{ importDlg.summary }}</p>
+                <p class="set-imp-w">当前的全部任务、仓库和设置会被这份备份替换（还原历史保留）。替换前会自动把当前配置另存一份在 NAS 上。</p>
+              </div>
+              <div class="modal-foot even">
+                <button class="btn ghost" :disabled="importDlg.busy" @click="importDlg.show = false">取消</button>
+                <button class="btn primary" :disabled="importDlg.busy" @click="confirmImport">{{ importDlg.busy ? "恢复中…" : "恢复" }}</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 用户交流群 -->
+          <div class="mask top2" v-if="qrDlg.show" @click.self="qrDlg.show = false">
+            <div class="modal set-qr">
+              <div class="modal-head"><h3>加入用户交流群</h3><button class="x" aria-label="关闭" @click="qrDlg.show = false"><Icon name="x" :size="14" /></button></div>
+              <div class="modal-body">
+                <img :src="wechatGroupQr" alt="微信群二维码" />
+                <p>微信扫码加入，反馈问题、交流使用经验</p>
+              </div>
             </div>
           </div>
         </template>
@@ -3944,6 +4410,10 @@ onUnmounted(() => {
         <Icon name="history" :size="23" />
         <span>历史</span>
       </button>
+      <button :class="{ on: nav === 'set' }" @click="nav = 'set'; setRepoId = ''">
+        <Icon name="settings" :size="23" />
+        <span>设置</span>
+      </button>
     </nav>
 
     <!-- 手机悬浮新建按钮：只在备份页出现 -->
@@ -4198,7 +4668,7 @@ onUnmounted(() => {
   --r-group: 22px; --r-ctl: 12px;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #000; --cell: #1c1c1e; --cell-2: #2c2c2e;
     --fill: rgba(118, 118, 128, .24); --fill2: rgba(118, 118, 128, .34); --fill-subtle: rgba(118, 118, 128, .12);
     --sep: rgba(84, 84, 88, .55); --sep2: rgba(120, 120, 128, .5);
@@ -4213,6 +4683,23 @@ onUnmounted(() => {
     --sel: rgba(255, 255, 255, .12); --seg-on: #636366;
   }
 }
+/* 设置页「外观」手动指定时覆盖系统 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #000; --cell: #1c1c1e; --cell-2: #2c2c2e;
+  --fill: rgba(118, 118, 128, .24); --fill2: rgba(118, 118, 128, .34); --fill-subtle: rgba(118, 118, 128, .12);
+  --sep: rgba(84, 84, 88, .55); --sep2: rgba(120, 120, 128, .5);
+  --t1: #fff; --t2: rgba(235, 235, 245, .82); --t3: rgba(235, 235, 245, .6); --t4: rgba(235, 235, 245, .3);
+  --c-blue: #0a84ff; --c-blue-h: #409cff; --c-blue-50: rgba(10, 132, 255, .18); --c-blue-100: rgba(10, 132, 255, .3);
+  --c-green: #30d158; --c-green-dot: #30d158; --c-green-50: rgba(48, 209, 88, .18);
+  --c-orange: #ff9f0a; --c-orange-dot: #ff9f0a; --c-orange-50: rgba(255, 159, 10, .18);
+  --c-red: #ff453a; --c-red-50: rgba(255, 69, 58, .18);
+  --c-purple: #bf5af2; --c-purple-50: rgba(191, 90, 242, .2);
+  --glass: rgba(44, 44, 48, .58); --glass-edge: rgba(255, 255, 255, .14);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, .5);
+  --sel: rgba(255, 255, 255, .12); --seg-on: #636366;
+}
+:root[data-theme="light"] { color-scheme: light; }
 html, body { margin: 0; background: var(--bg); -webkit-font-smoothing: antialiased; }
 </style>
 
@@ -6360,9 +6847,9 @@ input::placeholder, textarea::placeholder { color: var(--t3); }
     height: calc(env(safe-area-inset-top) + 14px);
     background: linear-gradient(var(--bg), transparent);
   }
-  .content { padding: calc(env(safe-area-inset-top) + 10px) 16px 130px; }
+  .content { padding: calc(env(safe-area-inset-top) + 2px) 16px 130px; }
   .mtitle {
-    display: block; margin: 6px 4px 12px; font-size: 34px; font-weight: 700; letter-spacing: .01em; line-height: 1.15;
+    display: block; margin: 0 4px 10px; font-size: 34px; font-weight: 700; letter-spacing: .01em; line-height: 1.12;
     padding-right: 56px;
   }
 
@@ -6379,8 +6866,8 @@ input::placeholder, textarea::placeholder { color: var(--t3); }
 
   /* 新建按钮：右上角玻璃圆按钮（替代右下角 FAB） */
   .fab {
-    top: calc(env(safe-area-inset-top) + 14px); bottom: auto; right: 16px;
-    width: 44px; height: 44px; color: var(--t1);
+    top: calc(env(safe-area-inset-top) + 2px); bottom: auto; right: 16px;
+    width: 40px; height: 40px; color: var(--t1);
   }
   .fab:active { transform: scale(.92); }
 
@@ -6421,5 +6908,104 @@ input::placeholder, textarea::placeholder { color: var(--t3); }
   .sheet-btn.primary { background: var(--c-blue); color: #fff; }
   .sheet-btn.cancel { background: transparent; color: var(--c-blue); }
   .sn-mcard { background: var(--fill-subtle); border-radius: 14px; }
+}
+
+/* =====================================================================
+   设置页（iOS「设置」式分组列表）
+   ===================================================================== */
+.set-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; align-items: start; }
+.set-hdr { font-size: 13px; color: var(--t3); padding: 18px 18px 7px; }
+.set-cols > div > .set-hdr:first-child { padding-top: 4px; }
+.set-group { background: var(--cell); border-radius: var(--r-group); overflow: hidden; }
+.set-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 0 16px;
+  border: none; background: transparent; font: inherit; color: var(--t1); text-align: left; position: relative;
+}
+button.set-row, label.set-row { cursor: pointer; }
+button.set-row:hover { background: var(--fill-subtle); }
+button.set-row:active { background: var(--fill); }
+.set-row + .set-row::before { content: ""; position: absolute; top: 0; right: 0; left: 58px; height: .5px; background: var(--sep); }
+.set-row.noic::before, .set-row.noic + .set-row::before { left: 16px; }
+.set-g { flex: 1; min-width: 0; padding: 11px 0; display: flex; flex-direction: column; gap: 2px; }
+.set-g b { font-size: 15px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-g small { font-size: 12.5px; color: var(--t3); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-link { color: var(--c-blue); font-size: 15px; }
+.set-v { color: var(--t3); font-size: 15px; white-space: nowrap; }
+.set-ellip { max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.set-v.mono { font-size: 12.5px; }
+.set-chev { color: var(--t4); flex: none; }
+.set-tile { width: 30px; height: 30px; border-radius: 8px; flex: none; display: grid; place-items: center; color: #fff; }
+.page .set-tile svg { color: #fff; }
+.t-red { background: #ff3b30; } .t-indigo { background: #5856d6; } .t-teal { background: #30b0c7; } .t-gray { background: #8e8e93; }
+.set-logo { width: 30px; height: 30px; flex: none; display: grid; place-items: center; color: var(--ic); }
+.set-logo img { max-width: 30px; max-height: 26px; object-fit: contain; display: block; }
+.set-logo.lg { width: 52px; height: 52px; }
+.set-logo.lg img { max-width: 48px; max-height: 40px; }
+.set-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--t4); display: inline-block; margin-right: 6px; flex: none; }
+.set-dot.ok { background: var(--c-green-dot); } .set-dot.run { background: var(--c-blue); } .set-dot.bad { background: var(--c-orange-dot); }
+.set-foot { font-size: 12.5px; color: var(--t3); padding: 8px 18px 0; line-height: 1.55; }
+.set-select {
+  border: none; background: transparent; color: var(--t3); font: inherit; font-size: 15px; text-align: right;
+  padding: 6px 4px; cursor: pointer; outline: none; appearance: none; -webkit-appearance: none;
+}
+.set-select:focus-visible { outline: 3px solid var(--c-blue-100); border-radius: 8px; }
+.set-time { border: none; background: var(--fill); color: var(--t1); border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 14px; }
+.set-to { color: var(--t3); font-size: 14px; }
+.set-seg { flex: none; }
+.set-seg button { padding: 4px 12px; font-size: 13px; }
+.sb-dot { margin-left: auto; }
+.set-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; max-width: 640px; }
+.set-back { display: inline-flex; align-items: center; gap: 2px; border: none; background: none; color: var(--c-blue); font: inherit; font-size: 16px; cursor: pointer; padding: 4px 0; }
+.page .set-back svg { color: var(--c-blue); }
+.set-detail { max-width: 640px; }
+.set-hero { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
+.set-hero .set-g { padding: 0; }
+.set-hero-t { font-size: 18px !important; font-weight: 600 !important; }
+.set-hero-n { text-align: right; flex: none; }
+.set-hero-n b { display: block; font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+.set-hero-n small { font-size: 12px; color: var(--t3); }
+.set-pw { font-size: 14px; letter-spacing: .06em; word-break: break-all; }
+.set-inline { border: none; background: none; color: var(--c-blue); font: inherit; font-size: 15px; cursor: pointer; padding: 6px 0; flex: none; }
+.set-danger { margin-top: 26px; }
+.set-danger .set-g { color: var(--c-red); text-align: center; align-items: center; font-size: 15px; }
+.set-imp { width: 420px; }
+.set-imp-f { margin: 0 0 4px; font-weight: 600; word-break: break-all; }
+.set-imp-s { margin: 0 0 12px; font-size: 13px; color: var(--t3); }
+.set-imp-w { margin: 0; font-size: 13px; color: var(--t2); line-height: 1.6; background: var(--c-orange-50); border-radius: 12px; padding: 10px 12px; }
+.set-qr { width: 360px; }
+.set-qr .modal-body { text-align: center; padding-bottom: 22px; }
+.set-qr img { width: 100%; max-width: 280px; border-radius: 16px; display: block; margin: 0 auto 12px; }
+.set-qr p { margin: 0; font-size: 13px; color: var(--t3); }
+@media (max-width: 900px) {
+  .set-cols { grid-template-columns: 1fr; }
+  .set-cols > div + div > .set-hdr:first-child { padding-top: 18px; }
+}
+@media (max-width: 768px) {
+  .set-bar { margin-top: 2px; padding-right: 52px; }
+  .set-imp, .set-qr { width: 100%; }
+  .set-ellip { max-width: 55%; }
+}
+
+/* ==================== 手机：标题副行 + 有事才提醒 ==================== */
+.msub, .malert { display: none; }
+@media (max-width: 768px) {
+  .ov-hero { display: none; }
+  .mtitle { margin-bottom: 4px; }
+  .msub { display: block; margin: 0 4px 14px; font-size: 14px; color: var(--t3); line-height: 1.45; }
+  .msub b { font-weight: 600; display: inline-flex; align-items: center; }
+  .msub span { white-space: nowrap; }
+  .msub .t-ok { color: var(--c-green); } .msub .t-warn { color: var(--c-orange); } .msub .t-run { color: var(--c-blue); }
+  .msub-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 5px; }
+  .malert {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: var(--t1);
+    background: var(--c-orange-50); border: none; border-radius: 16px; padding: 10px 12px; margin-bottom: 10px; cursor: pointer;
+  }
+  .malert:active { transform: scale(.98); }
+  .malert-ic { width: 26px; height: 26px; border-radius: 50%; background: var(--c-orange-dot); color: #fff; display: grid; place-items: center; font-weight: 800; flex: none; }
+  .malert-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .malert-t b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .malert-t small { font-size: 12px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .malert-chev { color: var(--t4); flex: none; }
+  .malert + .upd-bar, .msub + .upd-bar { margin-top: 0; }
 }
 </style>

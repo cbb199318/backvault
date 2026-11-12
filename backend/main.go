@@ -620,6 +620,7 @@ type Config struct {
 	Repos    []Repo       `json:"repos"`
 	Tasks    []Task       `json:"tasks"`
 	Restores []RestoreJob `json:"restores,omitempty"` // 还原历史（最近 30 条）
+	Settings Settings     `json:"settings"`           // 全局设置（设置页），见 settings.go
 }
 
 // RestoreJob：一次还原执行
@@ -1280,6 +1281,10 @@ func runTask(t *Task) error {
 		if ex != "" {
 			args = append(args, "--exclude", ex)
 		}
+	}
+	if kb := uploadLimitNow(time.Now()); kb > 0 {
+		args = append(args, "--limit-upload", strconv.Itoa(kb))
+		fmt.Fprintf(lf, "[info] 上传限速 %d KiB/s\n", kb)
 	}
 	res := runRestic(repo, args, lf, runStop, true)
 	if res.Err != nil {
@@ -4413,6 +4418,7 @@ func registerRoutes(mux *http.ServeMux, base string) {
 		tasksHandler(w, r)
 	})
 	mux.HandleFunc(base+"/api/history", historyHandler)
+	registerSettingsRoutes(mux, base)
 	registerUpdateRoutes(mux, base)
 	mux.HandleFunc(base+"/api/restores", restoresHandler)
 	mux.HandleFunc(base+"/api/restores/", restoreSubHandler)

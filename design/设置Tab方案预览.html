@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设置页方案</title>
+<style>
+:root{--bg:#f2f2f7;--cell:#fff;--t1:#000;--t2:rgba(60,60,67,.85);--t3:rgba(60,60,67,.6);--t4:rgba(60,60,67,.3);--sep:rgba(60,60,67,.14);--fill:rgba(118,118,128,.12);--blue:#007aff;--green:#34c759;--orange:#ff9500;--red:#ff3b30;--purple:#af52de;--teal:#30b0c7;--indigo:#5856d6;--gray:#8e8e93;
+--glass:rgba(255,255,255,.62);--glass-edge:rgba(255,255,255,.85)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e5e5ea;color:var(--t1);font:15px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;padding:40px 16px 80px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto}
+h1{font-size:28px;font-weight:700}
+.lead{color:#6c6c70;margin:6px 0 24px;max-width:820px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#3c3c43;margin-bottom:26px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:1px;white-space:nowrap}
+.tag.a{background:rgba(52,199,89,.15);color:#248a3d}
+.tag.b{background:rgba(0,122,255,.12);color:#0062cc}
+.tag.c{background:rgba(255,149,0,.15);color:#b25e00}
+h2.sec{font-size:18px;margin:38px 0 6px}
+.note{color:#6c6c70;font-size:14px;margin-bottom:16px;max-width:840px}
+
+/* idea table */
+.ideas{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.idea{background:#fff;border-radius:18px;padding:14px 16px}
+.idea b{font-size:15px}
+.idea p{font-size:13px;color:#3c3c43;margin-top:4px}
+.idea .num{font:600 12px ui-monospace,Menlo,monospace;color:var(--t3);margin-right:4px}
+
+/* shared list */
+.shdr{font-size:13px;color:var(--t3);padding:16px 18px 6px}
+.group{background:var(--cell);border-radius:22px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:0 16px;min-height:50px;position:relative}
+.row+.row::before{content:"";position:absolute;top:0;right:0;left:58px;height:.5px;background:var(--sep)}
+.row.noic+.row::before,.row.noic::before{left:16px}
+.row .g{flex:1;min-width:0;padding:10px 0}
+.row .v{color:var(--t3);white-space:nowrap;font-size:15px}
+.row .s{font-size:12.5px;color:var(--t3);margin-top:1px}
+.chev{color:var(--t4);font-size:20px;font-weight:500;margin-left:-4px}
+.tile{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;flex-shrink:0}
+.tile svg{width:18px;height:18px}
+.logo{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;font-weight:800;font-size:13px;color:#fff}
+.sw{width:44px;height:26px;border-radius:13px;background:var(--green);position:relative;flex-shrink:0}
+.sw::after{content:"";position:absolute;right:2px;top:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2)}
+.sw.off{background:var(--fill)}.sw.off::after{right:auto;left:2px}
+.blue{color:var(--blue)}.red{color:var(--red)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px}
+.dot.w{background:var(--orange)}
+.seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px;font-size:13px}
+.seg span{padding:4px 12px;border-radius:7px}
+.seg span.on{background:#fff;font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12)}
+.foot{font-size:12.5px;color:var(--t3);padding:7px 18px 0;line-height:1.5}
+
+/* desktop */
+.desk{border-radius:16px;overflow:hidden;box-shadow:0 0 0 .5px rgba(0,0,0,.2),0 30px 70px rgba(0,0,0,.25);overflow-x:auto}
+.win{min-width:1020px;height:760px;display:flex;background:var(--bg);padding:10px}
+.side{width:220px;border-radius:22px;padding:16px 10px;display:flex;flex-direction:column;background:var(--glass);backdrop-filter:blur(20px);box-shadow:inset 0 0 0 .5px var(--glass-edge),0 8px 28px rgba(0,0,0,.08)}
+.si{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:10px;font-size:14px}
+.si svg{width:18px;height:18px;color:var(--blue)}
+.si.on{background:rgba(0,0,0,.06);font-weight:600}
+.si .c{margin-left:auto;font-size:12px;color:var(--t3)}
+.main{flex:1;overflow:auto;padding:22px 32px;min-width:0}
+.main h3{font-size:28px;font-weight:700;margin-bottom:4px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
+.pill{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 14px;border-radius:16px;background:var(--blue);color:#fff;font-size:13px;font-weight:500}
+
+/* phone */
+.phones{display:flex;gap:36px;flex-wrap:wrap;justify-content:center}
+.phone{width:390px;height:844px;border-radius:54px;overflow:hidden;position:relative;background:var(--bg);box-shadow:0 0 0 10px #1b1b1d,0 0 0 11px #3a3a3c,0 30px 60px rgba(0,0,0,.3)}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000;z-index:6}
+.scroll{position:absolute;inset:0;overflow-y:auto;padding:60px 16px 120px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.lt{font-size:34px;font-weight:700;padding:8px 4px 4px}
+.tabbar{position:absolute;left:24px;right:24px;bottom:26px;height:62px;border-radius:31px;display:flex;padding:4px;background:var(--glass);backdrop-filter:blur(20px) saturate(1.8);-webkit-backdrop-filter:blur(20px) saturate(1.8);box-shadow:inset 0 0 0 .5px var(--glass-edge),0 8px 28px rgba(0,0,0,.12);z-index:5}
+.tab{flex:1;border-radius:27px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:600;gap:1px}
+.tab svg{width:23px;height:23px}
+.tab.on{background:rgba(0,0,0,.06);color:var(--blue)}
+.navb{position:absolute;top:54px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:4}
+.cb{height:44px;min-width:44px;border-radius:22px;display:grid;place-items:center;padding:0 12px;background:var(--glass);backdrop-filter:blur(20px);box-shadow:inset 0 0 0 .5px var(--glass-edge),0 6px 18px rgba(0,0,0,.1);font-weight:600;font-size:15px}
+.ttl{font-size:17px;font-weight:600}
+.cap{text-align:center;color:#6c6c70;font-size:13px;margin-top:10px}
+.big{font-size:22px;font-weight:700;letter-spacing:-.3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>量子密备 · 「设置」页方案</h1>
+<p class="lead">新增第 4 个标签页「设置」，云盘仓库管理从新建任务的下拉框里搬到这里。下面列出了 10 个可以放进设置的功能，按 iOS「设置」App 的样子排成分组列表。你勾选想要的，不想要的我就不做。</p>
+<div class="legend"><span><span class="tag a">现成</span> 后端已有，只是挪个地方</span><span><span class="tag b">小改</span> 改动小，半天以内</span><span><span class="tag c">新功能</span> 需要新写后端</span></div>
+
+<h2 class="sec">候选设置项</h2>
+<div class="ideas">
+<div class="idea"><b><span class="num">1</span>云盘仓库<span class="tag a">现成</span></b><p>仓库列表：新增、编辑、检测连接、查看/复制加密密码、删除。每个仓库显示被哪些任务在用、快照数量。</p></div>
+<div class="idea"><b><span class="num">2</span>导出恢复信息<span class="tag b">小改</span></b><p>一键导出所有仓库的地址和加密密码（可打印的文件）。NAS 坏了、重装系统时，凭这个文件就能在别的电脑上用 restic 取回数据。<b>强烈建议做</b>，现在密码只存在 NAS 上。</p></div>
+<div class="idea"><b><span class="num">3</span>配置备份与恢复<span class="tag b">小改</span></b><p>导出 / 导入全部任务和仓库配置。重装应用或换 NAS 后一键恢复，不用重新建任务。</p></div>
+<div class="idea"><b><span class="num">4</span>失败通知<span class="tag c">新功能</span></b><p>备份失败或连续 N 天没有成功备份时推送提醒：飞牛系统通知 / Bark / 企业微信 / Server 酱 等 Webhook。</p></div>
+<div class="idea"><b><span class="num">5</span>上传限速<span class="tag b">小改</span></b><p>限制上传带宽（restic 原生支持），可选只在白天限速，晚上全速，避免备份时家里网速变卡。</p></div>
+<div class="idea"><b><span class="num">6</span>新任务默认值<span class="tag b">小改</span></b><p>新建任务时默认的执行时间、保留快照份数、排除规则（如 .DS_Store、@eaDir、缩略图缓存）。</p></div>
+<div class="idea"><b><span class="num">7</span>仓库健康检查<span class="tag c">新功能</span></b><p>定期跑 restic check 校验云端数据完整性（如每月一次），结果显示在仓库详情里；也能手动立即检查、解除卡住的锁。</p></div>
+<div class="idea"><b><span class="num">8</span>外观<span class="tag b">小改</span></b><p>跟随系统 / 浅色 / 深色三选一。</p></div>
+<div class="idea"><b><span class="num">9</span>存储与日志<span class="tag b">小改</span></b><p>显示本地缓存（快照清单、日志）占用空间，一键清理；设置运行日志保留多久。</p></div>
+<div class="idea"><b><span class="num">10</span>关于与更新<span class="tag a">现成</span></b><p>版本号、检查更新、restic / rclone 版本、更新日志、加入用户交流群（二维码）。侧边栏底部那几行文字搬到这里。</p></div>
+</div>
+
+<h2 class="sec">桌面 · 设置首页（全部 10 项都做时的样子）</h2>
+<p class="note">左右两栏分组列表。点「云盘仓库」里的某一行进入仓库详情，点「添加云盘仓库」弹出现有的新建仓库窗口。</p>
+<div class="desk"><div class="win">
+<div class="side">
+<div class="si"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>备份任务<span class="c">4</span></div>
+<div class="si"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>快照</div>
+<div class="si"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>历史</div>
+<div class="si on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>设置</div>
+</div>
+<div class="main">
+<h3>设置</h3>
+<div class="cols">
+<div>
+<div class="shdr">云盘仓库 <span class="tag a">1</span></div>
+<div class="group">
+<div class="row"><span class="logo" style="background:#e8453c">天</span><div class="g">天翼云盘 · BackVault<div class="s"><span class="dot"></span>2 个任务 · 12 个快照</div></div><span class="chev">›</span></div>
+<div class="row"><span class="logo" style="background:#1684fc">5</span><div class="g">115 网盘 · backup<div class="s"><span class="dot"></span>1 个任务 · 8 个快照</div></div><span class="chev">›</span></div>
+<div class="row"><span class="logo" style="background:#8e8e93">W</span><div class="g">WebDAV · 极空间<div class="s"><span class="dot w"></span>1 个任务 · 还没有快照</div></div><span class="chev">›</span></div>
+<div class="row noic"><div class="g blue">添加云盘仓库…</div></div>
+</div>
+
+<div class="shdr">数据安全</div>
+<div class="group">
+<div class="row"><span class="tile" style="background:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><div class="g">导出恢复信息 <span class="tag b">2</span><div class="s">仓库地址 + 加密密码，NAS 损坏时用来取回数据</div></div><span class="chev">›</span></div>
+<div class="row"><span class="tile" style="background:var(--indigo)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span><div class="g">配置备份与恢复 <span class="tag b">3</span><div class="s">上次导出：从未</div></div><span class="chev">›</span></div>
+<div class="row"><span class="tile" style="background:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M9 12l2 2 4-4"/><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span><div class="g">仓库健康检查 <span class="tag c">7</span><div class="s">每月 1 日 04:00 · 上次 11-01 全部正常</div></div><span class="chev">›</span></div>
+</div>
+
+<div class="shdr">通知</div>
+<div class="group">
+<div class="row"><span class="tile" style="background:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4"/></svg></span><div class="g">备份失败时通知 <span class="tag c">4</span></div><span class="sw"></span></div>
+<div class="row noic"><div class="g">推送方式</div><span class="v">Bark</span><span class="chev">›</span></div>
+<div class="row noic"><div class="g">超过几天没成功也提醒</div><span class="v">3 天</span><span class="chev">›</span></div>
+</div>
+</div>
+
+<div>
+<div class="shdr">备份</div>
+<div class="group">
+<div class="row"><span class="tile" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span><div class="g">上传限速 <span class="tag b">5</span><div class="s">仅 08:00–23:00 限速</div></div><span class="v">5 MB/s</span><span class="chev">›</span></div>
+<div class="row"><span class="tile" style="background:var(--orange)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span><div class="g">新任务默认时间 <span class="tag b">6</span></div><span class="v">每天 03:00</span><span class="chev">›</span></div>
+<div class="row"><span class="tile" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5z"/><path d="m3 12 9 5 9-5"/></svg></span><div class="g">默认保留快照</div><span class="v">最近 30 份</span><span class="chev">›</span></div>
+<div class="row"><span class="tile" style="background:var(--gray)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></span><div class="g">默认排除规则</div><span class="v">9 条</span><span class="chev">›</span></div>
+</div>
+
+<div class="shdr">通用</div>
+<div class="group">
+<div class="row"><span class="tile" style="background:var(--indigo)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="#fff"/></svg></span><div class="g">外观 <span class="tag b">8</span></div><span class="seg"><span>浅色</span><span>深色</span><span class="on">自动</span></span></div>
+<div class="row"><span class="tile" style="background:var(--gray)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><div class="g">存储与日志 <span class="tag b">9</span><div class="s">缓存 1.3 GB · 日志保留 90 天</div></div><span class="chev">›</span></div>
+</div>
+
+<div class="shdr">关于 <span class="tag a">10</span></div>
+<div class="group">
+<div class="row noic"><div class="g">版本</div><span class="v">0.4.5</span></div>
+<div class="row noic"><div class="g blue">检查更新</div><span class="v">已是最新</span></div>
+<div class="row noic"><div class="g">restic / rclone</div><span class="v">0.17.3 / 1.68.1</span></div>
+<div class="row noic"><div class="g">更新日志</div><span class="chev">›</span></div>
+<div class="row noic"><div class="g">加入用户交流群</div><span class="chev">›</span></div>
+</div>
+</div>
+</div>
+</div></div></div>
+
+<h2 class="sec">手机 · 设置首页 / 仓库详情</h2>
+<p class="note">底部标签栏从 3 个变成 4 个。仓库详情页把现在散落在下拉框里的操作（看密码、检测、删除）集中到一起。</p>
+<div class="phones">
+<div><div class="phone">
+<div class="island"></div>
+<div class="scroll">
+<div class="lt">设置</div>
+<div class="shdr">云盘仓库</div>
+<div class="group">
+<div class="row"><span class="logo" style="background:#e8453c">天</span><div class="g">天翼云盘 · BackVault<div class="s"><span class="dot"></span>2 个任务 · 12 个快照</div></div><span class="chev">›</span></div>
+<div class="row"><span class="logo" style="background:#1684fc">5</span><div class="g">115 网盘 · backup<div class="s"><span class="dot"></span>1 个任务 · 8 个快照</div></div><span class="chev">›</span></div>
+<div class="row"><span class="logo" style="background:#8e8e93">W</span><div class="g">WebDAV · 极空间<div class="s"><span class="dot w"></span>还没有快照</div></div><span class="chev">›</span></div>
+<div class="row noic"><div class="g blue">添加云盘仓库…</div></div>
+</div>
+<div class="shdr">数据安全</div>
+<div class="group">
+<div class="row"><span class="tile" style="background:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><div class="g">导出恢复信息</div><span class="chev">›</span></div>
+<div class="row"><span class="tile" style="background:var(--indigo)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span><div class="g">配置备份与恢复</div><span class="chev">›</span></div>
+</div>
+<div class="shdr">备份</div>
+<div class="group">
+<div class="row"><span class="tile" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span><div class="g">上传限速</div><span class="v">5 MB/s</span><span class="chev">›</span></div>
+<div class="row"><span class="tile" style="background:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4"/></svg></span><div class="g">失败通知</div><span class="sw"></span></div>
+</div>
+<div class="shdr">关于</div>
+<div class="group">
+<div class="row noic"><div class="g">版本</div><span class="v">0.4.5</span></div>
+<div class="row noic"><div class="g blue">检查更新</div></div>
+</div>
+</div>
+<div class="tabbar">
+<div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>备份</div>
+<div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>快照</div>
+<div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>历史</div>
+<div class="tab on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>设置</div>
+</div>
+</div><div class="cap">设置首页</div></div>
+
+<div><div class="phone">
+<div class="island"></div>
+<div class="navb"><span class="cb" style="font-size:22px">‹</span><span class="ttl">天翼云盘 · BackVault</span><span class="cb">编辑</span></div>
+<div class="scroll" style="padding-top:112px">
+<div class="group" style="padding:16px 18px;display:flex;gap:14px;align-items:center"><span class="logo" style="background:#e8453c;width:52px;height:52px;border-radius:13px;font-size:20px">天</span><div><div class="big">12 个快照</div><div class="s" style="font-size:13px;color:var(--t3)"><span class="dot"></span>连接正常 · 最近 11-12 03:12</div></div></div>
+<div class="shdr">连接</div>
+<div class="group">
+<div class="row noic"><div class="g">类型</div><span class="v">天翼云盘</span></div>
+<div class="row noic"><div class="g">云端目录</div><span class="v">/个人云/BackVault</span></div>
+<div class="row noic"><div class="g blue">检测连接</div></div>
+</div>
+<div class="shdr">加密密码</div>
+<div class="group">
+<div class="row noic"><div class="g" style="font-family:ui-monospace,Menlo;letter-spacing:2px">••••••••••••</div><span class="blue" style="font-size:15px">显示</span></div>
+<div class="row noic"><div class="g blue">复制密码</div></div>
+</div>
+<div class="foot">密码只能在创建时设定。忘记密码将无法恢复云端数据，建议用「导出恢复信息」另外保存一份。</div>
+<div class="shdr">使用中的任务</div>
+<div class="group">
+<div class="row noic"><div class="g">相册备份</div><span class="chev">›</span></div>
+<div class="row noic"><div class="g">工作目录</div><span class="chev">›</span></div>
+</div>
+<div class="group" style="margin-top:22px"><div class="row noic"><div class="g red" style="text-align:center">删除仓库</div></div></div>
+<div class="foot">只删除这里的连接配置，云端数据不受影响。有任务正在使用时无法删除。</div>
+</div>
+<div class="tabbar">
+<div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>备份</div>
+<div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>快照</div>
+<div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>历史</div>
+<div class="tab on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>设置</div>
+</div>
+</div><div class="cap">仓库详情</div></div>
+</div>
+
+</div>
+</body>
+</html>
