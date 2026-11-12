@@ -30,10 +30,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -256,41 +253,6 @@ func verifySig(data, sigB64 []byte) error {
 	return nil
 }
 
-// fetchManifest 依次尝试各来源，返回第一个签名校验通过的清单
-func fetchManifest(ctx context.Context) (*updManifest, error) {
-	var lastErr error
-	for _, u := range manifestURLs() {
-		c, cancel := context.WithTimeout(ctx, 20*time.Second)
-		body, err := httpGet(c, u, 1<<20)
-		if err == nil {
-			var sig []byte
-			sig, err = httpGet(c, u+".sig", 4<<10)
-			if err == nil {
-				err = verifySig(body, sig)
-			}
-		}
-		cancel()
-		if err != nil {
-			lastErr = fmt.Errorf("%s：%w", shortHost(u), err)
-			continue
-		}
-		var m updManifest
-		if err := json.Unmarshal(body, &m); err != nil {
-			lastErr = fmt.Errorf("清单格式错误：%w", err)
-			continue
-		}
-		if !safeVerRe.MatchString(m.Version) {
-			lastErr = fmt.Errorf("清单版本号非法：%q", m.Version)
-			continue
-		}
-		return &m, nil
-	}
-	if lastErr == nil {
-		lastErr = errors.New("没有可用的更新源")
-	}
-	return nil, lastErr
-}
-
 func shortHost(u string) string {
 	s := strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
 	if i := strings.Index(s, "/"); i > 0 {
@@ -461,69 +423,7 @@ func startApply() error {
 	return nil
 }
 
-type progressWriter struct {
-	total, done int64
-}
-
-func (p *progressWriter) Write(b []byte) (int, error) {
-	p.done += int64(len(b))
-	if p.total > 0 {
-		setPhase("downloading", float64(p.done)/float64(p.total), "")
-	}
-	return len(b), nil
-}
-
-func downloadAsset(a updAsset, dst string) error {
-	var lastErr error
-	for _, u := range candidates(a.URLs) {
-		lastErr = func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-			if err != nil {
-				return err
-			}
-			req.Header.Set("User-Agent", "encbackup-updater/"+appVersion)
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("HTTP %d", resp.StatusCode)
-			}
-			f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			h := sha256.New()
-			pw := &progressWriter{total: a.Size}
-			n, err := io.Copy(io.MultiWriter(f, h, pw), io.LimitReader(resp.Body, maxPackageBytes+1))
-			if err != nil {
-				return err
-			}
-			if n > maxPackageBytes {
-				return errors.New("安装包超过大小上限")
-			}
-			if a.Size > 0 && n != a.Size {
-				return fmt.Errorf("大小不符（%d / %d）", n, a.Size)
-			}
-			if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, a.SHA256) {
-				return errors.New("sha256 校验失败")
-			}
-			return nil
-		}()
-		if lastErr == nil {
-			return nil
-		}
-		log.Printf("[update] 从 %s 下载失败：%v", shortHost(u), lastErr)
-	}
-	if lastErr == nil {
-		lastErr = errors.New("清单里没有下载地址")
-	}
-	return fmt.Errorf("下载失败：%w", lastErr)
-}
+// 下载实现见 update_race.go：多源同时测速，选最快的继续下载
 
 // extractTarGz 安全解压：只接受普通文件与目录，拒绝绝对路径、.. 与链接
 func extractTarGz(src, dst string) error {
