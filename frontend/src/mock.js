@@ -259,6 +259,15 @@ const routes = [
     running_task: "t2",
   })],
   [/^\/api\/config/, () => ({ repos, tasks, restores: [] })],
+  [/^\/api\/update/, () => ({
+    enabled: true, current: "0.4.4", builtin: "0.4.4", from_overlay: false,
+    checked_at: NOW.toISOString(), latest: "0.4.6", available: true, need_store: false,
+    size: 3231778, phase: "idle", progress: 0,
+    notes: [
+      { version: "0.4.6", date: "2026-11-20", items: ["快照页支持按日期筛选", "修复 115 网盘大文件上传偶发超时"] },
+      { version: "0.4.5", date: "2026-11-15", items: ["历史页新增导出 CSV", "还原向导记住上次的冲突策略"] },
+    ],
+  })],
   [/^\/api\/progress/, () => ({
     task_id: "t2",
     percent: 62.4,

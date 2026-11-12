@@ -1,5 +1,12 @@
 #!/bin/bash
 # 加密备份 - 一键构建：前端 → Go 后端(linux/amd64) → 组装 fpk 包目录 → fnpack 打包
+#
+#   ./build.sh            构建 fpk（上架飞牛应用商店）
+#   ./build.sh docker     构建 Docker 镜像
+#   ./build.sh release    构建在线更新包（amd64 + arm64）并签名 latest.json，
+#                         产物在 dist/release/v<版本>/，最后打印 gh release 命令
+#     可选环境变量：MIN_FROM（默认 0.4.4）、MIN_STORE（默认 0.4.4）、
+#                   UPDATE_KEY（默认 ~/.config/encbackup/update_ed25519.key）
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -20,7 +27,36 @@ mkdir -p "${APPDIR}/app/server/public" "${APPDIR}/app/server/engines"
 echo "== 3/5 组装静态资源 =="
 rm -rf "${APPDIR}/app/server/public"
 cp -R frontend/dist "${APPDIR}/app/server/public"
+echo "${VERSION}" > "${APPDIR}/app/server/VERSION"
 chmod +x "${APPDIR}/cmd/main" "${APPDIR}/app/server/encbackup-server"
+
+if [ "${1:-fpk}" = "release" ]; then
+  echo "== 在线更新包 =="
+  REL="dist/release/v${VERSION}"
+  rm -rf "${REL}" && mkdir -p "${REL}"
+  for ARCH in amd64 arm64; do
+    STAGE="$(mktemp -d)"
+    (cd backend && GOOS=linux GOARCH=${ARCH} CGO_ENABLED=0 go build -ldflags="-s -w -X main.appVersion=${VERSION}" -o "${STAGE}/encbackup-server" .)
+    cp -R frontend/dist "${STAGE}/public"
+    echo "${VERSION}" > "${STAGE}/VERSION"
+    chmod 755 "${STAGE}/encbackup-server"
+    COPYFILE_DISABLE=1 tar -czf "${REL}/encbackup-${VERSION}-linux-${ARCH}.tar.gz" -C "${STAGE}" encbackup-server VERSION public
+    rm -rf "${STAGE}"
+  done
+  (cd backend && go run ./cmd/updsign release \
+    -key "${UPDATE_KEY:-~/.config/encbackup/update_ed25519.key}" \
+    -version "${VERSION}" \
+    -min-from "${MIN_FROM:-0.4.4}" \
+    -min-store "${MIN_STORE:-0.4.4}" \
+    -base-url "https://github.com/cbb199318/backvault/releases/download/v${VERSION}" \
+    -changelog ../CHANGELOG.md \
+    -out "../${REL}" ../${REL}/encbackup-${VERSION}-linux-*.tar.gz)
+  ls -lh "${REL}"
+  echo ""
+  echo "检查无误后发布（latest.json 必须挂在最新的 Release 上，客户端靠 releases/latest/download/latest.json 找它）："
+  echo "  gh release create v${VERSION} ${REL}/* --title v${VERSION} --notes-file <(sed -n '/^## ${VERSION}/,/^## /p' CHANGELOG.md | sed '\$d') --latest"
+  exit 0
+fi
 
 echo "== 4/5 引擎二进制 (restic + rclone, linux/amd64) =="
 BIN_SRC="${ENGBIN:-/tmp/encbin}"

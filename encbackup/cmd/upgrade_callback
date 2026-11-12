@@ -1,2 +1,14 @@
 #!/bin/bash
+# 商店升级完成后：清掉不再比商店版本新的在线更新版本。
+# cmd/main 启动时也会做同样的检查，这里提前清理只是为了不留垃圾、不让旧的试运行标记误触发回滚。
+OVERLAY="${TRIM_PKGVAR}/overlay"
+BIN="${TRIM_APPDEST}/server/encbackup-server"
+[ -d "$OVERLAY" ] || exit 0
+
+NEW="$("$BIN" --version 2>/dev/null | head -n 1)"
+CUR="$(cat "$OVERLAY/current/VERSION" 2>/dev/null | tr -d '[:space:]')"
+if [ -z "$CUR" ] || [ -z "$NEW" ] || \
+   [ "$(printf '%s\n%s\n' "$CUR" "$NEW" | sort -V | tail -n 1)" = "$NEW" ]; then
+  rm -rf "$OVERLAY"
+fi
 exit 0

@@ -28,3 +28,8 @@ frontend/dist/
 
 # fpk 布局中的前端产物（build.sh 会重新生成）
 encbackup/app/server/public/
+
+# 在线更新发布产物（build.sh release）；签名私钥在 ~/.config/encbackup/，不在仓库里
+dist/
+encbackup/app/server/VERSION
+*.key

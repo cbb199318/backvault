@@ -616,6 +616,7 @@ type Task struct {
 }
 
 type Config struct {
+	Schema   int          `json:"schema"` // 数据版本，见 migrate.go
 	Repos    []Repo       `json:"repos"`
 	Tasks    []Task       `json:"tasks"`
 	Restores []RestoreJob `json:"restores,omitempty"` // 还原历史（最近 30 条）
@@ -705,9 +706,16 @@ func saveConfig() error {
 }
 
 func loadConfig() {
+	migrateConfigFile() // 跨多个版本升级时，按顺序把旧数据一次迁到当前 schema
 	data, err := os.ReadFile(filepath.Join(varDir(), "config.json"))
 	if err == nil {
 		_ = json.Unmarshal(data, cfg)
+	}
+	if cfg.Schema > currentSchema() {
+		// 回滚到老程序后读到新格式数据：保留 schema 号，避免下次升级重复迁移
+		log.Printf("[migrate] 配置 schema %d 高于本版本支持的 %d，按兼容模式读取", cfg.Schema, currentSchema())
+	} else {
+		cfg.Schema = currentSchema()
 	}
 	// 启动自愈：上次进程退出时残留的 running 状态清掉（实际进程已不在）
 	dirty := false
@@ -4405,6 +4413,7 @@ func registerRoutes(mux *http.ServeMux, base string) {
 		tasksHandler(w, r)
 	})
 	mux.HandleFunc(base+"/api/history", historyHandler)
+	registerUpdateRoutes(mux, base)
 	mux.HandleFunc(base+"/api/restores", restoresHandler)
 	mux.HandleFunc(base+"/api/restores/", restoreSubHandler)
 	mux.HandleFunc(base+"/api/hello", func(w http.ResponseWriter, r *http.Request) {
@@ -4521,6 +4530,11 @@ func basicAuth(next http.Handler) http.Handler {
 }
 
 func main() {
+	// --version：启动脚本取内置版本号、更新器自检新包都靠它，必须在任何副作用之前返回
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(appVersion)
+		return
+	}
 	_ = os.MkdirAll(varDir(), 0o755)
 	_ = os.MkdirAll(filepath.Join(varDir(), "cache"), 0o755)
 	_ = os.MkdirAll(logDir(), 0o755)
@@ -4566,6 +4580,9 @@ func main() {
 	go scheduler()
 	// 授权目录热更新：管理员在应用中心改完勾选，几秒内自动生效，无需重启
 	go authWatcher()
+	// 在线更新：试运行转正 + 定时检查新版本（只检查不安装）
+	go confirmTrial()
+	go autoCheckLoop()
 
 	socketPath := os.Getenv("SOCKET_PATH")
 	if socketPath != "" {

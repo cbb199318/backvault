@@ -146,6 +146,30 @@ cd backend && go run .
 - **调度**：后端内置定时器，备份任务按 cron 周期触发，进度经 restic JSON 输出解析。
 - **还原**：浏览快照 → 浏览文件树（逐层下钻）→ 指定原位置或新路径 → 冲突策略 → 执行。
 
+## 在线更新
+
+飞牛应用商店审核周期较长，0.4.4 起应用内置在线更新通道：商店负责首次安装和需要改启动脚本/权限的大版本，其余版本走 GitHub Releases。
+
+- **用户侧**：侧栏「检查更新」或顶部横幅 → 查看合并后的更新日志 → 立即更新。应用重启约 5 秒后页面自动刷新。
+- **跨版本**：每次下载最新完整包；数据结构变化由 [backend/migrate.go](backend/migrate.go) 在启动时按顺序迁移，落后多少个版本都一步直达。
+- **存放位置**：新版本解压到 `TRIM_PKGVAR/overlay/<版本>/`，[cmd/main](encbackup/cmd/main) 启动时若它比商店版本新就优先使用；商店升到同版本或更高后自动清除。
+- **安全**：`latest.json` 用 ed25519 签名，公钥在 [backend/update_pubkey.go](backend/update_pubkey.go)，安装包 sha256 写在已签名的清单里，镜像站无法篡改。
+- **回滚**：新版本启动后 15 秒内未转正（崩溃/断电）会自动切回上一个版本并还原配置；界面也可手动「恢复为商店版本」。
+- **拦截**：清单里的 `min_from` / `min_store_version` 让过旧或需要新启动脚本的安装提示用户去商店更新。
+
+发布流程：
+
+```bash
+# 首次：生成签名密钥（私钥在 ~/.config/encbackup/，务必离线备份，丢失后已装版本将收不到在线更新）
+cd backend && go run ./cmd/updsign keygen
+
+# 每次发布：先在 CHANGELOG.md 顶部写好新版本，再
+./build.sh release
+gh release create v0.4.5 dist/release/v0.4.5/* --latest
+```
+
+新增数据迁移时，只在 `migrations` 末尾追加、不要修改已发布的迁移；改了 `cmd/` 下的脚本或 `config/privilege` 时，发布时设置 `MIN_STORE=<该版本>`，让老商店版本的用户先走商店升级。
+
 ## 安全说明
 
 - 仓库密码随机生成，仅存于本地数据目录（`TRIM_PKGVAR/config.json`），不上传云端

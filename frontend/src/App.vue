@@ -2405,8 +2405,125 @@ watch(
   (n, o) => { if (o && n !== o && hist.loaded) loadHistory(); }
 );
 
+// ---------------------------------------------------------------------------
+// 在线更新（不依赖应用商店审核周期；后端见 updater.go）
+// ---------------------------------------------------------------------------
+const upd = ref(null);
+const updDlg = reactive({ show: false, busy: false, resetAsk: false });
+let updTimer = null;
+const isAdmin = computed(() => !status.value?.auth?.identified || !!status.value?.auth?.admin);
+// 横幅：有可用更新 / 需要去商店 / 上次自动回滚过，三种情况提示一次
+const updBanner = computed(() => {
+  const u = upd.value;
+  if (!u || !u.enabled) return null;
+  if (u.failed && !u.available) return { tone: "bad", text: `在线更新 v${u.failed} 启动失败，已自动回滚到 v${u.current}` };
+  if (u.available) return { tone: "info", text: `发现新版本 ${u.latest}` };
+  if (u.need_store) return { tone: "warn", text: `新版本 ${u.latest} 需要通过飞牛应用商店更新` };
+  return null;
+});
+
+async function loadUpdate() {
+  try {
+    upd.value = await api("/api/update");
+  } catch {
+    upd.value = null; // 老后端没有这个接口时静默
+  }
+}
+
+async function checkUpdate() {
+  updDlg.busy = true;
+  try {
+    upd.value = await api("/api/update/check", { method: "POST" });
+    if (!upd.value.latest) showToast("已是最新版本");
+  } catch (e) {
+    showToast(e.message, "bad");
+  } finally {
+    updDlg.busy = false;
+  }
+}
+
+function openUpdate() {
+  updDlg.show = true;
+  updDlg.resetAsk = false;
+  // 打开时没检查过就顺手检查一次
+  if (upd.value?.enabled && !upd.value.checked_at && !updDlg.busy) checkUpdate();
+}
+
+// 安装/重启期间轮询：先看下载进度，重启后后端版本号变了就刷新页面加载新前端
+function watchUpdate(target) {
+  if (updTimer) clearInterval(updTimer);
+  const started = Date.now();
+  updTimer = setInterval(async () => {
+    try {
+      const st = await api("/api/status");
+      if (target ? st.version === target : st.version !== upd.value?.current) {
+        clearInterval(updTimer);
+        updTimer = null;
+        location.reload();
+        return;
+      }
+      const u = await api("/api/update");
+      if (u.phase === "error") {
+        clearInterval(updTimer);
+        updTimer = null;
+        upd.value = u;
+        showToast(u.error || "更新失败", "bad");
+        return;
+      }
+      if (u.current === upd.value?.current) upd.value = u;
+    } catch {
+      // 重启中后端短暂不可达，继续等
+    }
+    if (Date.now() - started > 180000) {
+      clearInterval(updTimer);
+      updTimer = null;
+      showToast("更新超时，请到应用中心查看应用状态", "bad");
+      loadUpdate();
+    }
+  }, 1500);
+}
+
+async function applyUpdate() {
+  updDlg.busy = true;
+  try {
+    const target = upd.value.latest;
+    await api("/api/update/apply", { method: "POST" });
+    upd.value = { ...upd.value, phase: "downloading", progress: 0, error: "" };
+    watchUpdate(target);
+  } catch (e) {
+    showToast(e.message, "bad");
+  } finally {
+    updDlg.busy = false;
+  }
+}
+
+async function resetUpdate() {
+  updDlg.busy = true;
+  try {
+    await api("/api/update/reset", { method: "POST" });
+    upd.value = { ...upd.value, phase: "restarting" };
+    watchUpdate(upd.value.builtin);
+  } catch (e) {
+    showToast(e.message, "bad");
+  } finally {
+    updDlg.busy = false;
+    updDlg.resetAsk = false;
+  }
+}
+
+const updWorking = computed(() => ["downloading", "installing", "restarting"].includes(upd.value?.phase));
+const updPhaseText = computed(() => {
+  const u = upd.value;
+  if (!u) return "";
+  if (u.phase === "downloading") return `正在下载 ${Math.round((u.progress || 0) * 100)}%`;
+  if (u.phase === "installing") return "正在校验并安装…";
+  if (u.phase === "restarting") return "正在重启，完成后页面会自动刷新…";
+  return "";
+});
+
 onMounted(() => {
   loadAll();
+  loadUpdate();
   // 备份页横幅要用到快照数与近 30 天成功率；两个接口都只读本地缓存，开销很小
   loadRepoSummary();
   loadHistory();
@@ -2423,6 +2540,7 @@ onUnmounted(() => {
   if (logTimer) clearInterval(logTimer);
   if (rstTimer) clearInterval(rstTimer);
   if (scopeTimer) clearInterval(scopeTimer);
+  if (updTimer) clearInterval(updTimer);
   window.removeEventListener("touchstart", ptrOnStart);
   window.removeEventListener("touchmove", ptrOnMove);
   window.removeEventListener("touchend", ptrOnEnd);
@@ -2453,6 +2571,9 @@ onUnmounted(() => {
       </nav>
       <div class="sb-foot" v-if="status">
         <div>量子密备 v{{ status.version || "-" }}</div>
+        <button class="upd-link" v-if="upd && upd.enabled" :class="{ hot: upd.available }" @click="openUpdate">
+          <span class="upd-dot" v-if="upd.available"></span>{{ upd.available ? "更新到 v" + upd.latest : "检查更新" }}
+        </button>
         <div>restic {{ status.restic_version || "未找到" }}</div>
         <div>rclone {{ status.rclone_version || "未找到" }}</div>
       </div>
@@ -2461,6 +2582,11 @@ onUnmounted(() => {
     <div class="main" :style="ptrStyle">
 
       <main class="content">
+        <div class="upd-bar" v-if="updBanner" :class="'tone-' + updBanner.tone" @click="openUpdate">
+          <Icon :name="updBanner.tone === 'info' ? 'refresh' : 'alert-circle'" :size="16" />
+          <span>{{ updBanner.text }}</span>
+          <span class="upd-bar-go">查看<Icon name="chevron-right" :size="14" /></span>
+        </div>
         <!-- ==================== 备份任务（仿飞牛原生） ==================== -->
         <template v-if="nav === 'tasks'">
           <!-- 概览横幅（方案 B） -->
@@ -3970,6 +4096,66 @@ onUnmounted(() => {
         <div class="modal-foot pair">
           <button class="btn ghost block" @click="rmDlg.show = false">取消</button>
           <button class="btn primary block" style="background:#dc2626; border-color:#dc2626;" :disabled="rmDlg.busy" @click="confirmRmRepo">{{ rmDlg.busy ? "移除中…" : "确认移除" }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 在线更新 -->
+    <div class="mask top" style="z-index:3100;" v-if="updDlg.show" @click="!updWorking && (updDlg.show = false)">
+      <div class="modal upd-modal" @click.stop>
+        <div class="modal-head">
+          <h3>在线更新</h3>
+          <button class="x" v-if="!updWorking" @click="updDlg.show = false"><Icon name="x" :size="18" /></button>
+        </div>
+        <div class="modal-body">
+          <div class="upd-vers">
+            <div><span>当前版本</span><b>v{{ upd?.current || status?.version }}</b></div>
+            <div v-if="upd?.from_overlay"><span>商店版本</span><b>v{{ upd.builtin }}</b></div>
+            <div v-if="upd?.latest"><span>最新版本</span><b class="new">v{{ upd.latest }}</b></div>
+          </div>
+
+          <p class="upd-tip" v-if="upd && !upd.enabled">{{ upd.disabled_reason }}</p>
+          <p class="upd-tip bad" v-else-if="upd?.failed">上次更新到 {{ upd.failed }} 后未能正常启动，已自动回滚。</p>
+          <p class="upd-tip" v-if="upd?.check_error">检查失败：{{ upd.check_error }}</p>
+          <p class="upd-tip warn" v-if="upd?.blocked">{{ upd.blocked }}</p>
+          <p class="upd-tip ok" v-if="upd?.enabled && upd.checked_at && !upd.latest && !upd.check_error">
+            <Icon name="circle-check" :size="15" /> 已是最新版本
+          </p>
+
+          <div class="upd-notes" v-if="upd?.notes?.length">
+            <div class="upd-note" v-for="n in upd.notes" :key="n.version">
+              <div class="upd-note-h">v{{ n.version }}<span v-if="n.date">{{ n.date }}</span></div>
+              <ul><li v-for="(it, i) in n.items" :key="i">{{ it }}</li></ul>
+            </div>
+          </div>
+
+          <div class="upd-prog" v-if="updWorking">
+            <div class="upd-prog-bar"><i :style="{ width: (upd.phase === 'downloading' ? (upd.progress || 0) * 100 : 100) + '%' }" :class="{ pulse: upd.phase !== 'downloading' }"></i></div>
+            <div class="upd-prog-t">{{ updPhaseText }}</div>
+          </div>
+          <p class="upd-tip bad" v-if="upd?.phase === 'error' && upd.error">{{ upd.error }}</p>
+
+          <p class="upd-foot-tip" v-if="upd?.available && !updWorking">
+            更新包经过签名校验；更新期间应用会重启约 5 秒，已有任务与数据不受影响。新版本若无法启动会自动回滚。
+          </p>
+          <div class="upd-reset" v-if="upd?.from_overlay && !updWorking && isAdmin">
+            <template v-if="!updDlg.resetAsk">
+              <button class="link-btn" @click="updDlg.resetAsk = true">恢复为商店版本 v{{ upd.builtin }}</button>
+            </template>
+            <template v-else>
+              <span>确定放弃在线更新、回到 v{{ upd.builtin }}？</span>
+              <button class="link-btn" @click="updDlg.resetAsk = false">取消</button>
+              <button class="link-btn danger" :disabled="updDlg.busy" @click="resetUpdate">确定</button>
+            </template>
+          </div>
+        </div>
+        <div class="modal-foot pair" v-if="upd?.enabled && !updWorking">
+          <button class="btn ghost block" :disabled="updDlg.busy" @click="checkUpdate">
+            {{ updDlg.busy && !upd.available ? "检查中…" : "检查更新" }}
+          </button>
+          <button class="btn primary block" v-if="upd.available && isAdmin" :disabled="updDlg.busy || !!upd.blocked" @click="applyUpdate">
+            立即更新
+          </button>
         </div>
       </div>
     </div>
@@ -5934,4 +6120,47 @@ html.scroll-locked body {
 /* 侧栏是整块，缩得再轻一点（FAB 在移动端已有自己的 scale(.94)，这里不覆盖） */
 .sb-item:active { transform: scale(.98); }
 
+
+/* ==================== 在线更新 ==================== */
+.upd-link { display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 4px; padding: 0; border: none; background: none;
+  font: inherit; color: var(--c-blue, #3370ff); cursor: pointer; }
+.upd-link:hover { text-decoration: underline; }
+.upd-link.hot { font-weight: 600; }
+.upd-dot { width: 7px; height: 7px; border-radius: 50%; background: #e5484d; }
+.upd-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 9px 14px; border-radius: 10px;
+  font-size: 13px; cursor: pointer; border: 1px solid transparent; }
+.upd-bar.tone-info { background: #eef4ff; color: #2b5fe0; border-color: #dce7ff; }
+.upd-bar.tone-warn { background: #fff3e6; color: #b45309; border-color: #fde2c4; }
+.upd-bar.tone-bad { background: #fdecec; color: #c2353a; border-color: #f8d0d1; }
+.upd-bar-go { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; font-weight: 600; white-space: nowrap; }
+.upd-modal { width: 480px; }
+.upd-vers { display: flex; gap: 10px; margin-bottom: 12px; }
+.upd-vers > div { flex: 1; background: #f7f8fa; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.upd-vers span { font-size: 12px; color: #6b7280; }
+.upd-vers b { font-size: 15px; color: #1f2937; }
+.upd-vers b.new { color: #3370ff; }
+.upd-tip { font-size: 13px; color: #6b7280; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
+.upd-tip.warn { color: #b45309; }
+.upd-tip.bad { color: #c2353a; }
+.upd-tip.ok { color: #18a058; }
+.upd-notes { max-height: 42vh; overflow-y: auto; border: 1px solid #f0f1f3; border-radius: 10px; padding: 4px 14px; margin-bottom: 12px; }
+.upd-note { padding: 10px 0; }
+.upd-note + .upd-note { border-top: 1px dashed #eceef1; }
+.upd-note-h { font-weight: 600; font-size: 13.5px; color: #1f2937; margin-bottom: 6px; display: flex; gap: 8px; align-items: baseline; }
+.upd-note-h span { font-weight: 400; font-size: 12px; color: #9ca3af; }
+.upd-note ul { margin: 0; padding-left: 18px; }
+.upd-note li { font-size: 12.5px; color: #4b5563; line-height: 1.65; }
+.upd-prog { margin: 6px 0 12px; }
+.upd-prog-bar { height: 6px; border-radius: 3px; background: #eef0f3; overflow: hidden; }
+.upd-prog-bar i { display: block; height: 100%; background: #3370ff; border-radius: 3px; transition: width .3s; }
+.upd-prog-bar i.pulse { animation: updpulse 1.2s ease-in-out infinite; }
+@keyframes updpulse { 50% { opacity: .45; } }
+.upd-prog-t { font-size: 12.5px; color: #6b7280; margin-top: 6px; }
+.upd-foot-tip { font-size: 12px; color: #9ca3af; margin: 0 0 8px; line-height: 1.6; }
+.upd-reset { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: #6b7280; margin-bottom: 6px; flex-wrap: wrap; }
+.upd-reset .link-btn.danger { color: #c2353a; }
+@media (max-width: 768px) {
+  .upd-modal { width: 100%; }
+  .upd-vers { flex-wrap: wrap; }
+}
 </style>
