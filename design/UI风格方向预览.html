@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI 风格方向</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@500;700&family=Archivo+Black&family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f5f2;--fg:#1a1a1a;--mute:#6b6b6b;--line:#dedbd4}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"PingFang SC","Inter",sans-serif;padding:40px 16px 80px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:28px;font-weight:800;letter-spacing:-.5px}
+.lead{color:var(--mute);margin:6px 0 28px;max-width:760px}
+.diag{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:48px}
+.diag h2{font-size:16px;margin-bottom:10px}
+.diag ul{padding-left:18px;color:#333;columns:2;column-gap:40px}
+.diag li{margin:3px 0;break-inside:avoid}
+@media(max-width:760px){.diag ul{columns:1}}
+.opt{margin-bottom:64px}
+.opt-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.opt-head .tag{font:700 13px/1 "JetBrains Mono",monospace;background:var(--fg);color:var(--bg);padding:5px 8px;border-radius:4px}
+.opt-head h2{font-size:22px}
+.opt-head .en{color:var(--mute);font-size:14px}
+.opt p.why{color:#444;max-width:820px;margin-bottom:6px}
+.opt .meta{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--mute);margin-bottom:16px}
+.opt .meta b{color:var(--fg);font-weight:600}
+.frame{border-radius:12px;overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.04),0 12px 40px -12px rgba(0,0,0,.18);overflow-x:auto}
+.app{display:flex;min-width:860px;min-height:420px}
+.side{width:200px;flex-shrink:0;display:flex;flex-direction:column}
+.main{flex:1;min-width:0}
+.ok{white-space:nowrap}
+
+/* ============ A 档案馆 ============ */
+.A{background:#f3ede1;color:#2b2621;font-family:"Noto Serif SC",serif}
+.A .side{border-right:1px solid #2b2621;padding:26px 0}
+.A .brand{padding:0 22px 22px;border-bottom:1px solid #2b2621}
+.A .brand b{font-size:22px;font-weight:900;letter-spacing:2px;display:block}
+.A .brand small{font:11px "JetBrains Mono",monospace;letter-spacing:1px;color:#8a7f70}
+.A nav a{display:flex;justify-content:space-between;padding:12px 22px;border-bottom:1px dashed #c9bfae;font-size:15px;color:#2b2621;text-decoration:none}
+.A nav a span{font:11px "JetBrains Mono",monospace;color:#8a7f70}
+.A nav a.on{background:#2b2621;color:#f3ede1}
+.A nav a.on span{color:#c9bfae}
+.A .main{padding:30px 40px}
+.A .top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px double #2b2621;padding-bottom:12px;margin-bottom:6px}
+.A .top h3{font-size:30px;font-weight:900;letter-spacing:3px}
+.A .top .cnt{font:12px "JetBrains Mono",monospace;color:#8a7f70}
+.A .btn{font-family:inherit;background:#9b2c1f;color:#f3ede1;border:0;padding:9px 18px;font-size:14px;letter-spacing:2px;cursor:pointer}
+.A .row{display:grid;grid-template-columns:54px 1fr 220px 120px;gap:18px;padding:20px 0;border-bottom:1px solid #c9bfae;align-items:center;position:relative}
+.A .no{font:700 13px "JetBrains Mono",monospace;color:#8a7f70}
+.A .t{font-size:19px;font-weight:700}
+.A .path{font-size:13px;color:#5a5047;margin-top:2px}
+.A .path i{font-style:normal;color:#9b2c1f;padding:0 6px}
+.A .k{font:11px "JetBrains Mono",monospace;color:#8a7f70;letter-spacing:1px}
+.A .v{font-size:14px}
+.A .stamp{justify-self:end;border:2px solid #9b2c1f;color:#9b2c1f;padding:3px 10px;font-weight:900;letter-spacing:3px;transform:rotate(-6deg);font-size:14px;opacity:.85}
+.A .stamp.idle{border-color:#8a7f70;color:#8a7f70}
+
+/* ============ B 终端 ============ */
+.B{background:#0e1110;color:#c8d3cc;font-family:"JetBrains Mono",monospace;font-size:13px}
+.B .side{background:#0a0c0b;border-right:1px solid #1f2723;padding:22px 0}
+.B .brand{padding:0 18px 20px;color:#7cf2a6;font-weight:700}
+.B .brand small{display:block;color:#4b5b52;font-weight:400}
+.B nav a{display:block;padding:7px 18px;color:#6f8077;text-decoration:none}
+.B nav a.on{color:#0e1110;background:#7cf2a6}
+.B nav a.on::before{content:"> "}
+.B .foot{margin-top:auto;padding:0 18px;color:#3b4842;font-size:11px}
+.B .main{padding:22px 28px}
+.B .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.B .top h3{font-size:14px;color:#e8efe9;font-weight:600}
+.B .top h3 span{color:#4b5b52}
+.B .btn{font-family:inherit;background:none;border:1px solid #7cf2a6;color:#7cf2a6;padding:6px 12px;cursor:pointer}
+.B .task{border:1px solid #1f2723;margin-bottom:14px}
+.B .th{display:flex;justify-content:space-between;padding:10px 14px;background:#131816;border-bottom:1px solid #1f2723}
+.B .th b{color:#e8efe9}
+.B .st{color:#7cf2a6}.B .st.idle{color:#e3b55b}
+.B .tb{display:grid;grid-template-columns:repeat(4,1fr);padding:12px 14px;gap:10px}
+.B .k{color:#4b5b52;font-size:11px}
+.B .v{color:#c8d3cc}
+.B .hash{color:#5aa2f2}
+.B .bar{height:4px;background:#1f2723;margin:0 14px 12px}
+.B .bar i{display:block;height:100%;width:100%;background:#7cf2a6}
+.B .acts{padding:0 14px 12px;color:#6f8077}
+.B .acts u{text-decoration:none;color:#c8d3cc;margin-right:16px}
+.B .acts u::before{content:"[";color:#4b5b52}.B .acts u::after{content:"]";color:#4b5b52}
+
+/* ============ C 新粗野 ============ */
+.C{background:#fff6e0;color:#111;font-family:"Space Grotesk","PingFang SC",sans-serif}
+.C .side{background:#ffd23f;border-right:3px solid #111;padding:22px 16px;gap:8px}
+.C .brand{font:28px/1 "Archivo Black","PingFang SC",sans-serif;font-weight:900;margin-bottom:16px}
+.C nav a{display:block;padding:10px 12px;border:3px solid transparent;color:#111;text-decoration:none;font-weight:700;margin-bottom:6px}
+.C nav a.on{background:#fff;border-color:#111;box-shadow:4px 4px 0 #111}
+.C .main{padding:28px 32px}
+.C .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.C .top h3{font:900 34px/1 "PingFang SC",sans-serif}
+.C .btn{font:700 15px "Space Grotesk","PingFang SC";background:#ff5c8a;border:3px solid #111;box-shadow:4px 4px 0 #111;padding:10px 18px;cursor:pointer}
+.C .btn:active{transform:translate(4px,4px);box-shadow:none}
+.C .card{background:#fff;border:3px solid #111;box-shadow:6px 6px 0 #111;margin-bottom:18px;display:grid;grid-template-columns:1fr auto}
+.C .cl{padding:16px 18px}
+.C .t{font-size:20px;font-weight:700}
+.C .flow{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.C .chip{border:2px solid #111;padding:2px 10px;font-weight:700;font-size:13px;background:#c4f1ff}
+.C .chip.d{background:#c8ffb0}
+.C .cr{border-left:3px solid #111;padding:16px 18px;min-width:170px;background:#7cf2a6;display:flex;flex-direction:column;justify-content:center}
+.C .cr.idle{background:#eee}
+.C .cr b{font-size:22px}
+.C .cr small{font-weight:700;font-size:12px}
+
+/* ============ D 瑞士 ============ */
+.D{background:#fff;color:#000;font-family:"Inter","PingFang SC",sans-serif}
+.D .side{padding:28px 24px;border-right:1px solid #000}
+.D .brand{font-weight:900;font-size:17px;line-height:1.15;margin-bottom:40px}
+.D .brand i{display:block;width:18px;height:18px;background:#e3000f;margin-bottom:10px}
+.D nav a{display:block;color:#000;text-decoration:none;font-size:15px;padding:4px 0;font-weight:500}
+.D nav a.on{font-weight:900}
+.D nav a.on::after{content:" —";color:#e3000f}
+.D .main{padding:28px 40px}
+.D .top{display:grid;grid-template-columns:1fr auto;align-items:end;margin-bottom:28px}
+.D .top h3{font-size:56px;font-weight:900;letter-spacing:-2px;line-height:.9}
+.D .btn{background:#000;color:#fff;border:0;padding:10px 18px;font:700 14px "Inter","PingFang SC";cursor:pointer}
+.D table{width:100%;border-collapse:collapse}
+.D th{text-align:left;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border-bottom:2px solid #000;padding:6px 0}
+.D td{padding:16px 12px 16px 0;border-bottom:1px solid #000;vertical-align:top;font-size:14px}
+.D td.n{font-size:36px;font-weight:900;letter-spacing:-1px;line-height:1}
+.D td.n small{display:block;font-size:12px;font-weight:500;letter-spacing:0;color:#666;margin-top:4px}
+.D td b{font-size:17px}
+.D .red{color:#e3000f;font-weight:700}
+
+/* ============ E 保险柜 ============ */
+.E{background:linear-gradient(#2a2d31,#1d1f22);color:#d9dcdf;font-family:"Inter","PingFang SC",sans-serif}
+.E .side{background:#17191b;padding:22px 14px;border-right:1px solid #000;box-shadow:inset -1px 0 0 #2f3236}
+.E .brand{display:flex;gap:10px;align-items:center;font-weight:700;margin-bottom:22px;padding:0 6px}
+.E .dial{width:30px;height:30px;border-radius:50%;background:repeating-conic-gradient(#5b6066 0 6deg,#3a3e43 6deg 12deg);box-shadow:0 0 0 2px #0c0d0e,inset 0 0 0 7px #2b2e32}
+.E nav a{display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;color:#9aa0a6;text-decoration:none;margin-bottom:4px}
+.E nav a.on{background:linear-gradient(#2e3135,#25282b);color:#fff;box-shadow:inset 0 1px 0 #3c4045,0 1px 2px #000}
+.E .led{width:7px;height:7px;border-radius:50%;background:#444}
+.E nav a.on .led,.E .led.g{background:#5dff8b;box-shadow:0 0 8px #5dff8b}
+.E .led.y{background:#ffb648;box-shadow:0 0 8px #ffb648}
+.E .main{padding:26px 30px}
+.E .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.E .top h3{font-size:22px;font-weight:700}
+.E .btn{background:linear-gradient(#f2a23a,#d9801a);color:#2a1a05;border:0;padding:10px 18px;border-radius:8px;font-weight:700;box-shadow:inset 0 1px 0 #ffd28f,0 2px 0 #7a4508,0 4px 10px rgba(0,0,0,.5);cursor:pointer}
+.E .unit{background:linear-gradient(#34383d,#2a2d31);border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:inset 0 1px 0 #44494f,0 2px 0 #0f1011,0 8px 20px rgba(0,0,0,.4);display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center}
+.E .screw{width:10px;height:10px;border-radius:50%;background:radial-gradient(#777,#333)}
+.E .t{font-weight:700;font-size:16px;display:flex;gap:8px;align-items:center}
+.E .lcd{font-family:"JetBrains Mono",monospace;background:#0f1a12;color:#7dffa0;padding:8px 12px;border-radius:6px;box-shadow:inset 0 2px 4px #000;font-size:12px;margin-top:8px;display:flex;gap:22px}
+.E .lcd span{color:#3c6b48}
+.E .keys{display:flex;gap:8px}
+.E .key{width:38px;height:38px;border-radius:8px;background:linear-gradient(#3e4248,#2c2f33);box-shadow:inset 0 1px 0 #555a61,0 2px 0 #0d0e0f;display:grid;place-items:center;color:#cfd3d7;font-size:14px}
+
+/* ============ F 暖白克制 ============ */
+.F{background:#faf8f4;color:#23201c;font-family:"Inter","PingFang SC",sans-serif}
+.F .side{padding:24px 14px}
+.F .brand{font-weight:700;font-size:15px;padding:0 10px;margin-bottom:24px;display:flex;align-items:center;gap:8px}
+.F .brand i{width:10px;height:13px;border-radius:50% 50% 50% 50%/60% 60% 40% 40%;background:#d6603a}
+.F nav a{display:block;padding:7px 10px;border-radius:6px;color:#77706a;text-decoration:none;font-size:14px}
+.F nav a.on{color:#23201c;background:#efebe4;font-weight:600}
+.F .main{padding:30px 40px 30px 20px}
+.F .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.F .top h3{font-size:20px;font-weight:700}
+.F .sum{color:#77706a;font-size:13px;margin-bottom:22px}
+.F .sum b{color:#2f7a4f;font-weight:600}
+.F .btn{background:#23201c;color:#faf8f4;border:0;padding:8px 14px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer}
+.F .item{display:grid;grid-template-columns:14px 1fr 180px 120px 60px;gap:16px;align-items:center;padding:16px 4px;border-top:1px solid #e9e4dc}
+.F .item:last-child{border-bottom:1px solid #e9e4dc}
+.F .dot{width:8px;height:8px;border-radius:50%;background:#2f7a4f}
+.F .dot.idle{background:#c9c2b8}
+.F .t{font-weight:600;font-size:15px}
+.F .s{color:#77706a;font-size:13px}
+.F .s i{font-style:normal;color:#b0a89d;padding:0 4px}
+.F .k{color:#a39b90;font-size:12px}
+.F .more{color:#a39b90;text-align:right;letter-spacing:2px}
+
+.pick{margin-top:40px;background:#1a1a1a;color:#f6f5f2;border-radius:10px;padding:20px 24px}
+.pick h2{font-size:16px;margin-bottom:6px}
+.pick p{color:#bbb;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>量子密备 · UI 风格方向</h1>
+<p class="lead">同一屏「备份任务」用 6 种方向重画，数据是你真实的两条任务。挑一个（或说「A 的配色 + F 的布局」这种组合），我再把它落到全部页面。</p>
+
+<div class="diag">
+<h2>现在的界面为什么有「AI 味」</h2>
+<ul>
+<li>灰蓝底 + 纯白圆角卡片 + 浅阴影：这是 Tailwind / shadcn 默认模板的样子</li>
+<li>主色是标准蓝（#3b82f6 一类），和成千上万个后台系统撞色</li>
+<li>每个图标都放在浅色圆角方块里，文件夹右下角再挂一个绿勾</li>
+<li>绿色文字、蓝色链接、灰色说明文字一起出现，层级靠颜色，不靠排版</li>
+<li>信息排得很平均，看不出哪条最重要（上次是否成功？下次什么时候？）</li>
+<li>没有和「加密 / 存档 / 保险柜」相关的视觉线索，换个名字就能当记账 App 用</li>
+</ul>
+</div>
+
+<!-- A -->
+<section class="opt">
+<div class="opt-head"><span class="tag">A</span><h2>档案馆</h2><span class="en">Archival / Editorial</span></div>
+<p class="why">把备份当成「归档入库」。米色纸张、宋体标题、编号目录，成功状态用一个红色印章「已归档」。最有中文气质，也最不像模板。</p>
+<div class="meta"><span>气质 <b>沉稳、可信、有文化感</b></span><span>适合 <b>想要辨识度、做品牌</b></span><span>难度 <b>中</b></span></div>
+<div class="frame"><div class="app A">
+<div class="side"><div class="brand"><b>量子密备</b><small>ARCHIVE · v0.4.4</small></div>
+<nav><a class="on">备份任务<span>02</span></a><a>快照库<span>36</span></a><a>归档记录<span>—</span></a></nav></div>
+<div class="main">
+<div class="top"><div><h3>备份任务</h3><div class="cnt">共 2 卷 · 433.5 GB</div></div><button class="btn">新建任务</button></div>
+<div class="row"><div class="no">No.01</div><div><div class="t">相册资料 → 天翼</div><div class="path">fnos／相册、资料<i>→</i>天翼云盘／飞牛加密备份</div></div><div><div class="k">上次 · 11-02 07:40</div><div class="v">281,186 项 · 4 时 40 分</div><div class="k" style="margin-top:4px">下次 · 11-06 03:00</div></div><div class="stamp">已归档</div></div>
+<div class="row"><div class="no">No.02</div><div><div class="t">115</div><div class="path">fnos／资料<i>→</i>115／加密备份仓库</div></div><div><div class="k">上次 · 10-29 03:04</div><div class="k" style="margin-top:4px">下次 · 无计划</div></div><div class="stamp idle">待命</div></div>
+</div></div></div>
+</section>
+
+<!-- B -->
+<section class="opt">
+<div class="opt-head"><span class="tag">B</span><h2>终端仪表</h2><span class="en">Terminal / Technical</span></div>
+<p class="why">直接承认它是 restic 的壳。深色底、等宽字体、快照哈希直接露出来，操作写成 [立即备份]。NAS 玩家会觉得「懂行」。</p>
+<div class="meta"><span>气质 <b>硬核、极客、透明</b></span><span>适合 <b>技术用户为主</b></span><span>难度 <b>低</b></span></div>
+<div class="frame"><div class="app B">
+<div class="side"><div class="brand">qvault<small>restic 0.18.0 · rclone 1.75.2</small></div>
+<nav><a class="on">tasks</a><a>&nbsp;&nbsp;snapshots</a><a>&nbsp;&nbsp;history</a></nav><div class="foot">uptime 12d 04h</div></div>
+<div class="main">
+<div class="top"><h3>备份任务 <span>(2)</span></h3><button class="btn">+ new task</button></div>
+<div class="task"><div class="th"><b>相册资料→天翼</b><span class="st">● OK  exit 0</span></div>
+<div class="tb"><div><div class="k">SRC</div><div class="v">fnos:/相册,资料</div></div><div><div class="k">DST</div><div class="v">ctyun:/飞牛加密备份</div></div><div><div class="k">LAST</div><div class="v">11-02 07:40 · <span class="hash">a3f9c21e</span></div></div><div><div class="k">NEXT</div><div class="v">11-06 03:00</div></div></div>
+<div class="bar"><i></i></div><div class="acts"><u>立即备份</u><u>还原</u><u>日志</u>281,186 files · 433.5 GiB · 4h40m</div></div>
+<div class="task"><div class="th"><b>115</b><span class="st idle">○ IDLE  no schedule</span></div>
+<div class="tb"><div><div class="k">SRC</div><div class="v">fnos:/资料</div></div><div><div class="k">DST</div><div class="v">115:/加密备份仓库</div></div><div><div class="k">LAST</div><div class="v">10-29 03:04 · <span class="hash">7be0d4a2</span></div></div><div><div class="k">NEXT</div><div class="v">—</div></div></div>
+<div class="acts"><u>立即备份</u><u>还原</u><u>日志</u></div></div>
+</div></div></div>
+</section>
+
+<!-- C -->
+<section class="opt">
+<div class="opt-head"><span class="tag">C</span><h2>新粗野</h2><span class="en">Neo-brutalism</span></div>
+<p class="why">粗黑边框、无模糊硬阴影、高饱和撞色，按下按钮真的会「陷进去」。最活泼、最有记忆点，但长时间看会累，2026 年更多被用作点缀。</p>
+<div class="meta"><span>气质 <b>大胆、好玩、年轻</b></span><span>适合 <b>想要强烈个性</b></span><span>难度 <b>低</b></span></div>
+<div class="frame"><div class="app C">
+<div class="side"><div class="brand">密备!</div><nav><a class="on">备份</a><a>快照</a><a>历史</a></nav></div>
+<div class="main">
+<div class="top"><h3>备份任务</h3><button class="btn">+ 新任务</button></div>
+<div class="card"><div class="cl"><div class="t">相册资料 → 天翼</div><div class="flow"><span class="chip">fnos · 相册、资料</span>→<span class="chip d">天翼云盘 · 飞牛加密备份</span></div><div style="margin-top:10px;font-size:13px">下次 11-06 03:00 · 433.5 GB · 4 时 40 分</div></div><div class="cr"><small>上次成功</small><b>11-02 07:40</b></div></div>
+<div class="card"><div class="cl"><div class="t">115</div><div class="flow"><span class="chip">fnos · 资料</span>→<span class="chip d">115 · 加密备份仓库</span></div><div style="margin-top:10px;font-size:13px">没有定时计划</div></div><div class="cr idle"><small>上次成功</small><b>10-29 03:04</b></div></div>
+</div></div></div>
+</section>
+
+<!-- D -->
+<section class="opt">
+<div class="opt-head"><span class="tag">D</span><h2>瑞士网格</h2><span class="en">Swiss / International</span></div>
+<p class="why">不用卡片，靠严格网格、粗细对比和大号数字组织信息，只用黑白加一个红。信息密度高、很「设计师」，日期和体积这种数字会变成视觉主角。</p>
+<div class="meta"><span>气质 <b>理性、利落、高级</b></span><span>适合 <b>喜欢干净、数据导向</b></span><span>难度 <b>中</b></span></div>
+<div class="frame"><div class="app D">
+<div class="side"><div class="brand"><i></i>量子<br>密备</div><nav><a class="on">备份</a><a>快照</a><a>历史</a></nav></div>
+<div class="main">
+<div class="top"><h3>备份<br>任务</h3><button class="btn">新建任务</button></div>
+<table><tr><th style="width:26%">上次</th><th>任务</th><th style="width:22%">去向</th><th style="width:14%">下次</th></tr>
+<tr><td class="n">11·02<small>07:40 · 用时 4h40m</small></td><td><b>相册资料 → 天翼</b><br>相册、资料<br>433.5 GB / 281,186 项</td><td>天翼云盘<br>/飞牛加密备份</td><td>11-06<br>03:00</td></tr>
+<tr><td class="n">10·29<small>03:04</small></td><td><b>115</b><br>资料</td><td>115<br>/加密备份仓库</td><td class="red">无计划</td></tr></table>
+</div></div></div>
+</section>
+
+<!-- E -->
+<section class="opt">
+<div class="opt-head"><span class="tag">E</span><h2>保险柜</h2><span class="en">Tactile Hardware / 新拟物</span></div>
+<p class="why">「密备」做成一台实体保险柜：金属面板、密码盘、LED 状态灯、LCD 小屏显示数据、实体按键。拟物在 2026 年以「材质语言」的形式回归，和加密主题最贴。</p>
+<div class="meta"><span>气质 <b>厚重、安全、有手感</b></span><span>适合 <b>强调「加密、安全」</b></span><span>难度 <b>高</b></span></div>
+<div class="frame"><div class="app E">
+<div class="side"><div class="brand"><span class="dial"></span>量子密备</div><nav><a class="on"><span class="led"></span>备份</a><a><span class="led"></span>快照</a><a><span class="led"></span>历史</a></nav></div>
+<div class="main">
+<div class="top"><h3>备份任务</h3><button class="btn">＋ 新建任务</button></div>
+<div class="unit"><span class="screw"></span><div><div class="t"><span class="led g"></span>相册资料 → 天翼</div><div class="lcd"><div><span>LAST</span> 11-02 07:40</div><div><span>SIZE</span> 433.5G</div><div><span>NEXT</span> 11-06 03:00</div><div><span>DST</span> 天翼云盘</div></div></div><div class="keys"><span class="key">▶</span><span class="key">↺</span><span class="key">⋯</span></div></div>
+<div class="unit"><span class="screw"></span><div><div class="t"><span class="led y"></span>115</div><div class="lcd"><div><span>LAST</span> 10-29 03:04</div><div><span>NEXT</span> ----</div><div><span>DST</span> 115</div></div></div><div class="keys"><span class="key">▶</span><span class="key">↺</span><span class="key">⋯</span></div></div>
+</div></div></div>
+</section>
+
+<!-- F -->
+<section class="opt">
+<div class="opt-head"><span class="tag">F</span><h2>暖白克制</h2><span class="en">Quiet Utility</span></div>
+<p class="why">改动最小的一条路：去掉卡片和蓝色，改成暖白底 + 细分隔线列表，主色换成蛋壳的砖橙，只在顶部用一句话总结「全部正常」。像 Things / Linear 那种安静的工具感。</p>
+<div class="meta"><span>气质 <b>安静、耐看、不打扰</b></span><span>适合 <b>想稳妥升级</b></span><span>难度 <b>低</b></span></div>
+<div class="frame"><div class="app F">
+<div class="side"><div class="brand"><i></i>量子密备</div><nav><a class="on">备份</a><a>快照</a><a>历史</a></nav></div>
+<div class="main">
+<div class="top"><h3>备份任务</h3><button class="btn">新建任务</button></div>
+<div class="sum"><b>2 个任务都正常</b> · 下一次备份在 11-06 03:00</div>
+<div class="item"><span class="dot"></span><div><div class="t">相册资料 → 天翼</div><div class="s">相册、资料<i>→</i>天翼云盘/飞牛加密备份</div></div><div><div class="k">上次</div><div class="s">11-02 07:40 · 433.5 GB</div></div><div><div class="k">下次</div><div class="s">11-06 03:00</div></div><div class="more">···</div></div>
+<div class="item"><span class="dot idle"></span><div><div class="t">115</div><div class="s">资料<i>→</i>115/加密备份仓库</div></div><div><div class="k">上次</div><div class="s">10-29 03:04</div></div><div><div class="k">下次</div><div class="s">未设定</div></div><div class="more">···</div></div>
+</div></div></div>
+</section>
+
+<div class="pick"><h2>怎么选</h2><p>直接回复字母，比如「A」或「F 为主，标题借 A 的宋体」。选定后我会先出完整的设计规范（色板、字体、间距、组件），再改 App.vue。</p></div>
+</div>
+</body>
+</html>

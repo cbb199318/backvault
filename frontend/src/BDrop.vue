@@ -101,64 +101,64 @@ onUnmounted(() => {
 .bdrop { position: relative; user-select: none; }
 .bdrop-btn {
   width: 100%; display: flex; align-items: center; gap: 12px;
-  border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 14px;
-  background: #fafbfc; cursor: pointer; text-align: left; font: inherit; color: inherit;
+  border: 1px solid var(--sep); border-radius: 12px; padding: 10px 14px;
+  background: var(--fill); cursor: pointer; text-align: left; font: inherit; color: inherit;
   transition: border-color .15s, box-shadow .15s, background .15s;
 }
-.bdrop-btn:hover { border-color: #c8d4f0; }
-.bdrop.open .bdrop-btn { border-color: #3370ff; box-shadow: 0 0 0 3px rgba(51,112,255,.12); background: #fff; }
+.bdrop-btn:hover { border-color: var(--c-blue-100); }
+.bdrop.open .bdrop-btn { border-color: var(--c-blue); box-shadow: 0 0 0 3px rgba(51,112,255,.12); background: var(--cell); }
 .bdrop.disabled { opacity: .55; }
 .bdrop.disabled .bdrop-btn { cursor: not-allowed; }
 .bdrop-ic {
   width: 34px; height: 34px; border-radius: 8px; flex: none;
   display: flex; align-items: center; justify-content: center; font-size: 17px;
 }
-.bdrop-ic.tianyi { background: #eef4ff; }
-.bdrop-ic.y115 { background: #ecfdf5; }
-.bdrop-ic.other { background: #f3f4f6; }
+.bdrop-ic.tianyi { background: var(--c-blue-50); }
+.bdrop-ic.y115 { background: var(--c-green-50); }
+.bdrop-ic.other { background: var(--fill); }
 .bdrop-tx { flex: 1; min-width: 0; }
-.bdrop-tx b { display: block; font-size: 14px; font-weight: 600; color: #1f2937; }
-.bdrop-tx span { display: block; font-size: 12px; color: #9ca3af; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bdrop-tx .ph { font-size: 14px; color: #9ca3af; }
-.bdrop-arr { color: #9ca3af; font-size: 12px; transition: transform .2s; }
+.bdrop-tx b { display: block; font-size: 14px; font-weight: 600; color: var(--t1); }
+.bdrop-tx span { display: block; font-size: 12px; color: var(--t3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bdrop-tx .ph { font-size: 14px; color: var(--t3); }
+.bdrop-arr { color: var(--t3); font-size: 12px; transition: transform .2s; }
 .bdrop.open .bdrop-arr { transform: rotate(180deg); }
 .bdrop-pop {
   position: fixed; z-index: 3000;
-  background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+  background: var(--cell); border: 1px solid var(--sep); border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0,0,0,.14);
   max-height: 62vh; overflow-y: auto; overscroll-behavior: contain; /* 滚到头不带动背后页面 */
   opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .18s, transform .18s;
 }
 .bdrop-pop.open { opacity: 1; transform: none; pointer-events: auto; }
 .bdrop-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; }
-.bdrop-item + .bdrop-item { border-top: 1px solid #f3f4f6; }
-.bdrop-item:hover { background: #f5f8ff; }
-.bdrop-item.on { background: #eef4ff; }
+.bdrop-item + .bdrop-item { border-top: 1px solid var(--sep); }
+.bdrop-item:hover { background: var(--c-blue-50); }
+.bdrop-item.on { background: var(--c-blue-50); }
 /* 标题旁健康状态圆点（b-3） */
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: 7px; vertical-align: 1.5px; }
-.dot.ok { background: #22c55e; }
-.dot.bad { background: #ef4444; }
-.dot.run { background: #3370ff; animation: dotPulse 1.2s ease-in-out infinite; }
-.dot.idle { background: #d1d5db; }
+.dot.ok { background: var(--c-green); }
+.dot.bad { background: var(--c-red); }
+.dot.run { background: var(--c-blue); animation: dotPulse 1.2s ease-in-out infinite; }
+.dot.idle { background: var(--t4); }
 @keyframes dotPulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 /* 操作列：靠最右，桌面端悬停行才浮现（平时收起不占宽度） */
 .bdrop-acts { display: flex; align-items: center; gap: 4px; flex: none; justify-content: flex-end; }
 .bdrop-act {
   width: 24px; height: 24px; border-radius: 50%; border: none; flex: none;
-  background: transparent; color: #b6bdc9; cursor: pointer; line-height: 1;
+  background: transparent; color: var(--t4); cursor: pointer; line-height: 1;
   display: flex; align-items: center; justify-content: center;
 }
 .bdrop-act svg { display: block; }
 @media (hover: hover) {
   .bdrop-acts { width: 0; overflow: hidden; transition: width .15s; }
   .bdrop-item:hover .bdrop-acts, .bdrop-item:focus-within .bdrop-acts { width: auto; overflow: visible; }
-  .bdrop-act:hover { background: #e8f0ff; color: #3370ff; }
-  .bdrop-act.bdrop-x:hover { background: #fee2e2; color: #dc2626; }
+  .bdrop-act:hover { background: var(--c-blue-50); color: var(--c-blue); }
+  .bdrop-act.bdrop-x:hover { background: var(--c-red-50); color: var(--c-red); }
 }
 @media (hover: none) {
-  .bdrop-item:hover .bdrop-act { background: #f0f2f6; }
+  .bdrop-item:hover .bdrop-act { background: var(--fill); }
 }
-.bdrop-pw { font-family: ui-monospace, Menlo, monospace; color: #1f2937; font-size: 12px; letter-spacing: .4px; display: flex; align-items: center; gap: 8px; }
-.bdrop-cp { border: none; background: #e8f0ff; color: #3370ff; font-size: 11px; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
-.bdrop-empty { padding: 14px; text-align: center; font-size: 13px; color: #9ca3af; }
+.bdrop-pw { font-family: ui-monospace, Menlo, monospace; color: var(--t1); font-size: 12px; letter-spacing: .4px; display: flex; align-items: center; gap: 8px; }
+.bdrop-cp { border: none; background: var(--c-blue-50); color: var(--c-blue); font-size: 11px; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.bdrop-empty { padding: 14px; text-align: center; font-size: 13px; color: var(--t3); }
 </style>

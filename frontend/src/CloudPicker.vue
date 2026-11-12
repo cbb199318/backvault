@@ -224,29 +224,29 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick, true));
   display: flex; align-items: center; justify-content: center; padding: 16px;
 }
 .cp-sheet {
-  background: #fff; border-radius: 20px; width: 430px; max-width: 100%;
+  background: var(--cell); border-radius: 20px; width: 430px; max-width: 100%;
   max-height: 86vh; display: flex; flex-direction: column; overflow: hidden;
   box-shadow: 0 20px 60px rgba(20, 25, 35, 0.24);
 }
 .cp-head { position: relative; padding: 18px 20px 12px; text-align: center; flex-shrink: 0; }
-.cp-head h3 { font-size: 16.5px; font-weight: 600; color: #1c1f23; margin: 0; }
+.cp-head h3 { font-size: 16.5px; font-weight: 600; color: var(--t1); margin: 0; }
 .cp-x {
   position: absolute; right: 14px; top: 13px; width: 32px; height: 32px;
-  border: none; background: none; font-size: 18px; color: #9aa0a8;
+  border: none; background: none; font-size: 18px; color: var(--t3);
   cursor: pointer; border-radius: 9px; line-height: 1;
 }
-.cp-x:hover { background: #f4f5f7; color: #1c1f23; }
+.cp-x:hover { background: var(--fill); color: var(--t1); }
 .cp-body {
   padding: 4px 16px 20px; overflow-y: auto; overscroll-behavior: contain;
   display: flex; flex-direction: column; gap: 11px;
 }
 .cp-item {
-  display: flex; align-items: center; gap: 14px; background: #fff;
+  display: flex; align-items: center; gap: 14px; background: var(--cell);
   border-radius: 16px; padding: 14px 14px; cursor: pointer;
   box-shadow: 0 1px 3px rgba(20, 25, 35, 0.07);
   transition: background 0.14s, transform 0.1s;
 }
-.cp-item:hover { background: #fbfcfe; }
+.cp-item:hover { background: var(--fill-subtle); }
 .cp-item:active { transform: scale(0.98); }
 .cp-ibox {
   width: 46px; height: 46px; flex-shrink: 0;
@@ -255,36 +255,36 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick, true));
 .cp-logo { max-width: 40px; max-height: 28px; object-fit: contain; display: block; }
 .cp-itxt { flex: 1; min-width: 0; }
 .cp-itxt .nm {
-  font-size: 14.5px; font-weight: 600; color: #1c1f23;
+  font-size: 14.5px; font-weight: 600; color: var(--t1);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cp-itxt .ds {
-  font-size: 12.5px; color: #8b9098; margin-top: 4px;
+  font-size: 12.5px; color: var(--t3); margin-top: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cp-more {
-  width: 34px; height: 34px; border: none; background: none; color: #9aa0a8;
+  width: 34px; height: 34px; border: none; background: none; color: var(--t3);
   font-size: 19px; line-height: 1; border-radius: 9px; cursor: pointer; flex-shrink: 0;
 }
-.cp-more:hover { background: #f2f3f5; color: #1c1f23; }
-.cp-empty { text-align: center; padding: 26px 10px 10px; color: #8b9098; font-size: 13px; }
-.cp-empty .hint { font-size: 12px; margin-top: 6px; color: #a3a8b0; }
+.cp-more:hover { background: var(--fill); color: var(--t1); }
+.cp-empty { text-align: center; padding: 26px 10px 10px; color: var(--t3); font-size: 13px; }
+.cp-empty .hint { font-size: 12px; margin-top: 6px; color: var(--t3); }
 
 /* 徽标配色 */
 
 /* <Icon name="dots" :size="16" /> 菜单 */
 .cp-ctx {
-  position: fixed; z-index: 3100; background: #fff; border-radius: 12px;
+  position: fixed; z-index: 3100; background: var(--cell); border-radius: 12px;
   box-shadow: 0 10px 34px rgba(20, 25, 35, 0.2); padding: 6px; min-width: 160px;
 }
 .cp-ctx button {
   display: flex; align-items: center; gap: 10px; width: 100%; border: none;
   background: none; padding: 10px 12px; border-radius: 8px; font-size: 13.5px;
-  color: #1c1f23; cursor: pointer; text-align: left;
+  color: var(--t1); cursor: pointer; text-align: left;
 }
-.cp-ctx button:hover { background: #f4f5f7; }
-.cp-ctx button.danger { color: #e5484d; }
-.cp-ctx .sep { height: 1px; background: #eceef1; margin: 4px 8px; }
+.cp-ctx button:hover { background: var(--fill); }
+.cp-ctx button.danger { color: var(--c-red); }
+.cp-ctx .sep { height: 1px; background: var(--fill); margin: 4px 8px; }
 
 /* 密码气泡遮罩：气泡打开时覆盖弹层之上，点它只关气泡、不穿透 */
 .cp-pw-mask {
@@ -297,7 +297,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick, true));
   border-radius: 12px; padding: 11px 14px; display: flex; align-items: center;
   gap: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32); max-width: 320px;
 }
-.cp-pw .lb { color: #8b9098; font-size: 11.5px; display: block; margin-bottom: 3px; }
+.cp-pw .lb { color: var(--t3); font-size: 11.5px; display: block; margin-bottom: 3px; }
 .cp-pw code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.3px; font-size: 13px; word-break: break-all;

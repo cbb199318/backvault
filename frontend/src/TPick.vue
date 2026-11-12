@@ -89,16 +89,16 @@ onUnmounted(() => {
 .tp-dd { flex: 1; }
 .tp-btn {
   display: flex; align-items: center; justify-content: space-between; width: 100%;
-  border: 1px solid #d1d5db; border-radius: 10px; padding: 9px 13px; background: #fff;
+  border: 1px solid var(--sep2); border-radius: 10px; padding: 9px 13px; background: var(--cell);
   font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
   font-variant-numeric: tabular-nums; transition: border-color .15s, box-shadow .15s;
 }
-.tp-btn:hover { border-color: #3370ff; }
-.tp-arr { color: #c2c7d0; font-style: normal; font-size: 12px; }
-.tp-sep { color: #9ca3af; font-weight: 700; }
+.tp-btn:hover { border-color: var(--c-blue); }
+.tp-arr { color: var(--t4); font-style: normal; font-size: 12px; }
+.tp-sep { color: var(--t3); font-weight: 700; }
 .tp-pop {
   position: fixed; z-index: 3000;
-  background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+  background: var(--cell); border: 1px solid var(--sep); border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0,0,0,.14); overflow-y: auto; max-height: 264px;
   overscroll-behavior: contain; /* 滚到头不带动背后页面 */
   opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .18s, transform .18s;
@@ -108,6 +108,6 @@ onUnmounted(() => {
   padding: 10px 0; text-align: center; font-size: 14px; cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
-.tp-item:hover { background: #f0f5ff; color: #3370ff; }
-.tp-item.on { background: #eef4ff; color: #3370ff; font-weight: 600; }
+.tp-item:hover { background: var(--c-blue-50); color: var(--c-blue); }
+.tp-item.on { background: var(--c-blue-50); color: var(--c-blue); font-weight: 600; }
 </style>
