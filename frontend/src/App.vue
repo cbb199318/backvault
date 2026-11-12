@@ -2911,7 +2911,7 @@ const mHead = computed(() => {
             </div>
             <table class="ttbl">
               <thead>
-                <tr><th>任务</th><th>备份路线</th><th>状态</th><th>最近 10 次</th><th>下次运行</th><th class="r">操作</th></tr>
+                <tr><th>任务</th><th class="col-route">备份路线</th><th>状态</th><th class="col-spark">最近 10 次</th><th>下次运行</th><th class="r">操作</th></tr>
               </thead>
               <tbody>
                 <tr v-for="t in filteredTasks" :key="t.id" @click="openLogs(t)">
@@ -2922,11 +2922,11 @@ const mHead = computed(() => {
                       </span>
                       <div class="tt-nm">
                         <b :title="t.name">{{ t.name }}</b>
-                        <small>{{ pathSummary(t) || "未选择目录" }}<template v-if="t.last_bytes"> · {{ fmtBytes(t.last_bytes) }}</template></small>
+                        <small>{{ pathSummary(t) || "未选择目录" }}<span class="tt-dest"> → {{ repoName(t.repo_id) }}</span><template v-if="t.last_bytes"> · {{ fmtBytes(t.last_bytes) }}</template></small>
                       </div>
                     </div>
                   </td>
-                  <td>
+                  <td class="col-route">
                     <div class="tt-route" :title="'fnos（本地） → ' + repoName(t.repo_id) + ' / ' + destPath(repoObj(t.repo_id))">
                       <span class="chip2">fnos</span>
                       <Icon name="arrow-narrow-right" :size="14" />
@@ -2943,7 +2943,7 @@ const mHead = computed(() => {
                       <i class="d"></i>{{ statusInfo(t).text }}
                     </span>
                   </td>
-                  <td>
+                  <td class="col-spark">
                     <div class="spark" title="最近 10 次运行（旧 → 新）">
                       <i v-for="(s, i) in taskSpark(t)" :key="i" :class="s.c" :title="s.tip"></i>
                     </div>
@@ -6873,12 +6873,14 @@ input::placeholder, textarea::placeholder { color: var(--t3); }
   .fab:active { transform: scale(.92); }
 
   /* 任务卡片：分组列表 */
-  .mcard-list { gap: 14px; margin-top: 4px; }
-  .mcard { border-radius: var(--r-group); padding: 14px 18px 4px; }
-  .mc-row { border-top: .5px solid var(--sep); padding: 11px 0; font-size: 15px; }
+  .mcard-list { gap: 12px; margin-top: 4px; }
+  .mcard { border-radius: var(--r-group); padding: 12px 16px 2px; }
+  .mc-top { margin-bottom: 6px; gap: 10px; }
+  .mc-row { border-top: .5px solid var(--sep); padding: 7px 0; font-size: 13.5px; line-height: 1.4; }
   .mc-row span:first-child { color: var(--t1); }
   .mc-row span:last-child { color: var(--t3); }
-  .mc-title > b { font-size: 17px; font-weight: 600; }
+  .mc-title > b { font-size: 16px; font-weight: 600; }
+  .mc-title .tc-status { font-size: 12px; margin-top: 1px; }
   .badge { border-color: var(--cell); }
   .badge.b-ok { background: var(--c-green-dot); }
   .badge.b-warn { background: var(--c-orange-dot); }
@@ -7009,4 +7011,48 @@ button.set-row:active { background: var(--fill); }
   .malert-chev { color: var(--t4); flex: none; }
   .malert + .upd-bar, .msub + .upd-bar { margin-top: 0; }
 }
+
+/* ==================== 桌面任务表格：窗口变窄时逐级收起次要列 ==================== */
+.task-panel { container-type: inline-size; overflow-x: auto; }
+.tt-dest { display: none; }
+.ttbl td.r { white-space: nowrap; }
+.ttbl .tc-acts { flex-wrap: nowrap; }
+.ttbl td.num { white-space: nowrap; }
+@container (max-width: 1060px) {
+  .ttbl .col-spark { display: none; }
+}
+@container (max-width: 920px) {
+  .ttbl .col-route { display: none; }
+  .tt-dest { display: inline; }
+  .ttbl th, .ttbl td { padding-left: 10px; padding-right: 10px; }
+  .tt-nm b, .tt-nm small { max-width: 200px; }
+}
+@container (max-width: 640px) {
+  .ttbl th, .ttbl td { padding-left: 6px; padding-right: 6px; }
+  .ttbl th:first-child, .ttbl td:first-child { padding-left: 14px; }
+  .tt-name { gap: 8px; }
+  .tt-nm b, .tt-nm small { max-width: 130px; }
+  .tt-prog { width: 100px; }
+  .tag2 { max-width: 110px; }
+  .ttbl .tc-acts { gap: 4px; }
+}
+
+/* 桌面窄窗口：仪表盘的统计数字换到第二行，别把中间的说明挤碎 */
+@media (min-width: 769px) and (max-width: 1180px) {
+  .ov-hero { flex-wrap: wrap; row-gap: 16px; }
+  .ov-txt { flex: 1; min-width: 260px; }
+  .ov-kpis { margin-left: 0; width: 100%; padding-top: 14px; border-top: .5px solid var(--sep); }
+  .ov-kpi:first-child { padding-left: 0; }
+  .ov-kpi { flex: 1; }
+}
+
+/* 桌面最窄档（769–960px）：侧边栏和内容区边距收一点，给表格让出空间 */
+@media (min-width: 769px) and (max-width: 960px) {
+  .sidebar { width: 190px; }
+  .content { padding-left: 20px; padding-right: 20px; }
+}
+
+.panel-h h3, .pseg button { white-space: nowrap; }
+.panel-h .psearch { min-width: 0; flex: 0 1 260px; margin-left: auto; }
+.panel-h .psearch input { min-width: 0; width: 100%; }
 </style>
