@@ -3748,8 +3748,10 @@ const mHead = computed(() => {
                   <button class="set-row noic" @click="openRepo(null)"><span class="set-g set-link">添加云盘仓库…</span></button>
                 </div>
                 <div class="set-foot" v-if="!cfg.repos.length">新建备份任务时也可以顺手添加。</div>
+                <div class="set-foot" v-if="!isAdmin">每位用户只能看到和管理自己添加的云盘仓库。导出恢复信息、配置备份和上传限速由管理员设置。</div>
 
-                <div class="set-hdr">数据安全</div>
+                <template v-if="isAdmin">
+<div class="set-hdr">数据安全</div>
                 <div class="set-group">
                   <button class="set-row" @click="exportRecovery">
                     <span class="set-tile t-red"><Icon name="lock" :size="17" /></span>
@@ -3775,10 +3777,12 @@ const mHead = computed(() => {
                 </div>
                 <input ref="importInput" type="file" accept=".json,application/json" style="display: none" @change="onImportFile" />
                 <div class="set-foot">恢复信息包含所有仓库的加密密码和云盘连接凭据。NAS 损坏时，凭它就能在任意电脑上用 restic 取回数据。请打印或存放在 NAS 以外的安全位置，不要上传到网盘。</div>
+                </template>
               </div>
 
               <div>
-                <div class="set-hdr">备份</div>
+                <template v-if="isAdmin">
+<div class="set-hdr">备份</div>
                 <div class="set-group">
                   <label class="set-row">
                     <span class="set-tile t-teal"><Icon name="upload" :size="17" /></span>
@@ -3801,6 +3805,7 @@ const mHead = computed(() => {
                   </div>
                 </div>
                 <div class="set-foot">{{ settings.upload_limit_kb && settings.limit_day_only ? "时段以外全速上传，适合白天限速、夜里全速。" : "备份时家里网速变卡，可以在这里限制上传带宽。" }}从下一次备份开始生效。</div>
+                </template>
 
                 <div class="set-hdr">通用</div>
                 <div class="set-group">

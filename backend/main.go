@@ -583,6 +583,7 @@ type Repo struct {
 	// 主要用于 WebDAV 走 OpenList 中转、仓库名里看不出上游网盘的场景
 	Brand  string `json:"brand,omitempty"`
 	Inited bool   `json:"inited,omitempty"` // restic init 已成功完成
+	Owner  int    `json:"owner,omitempty"`  // 创建者 UID，0 = 旧数据（归管理员），见 owner.go
 }
 
 type Task struct {
@@ -611,6 +612,7 @@ type Task struct {
 	LastBytes    int64    `json:"last_bytes"`
 	LastSnapID   string   `json:"last_snapshot_id"`
 	LastDuration int      `json:"last_duration_sec"`
+	Owner        int      `json:"owner,omitempty"`       // 创建者 UID，见 owner.go
 	NextRunAt    string   `json:"next_run_at,omitempty"` // 下次运行时间（计算填充，不落盘）
 	AuthWarn     string   `json:"auth_warn,omitempty"`   // 云盘授权失效告警（运行时探测填充，不落盘）
 }
@@ -645,6 +647,7 @@ type RestoreJob struct {
 	Replaced     int      `json:"replaced"` // 覆盖
 	Renamed      int      `json:"renamed"`  // 保留两者（重命名）
 	Skipped      int      `json:"skipped"`  // 跳过
+	Owner        int      `json:"owner,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -885,7 +888,7 @@ func writeRcloneSection(name string, kvs [][2]string) error {
 // cloudKey 支持两种：tianyi/y115（ol 中转），或 WebDAV 仓库的远端名 wd-xxxxxxxx。
 // password 为空时自动随机生成（旧逻辑）；非空则用传入的密码（新建任务的密码在任务侧生成）。
 // 调用方需持有 cfgMu。返回（仓库，是否新建，错误）。
-func findOrCreateRepoLocked(cloudKey, subdir, password string) (*Repo, bool, error) {
+func findOrCreateRepoLocked(ident identity, cloudKey, subdir, password string) (*Repo, bool, error) {
 	sub := strings.Trim(subdir, "/")
 	if sub == "" {
 		return nil, false, fmt.Errorf("目标目录不能为空")
@@ -893,12 +896,15 @@ func findOrCreateRepoLocked(cloudKey, subdir, password string) (*Repo, bool, err
 	var uri, displayName string
 	var davSrc *Repo
 	if label, ok := cloudLabelMap[cloudKey]; ok {
+		if restricted(ident) {
+			return nil, false, fmt.Errorf("普通用户不能使用管理员配置的%s，请添加自己的 WebDAV 云盘", label)
+		}
 		uri = "rclone:ol:" + label + "/" + sub
 		displayName = label + "·" + sub
 	} else {
 		// WebDAV：cloudKey 即 rclone 远端名，须已有同名远端的仓库
 		for i := range cfg.Repos {
-			if cfg.Repos[i].Remote == cloudKey {
+			if cfg.Repos[i].Remote == cloudKey && canAccess(ident, cfg.Repos[i].Owner) {
 				rp := cfg.Repos[i]
 				davSrc = &rp
 				break
@@ -912,6 +918,9 @@ func findOrCreateRepoLocked(cloudKey, subdir, password string) (*Repo, bool, err
 	}
 	for i := range cfg.Repos {
 		if cfg.Repos[i].URI == uri {
+			if !canAccess(ident, cfg.Repos[i].Owner) {
+				return nil, false, fmt.Errorf("这个云端目录已被其他用户的仓库使用，请换一个目录")
+			}
 			return &cfg.Repos[i], false, nil
 		}
 	}
@@ -925,7 +934,7 @@ func findOrCreateRepoLocked(cloudKey, subdir, password string) (*Repo, bool, err
 	if idx := strings.LastIndex(seg, "/"); idx >= 0 {
 		seg = seg[idx+1:]
 	}
-	nr := Repo{ID: "repo-" + randomID(), Name: displayName, URI: uri, Password: pw, Cloud: "webdav", Remote: cloudKey}
+	nr := Repo{ID: "repo-" + randomID(), Name: displayName, URI: uri, Password: pw, Cloud: "webdav", Remote: cloudKey, Owner: ownerFor(ident)}
 	if davSrc != nil {
 		nr.DavURL, nr.DavUser, nr.DavPass, nr.DavVendor = davSrc.DavURL, davSrc.DavUser, davSrc.DavPass, davSrc.DavVendor
 		nr.Name = davSrc.Name + "·" + seg
@@ -1596,6 +1605,7 @@ type progressInfo struct {
 	Current   []string `json:"current_files"`
 	Errors    int64    `json:"error_count"`
 	LogFile   string   `json:"log_file"`
+	Busy      bool     `json:"busy,omitempty"` // 其他用户的任务在运行（不透露细节）
 }
 
 func progressHandler(w http.ResponseWriter, r *http.Request) {
@@ -1603,6 +1613,17 @@ func progressHandler(w http.ResponseWriter, r *http.Request) {
 	p := progressInfo{TaskID: running, StartedAt: runStart, Percent: runPct, Files: runFiles, Bytes: runBytes,
 		Total: runTotal, Current: runCur, Errors: runErrs, LogFile: runLog}
 	stateMu.Unlock()
+	if p.TaskID != "" {
+		ident := identityFrom(r)
+		cfgMu.Lock()
+		t := findTask(p.TaskID)
+		visible := t != nil && canAccess(ident, t.Owner)
+		cfgMu.Unlock()
+		if !visible {
+			// 别人的任务在跑：只告诉「有任务在运行」，不给文件名和日志
+			p = progressInfo{Busy: true}
+		}
+	}
 	writeJSON(w, 200, p)
 }
 
@@ -1647,10 +1668,15 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 	defer cfgMu.Unlock()
 	if r.Method == http.MethodGet {
 		// 深拷贝后掩码，绝不修改内存 cfg（否则掩码会被 saveConfig 落盘污染密码）
+		ident := identityFrom(r)
 		cp := *cfg
-		cp.Repos = make([]Repo, len(cfg.Repos))
-		for i, rp := range cfg.Repos {
-			cp.Repos[i] = rp
+		cp.Repos = make([]Repo, 0, len(cfg.Repos))
+		for _, rp := range cfg.Repos {
+			if !canAccess(ident, rp.Owner) {
+				continue
+			}
+			cp.Repos = append(cp.Repos, rp)
+			i := len(cp.Repos) - 1
 			if cp.Repos[i].Password != "" {
 				cp.Repos[i].Password = "******"
 			}
@@ -1658,10 +1684,23 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 				cp.Repos[i].DavPass = "******"
 			}
 		}
-		cp.Tasks = append([]Task(nil), cfg.Tasks...)
+		cp.Tasks = make([]Task, 0, len(cfg.Tasks))
+		var srcTasks []*Task
+		for i := range cfg.Tasks {
+			if canAccess(ident, cfg.Tasks[i].Owner) {
+				cp.Tasks = append(cp.Tasks, cfg.Tasks[i])
+				srcTasks = append(srcTasks, &cfg.Tasks[i])
+			}
+		}
+		cp.Restores = nil
+		for _, j := range cfg.Restores {
+			if canAccess(ident, taskOwnerLocked(j.TaskID, j.Owner)) {
+				cp.Restores = append(cp.Restores, j)
+			}
+		}
 		now := time.Now()
 		for i := range cp.Tasks {
-			cp.Tasks[i].NextRunAt = nextRunAt(&cfg.Tasks[i], now)
+			cp.Tasks[i].NextRunAt = nextRunAt(srcTasks[i], now)
 			// 任务侧密码掩码（实际密码存于对应 repo，任务字段仅作回显占位，不泄露明文）
 			if cp.Tasks[i].Password != "" {
 				cp.Tasks[i].Password = "******"
@@ -1691,6 +1730,28 @@ func reposHandler(w http.ResponseWriter, r *http.Request) {
 		var nr Repo
 		if err := readBody(r, &nr); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "参数错误"})
+			return
+		}
+		// 归属由服务端决定：编辑沿用原创建者，新建记当前用户；不接受客户端传来的 owner
+		ident := identityFrom(r)
+		cfgMu.Lock()
+		old := findRepo(nr.ID)
+		exists, oldOwner := old != nil, 0
+		if old != nil {
+			oldOwner = old.Owner
+		}
+		cfgMu.Unlock()
+		if exists && !canAccess(ident, oldOwner) {
+			notFound(w, "仓库")
+			return
+		}
+		if exists {
+			nr.Owner = oldOwner
+		} else {
+			nr.Owner = ownerFor(ident)
+		}
+		if restricted(ident) && nr.Cloud != "webdav" && !exists {
+			writeJSON(w, 403, map[string]string{"error": "普通用户只能添加自己的 WebDAV 云盘"})
 			return
 		}
 		// WebDAV 直连：校验必填项、生成远端名、写 rclone.conf、拼 URI
@@ -1925,11 +1986,28 @@ func tasksHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]string{"error": "参数错误"})
 			return
 		}
+		ident := identityFrom(r)
+		cfgMu.Lock()
+		oldTask := findTask(nt.ID)
+		taskExists, taskOwner := oldTask != nil, 0
+		if oldTask != nil {
+			taskOwner = oldTask.Owner
+		}
+		cfgMu.Unlock()
+		if taskExists && !canAccess(ident, taskOwner) {
+			notFound(w, "任务")
+			return
+		}
+		if taskExists {
+			nt.Owner = taskOwner
+		} else {
+			nt.Owner = ownerFor(ident)
+		}
 		// 目的地两步式：cloud+subdir → 查找或自动创建仓库
 		var newRepo *Repo
 		if nt.DestCloud != "" {
 			cfgMu.Lock()
-			rp, created, ferr := findOrCreateRepoLocked(nt.DestCloud, nt.DestSubdir, nt.Password)
+			rp, created, ferr := findOrCreateRepoLocked(ident, nt.DestCloud, nt.DestSubdir, nt.Password)
 			if ferr != nil {
 				cfgMu.Unlock()
 				writeJSON(w, 400, map[string]string{"error": ferr.Error()})
@@ -1945,6 +2023,14 @@ func tasksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if nt.Name == "" || len(nt.Paths) == 0 || nt.RepoID == "" {
 			writeJSON(w, 400, map[string]string{"error": "参数不完整：需要 name、paths、目的地（云盘+目录）"})
+			return
+		}
+		cfgMu.Lock()
+		trp := findRepo(nt.RepoID)
+		repoOK := trp != nil && canAccess(ident, trp.Owner)
+		cfgMu.Unlock()
+		if !repoOK {
+			notFound(w, "仓库")
 			return
 		}
 		// 安全校验：备份源路径必须落在用户可见根目录内（防路径穿越）
@@ -2596,6 +2682,16 @@ func browseCloudHandler(w http.ResponseWriter, r *http.Request) {
 		DavVendor string `json:"dav_vendor"`
 	}
 	_ = readBody(r, &req)
+	if req.DavURL == "" {
+		ident := identityFrom(r)
+		cfgMu.Lock()
+		ok := canUseRemoteLocked(ident, req.Cloud, req.Remote)
+		cfgMu.Unlock()
+		if !ok {
+			writeJSON(w, 403, map[string]string{"error": "没有权限访问这个云盘"})
+			return
+		}
+	}
 	if req.Remote == "" && req.Cloud == "" && req.DavURL == "" {
 		writeJSON(w, 400, map[string]string{"error": "missing cloud"})
 		return
@@ -2675,6 +2771,16 @@ func mkdirCloudHandler(w http.ResponseWriter, r *http.Request) {
 		DavVendor string `json:"dav_vendor"`
 	}
 	_ = readBody(r, &req)
+	if req.DavURL == "" {
+		ident := identityFrom(r)
+		cfgMu.Lock()
+		ok := canUseRemoteLocked(ident, req.Cloud, req.Remote)
+		cfgMu.Unlock()
+		if !ok {
+			writeJSON(w, 403, map[string]string{"error": "没有权限访问这个云盘"})
+			return
+		}
+	}
 
 	// 临时 WebDAV：用 :webdav: 动态参数（路径紧跟 :webdav:，flag 放最后）
 	var tmpArgs []string
@@ -3553,12 +3659,19 @@ func repoSnapshotsHandler(w http.ResponseWriter, r *http.Request) {
 // repoSummaryHandler：GET /api/repos/summary —— 只读本地缓存，绝不查云端。
 // 仓库列表页用它出「快照数 / 占用 / 最近快照」，没缓存时 cached=false，前端提示手动刷新。
 func repoSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	ident := identityFrom(r)
 	cfgMu.Lock()
-	repos := make([]Repo, len(cfg.Repos))
-	copy(repos, cfg.Repos)
+	repos := make([]Repo, 0, len(cfg.Repos))
+	for _, rp := range cfg.Repos {
+		if canAccess(ident, rp.Owner) {
+			repos = append(repos, rp)
+		}
+	}
 	taskCount := map[string]int{}
 	for _, t := range cfg.Tasks {
-		taskCount[t.RepoID]++
+		if canAccess(ident, t.Owner) {
+			taskCount[t.RepoID]++
+		}
 	}
 	cfgMu.Unlock()
 
@@ -3827,7 +3940,7 @@ func taskRestoreHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := RestoreJob{
-		ID: "rst-" + randomID(), TaskID: cp.ID, TaskName: cp.Name,
+		ID: "rst-" + randomID(), TaskID: cp.ID, TaskName: cp.Name, Owner: cp.Owner,
 		Snapshot: req.Snapshot, SnapshotTime: req.SnapTime,
 		Dest: req.Dest, Target: req.Target, Conflict: req.Conflict,
 		Includes: req.Includes, Status: "running",
@@ -4189,11 +4302,20 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	perTask := 8
+	ident := identityFrom(r)
 	cfgMu.Lock()
-	tasks := make([]Task, len(cfg.Tasks))
-	copy(tasks, cfg.Tasks)
-	restores := make([]RestoreJob, len(cfg.Restores))
-	copy(restores, cfg.Restores)
+	tasks := make([]Task, 0, len(cfg.Tasks))
+	for _, t := range cfg.Tasks {
+		if canAccess(ident, t.Owner) {
+			tasks = append(tasks, t)
+		}
+	}
+	restores := make([]RestoreJob, 0, len(cfg.Restores))
+	for _, j := range cfg.Restores {
+		if canAccess(ident, taskOwnerLocked(j.TaskID, j.Owner)) {
+			restores = append(restores, j)
+		}
+	}
 	cfgMu.Unlock()
 
 	items := make([]histItem, 0, limit)
@@ -4309,9 +4431,14 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func restoresHandler(w http.ResponseWriter, r *http.Request) {
+	ident := identityFrom(r)
 	cfgMu.Lock()
-	rs := make([]RestoreJob, len(cfg.Restores))
-	copy(rs, cfg.Restores)
+	rs := make([]RestoreJob, 0, len(cfg.Restores))
+	for _, j := range cfg.Restores {
+		if canAccess(ident, taskOwnerLocked(j.TaskID, j.Owner)) {
+			rs = append(rs, j)
+		}
+	}
 	cfgMu.Unlock()
 	writeJSON(w, 200, map[string]any{"restores": rs})
 }
@@ -4324,6 +4451,19 @@ func restoreSubHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rid := strings.TrimSuffix(p[idx+len("/api/restores/"):], "/stop")
+	ident := identityFrom(r)
+	cfgMu.Lock()
+	visible := false
+	for _, j := range cfg.Restores {
+		if j.ID == rid {
+			visible = canAccess(ident, taskOwnerLocked(j.TaskID, j.Owner))
+		}
+	}
+	cfgMu.Unlock()
+	if !visible {
+		notFound(w, "还原记录")
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/stop") {
 		if r.Method != http.MethodPost {
 			writeJSON(w, 405, map[string]string{"error": "method not allowed"})
@@ -4355,6 +4495,9 @@ func registerRoutes(mux *http.ServeMux, base string) {
 	mux.HandleFunc(base+"/api/repos/verify", repoVerifyHandler) // 防 base=="" 时歧义
 	mux.HandleFunc(base+"/api/repos/summary", repoSummaryHandler)
 	mux.HandleFunc(base+"/api/repos/", func(w http.ResponseWriter, r *http.Request) {
+		if id := pathID(r.URL.Path, "/api/repos/"); id != "" && id != "summary" && id != "verify" && !guardRepo(w, r, id) {
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "/verify") {
 			repoVerifyHandler(w, r)
 			return
@@ -4390,6 +4533,9 @@ func registerRoutes(mux *http.ServeMux, base string) {
 	})
 	mux.HandleFunc(base+"/api/tasks", tasksHandler) // 无尾斜杠：避免 301 重定向把 POST 变 GET
 	mux.HandleFunc(base+"/api/tasks/", func(w http.ResponseWriter, r *http.Request) {
+		if id := pathID(r.URL.Path, "/api/tasks/"); id != "" && !guardTask(w, r, id) {
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "/run") {
 			taskRunHandler(w, r)
 			return
