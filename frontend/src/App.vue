@@ -4,7 +4,7 @@ import BDrop from "./BDrop.vue";
 import CloudPicker from "./CloudPicker.vue";
 import TPick from "./TPick.vue";
 import Icon from "./Icon.vue";
-import wechatGroupQr from "./assets/wechat-group.png";
+import qqGroupQr from "./assets/qq-group.png";
 import { cloudLogo, cloudLabel, cloudIcon, brandOf, brandFromText, BRANDS, BRAND_OPTIONS } from "./cloudLogo.js";
 
 // ---------------------------------------------------------------------------
@@ -2557,6 +2557,14 @@ onUnmounted(() => {
 const setRepoId = ref(""); // 非空时显示仓库详情
 const setRepo = computed(() => cfg.repos.find((r) => r.id === setRepoId.value) || null);
 const qrDlg = reactive({ show: false });
+// 项目主页（GitHub）。应用运行在飞牛桌面 iframe 里，window.open 可能被拦截，
+// 兜底为复制地址，让用户自己粘到浏览器。
+const HOME_URL = "https://github.com/cbb199318/backvault";
+function openHome() {
+  let w = null;
+  try { w = window.open(HOME_URL, "_blank", "noopener,noreferrer"); } catch (e) { w = null; }
+  if (!w) copyText(HOME_URL, "项目地址已复制，粘贴到浏览器即可打开");
+}
 function repoSum(id) {
   return rp.list.find((x) => x.id === id) || null;
 }
@@ -3830,8 +3838,14 @@ const mHead = computed(() => {
                   </button>
                   <div class="set-row noic"><span class="set-g"><b>restic</b></span><span class="set-v">{{ status ? status.restic_version || "未找到" : "-" }}</span></div>
                   <div class="set-row noic"><span class="set-g"><b>rclone</b></span><span class="set-v">{{ status ? status.rclone_version || "未找到" : "-" }}</span></div>
+                  <button class="set-row noic" @click="openHome">
+                    <span class="set-g"><b>项目主页</b></span>
+                    <span class="set-v">GitHub</span>
+                    <Icon name="chevron-right" :size="16" class="set-chev" />
+                  </button>
                   <button class="set-row noic" @click="qrDlg.show = true">
                     <span class="set-g"><b>加入用户交流群</b></span>
+                    <span class="set-v">QQ 群</span>
                     <Icon name="chevron-right" :size="16" class="set-chev" />
                   </button>
                 </div>
@@ -3915,8 +3929,9 @@ const mHead = computed(() => {
             <div class="modal set-qr">
               <div class="modal-head"><h3>加入用户交流群</h3><button class="x" aria-label="关闭" @click="qrDlg.show = false"><Icon name="x" :size="14" /></button></div>
               <div class="modal-body">
-                <img :src="wechatGroupQr" alt="微信群二维码" />
-                <p>微信扫码加入，反馈问题、交流使用经验</p>
+                <img :src="qqGroupQr" alt="QQ 群二维码" />
+                <p>QQ 扫码加入，反馈问题、交流使用经验</p>
+                <p class="set-qr-alt">也可以在 GitHub 提 Issue：cbb199318/backvault</p>
               </div>
             </div>
           </div>
@@ -6998,6 +7013,7 @@ button.set-row:active { background: var(--fill); }
 .set-qr .modal-body { text-align: center; padding-bottom: 22px; }
 .set-qr img { width: 100%; max-width: 280px; border-radius: 16px; display: block; margin: 0 auto 12px; }
 .set-qr p { margin: 0; font-size: 13px; color: var(--t3); }
+.set-qr .set-qr-alt { margin-top: 8px; font-size: 12.5px; color: var(--t4); }
 @media (max-width: 900px) {
   .set-cols { grid-template-columns: 1fr; }
   .set-cols > div + div > .set-hdr:first-child { padding-top: 18px; }
